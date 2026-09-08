@@ -23,7 +23,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.sha }}
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Install KiCad build dependencies
         run: |
@@ -33,7 +33,7 @@ jobs:
             libboost-all-dev libbz2-dev libcairo2-dev libcurl4-openssl-dev \
             libeigen3-dev libfontconfig1-dev libfreetype6-dev libgl-dev \
             libglew-dev libglib2.0-dev libgtk-3-dev libharfbuzz-dev \
-            libngspice-dev libnng-dev libocct-data-exchange-dev \
+            libngspice0-dev libnng-dev libocct-data-exchange-dev \
             libocct-foundation-dev libocct-modeling-algorithms-dev \
             libocct-modeling-data-dev libpixman-1-dev libpng-dev \
             libprotobuf-dev libsecret-1-dev libtool \
@@ -70,6 +70,16 @@ jobs:
           cp LICENSE* AUTHORS.txt README.md "release/${archive_root}/licenses/"
           git rev-parse HEAD > "release/${archive_root}/SOURCE_COMMIT"
           git describe --tags --always > "release/${archive_root}/SOURCE_VERSION"
+          source_commit="$(git rev-parse HEAD)"
+          source_version="$(git describe --tags --always)"
+          cat > "release/${archive_root}/manifest.json" <<MANIFEST
+          {
+            "sourceRepository": "https://github.com/i2cjak/Backplane_KiCad",
+            "sourceCommit": "${source_commit}",
+            "version": "${source_version}",
+            "license": "GPL-3.0-or-later"
+          }
+          MANIFEST
           git archive --format=tar.gz --prefix="${archive_root}-source/" HEAD > "release/${archive_root}-source.tar.gz"
           mapfile -d '' elf_files < <(find "release/${archive_root}" -type f \( -perm /111 -o -name '*.so*' \) -print0)
           for binary in "${elf_files[@]}"; do
@@ -118,6 +128,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backplane-kicad-linux-x86_64
+          retention-days: 1
           path: |
             release/backplane-kicad-linux-x86_64-*.tar.gz
             release/SHA256SUMS

@@ -51,7 +51,7 @@ sudo apt-get install --no-install-recommends \
   libboost-all-dev libbz2-dev libcairo2-dev libcurl4-openssl-dev \
   libeigen3-dev libfontconfig1-dev libfreetype6-dev libgl-dev libglew-dev \
   libglib2.0-dev libgtk-3-dev libharfbuzz-dev \
-  libngspice-dev libnng-dev libocct-data-exchange-dev libocct-foundation-dev \
+  libngspice0-dev libnng-dev libocct-data-exchange-dev libocct-foundation-dev \
   libocct-modeling-algorithms-dev libocct-modeling-data-dev libpixman-1-dev \
   libpng-dev libprotobuf-dev libsecret-1-dev libtool libwxgtk3.2-dev \
   libwxgtk-webview3.2-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev \
