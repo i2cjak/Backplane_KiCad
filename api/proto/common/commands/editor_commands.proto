@@ -47,11 +47,6 @@ message GetOpenDocumentsResponse
   repeated kiapi.common.types.DocumentSpecifier documents = 1;
 }
 
-message SaveDocument
-{
-  kiapi.common.types.DocumentSpecifier document = 1;
-}
-
 // Saves the given document to a new location and opens the new copy
 // Note, this is not going to be implemented anytime soon as we don't currently
 // want to allow API access to changing which project is open

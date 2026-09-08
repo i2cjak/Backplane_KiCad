@@ -62,6 +62,10 @@ API_HANDLER_COMMON::API_HANDLER_COMMON() :
             &API_HANDLER_COMMON::handleGetTextVariables );
     registerHandler<SetTextVariables, Empty>(
             &API_HANDLER_COMMON::handleSetTextVariables );
+    registerHandler<OpenDocument, OpenDocumentResponse>(
+            &API_HANDLER_COMMON::handleOpenDocument );
+    registerHandler<CloseDocument, Empty>(
+            &API_HANDLER_COMMON::handleCloseDocument );
 
 }
 
@@ -397,4 +401,34 @@ HANDLER_RESULT<Empty> API_HANDLER_COMMON::handleSetTextVariables(
     Pgm().GetSettingsManager().SaveProject();
 
     return Empty();
+}
+
+
+HANDLER_RESULT<OpenDocumentResponse> API_HANDLER_COMMON::handleOpenDocument(
+        const HANDLER_CONTEXT<OpenDocument>& aCtx )
+{
+    if( !m_openDocumentHandler )
+    {
+        ApiResponseStatus e;
+        e.set_status( ApiStatusCode::AS_UNIMPLEMENTED );
+        e.set_error_message( "OpenDocument is not available in this KiCad mode" );
+        return tl::unexpected( e );
+    }
+
+    return m_openDocumentHandler( aCtx.Request );
+}
+
+
+HANDLER_RESULT<Empty> API_HANDLER_COMMON::handleCloseDocument(
+        const HANDLER_CONTEXT<CloseDocument>& aCtx )
+{
+    if( !m_closeDocumentHandler )
+    {
+        ApiResponseStatus e;
+        e.set_status( ApiStatusCode::AS_UNIMPLEMENTED );
+        e.set_error_message( "CloseDocument is not available in this KiCad mode" );
+        return tl::unexpected( e );
+    }
+
+    return m_closeDocumentHandler( aCtx.Request );
 }

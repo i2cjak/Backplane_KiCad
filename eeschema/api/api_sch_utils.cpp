@@ -65,7 +65,14 @@ std::unique_ptr<EDA_ITEM> CreateItemForType( KICAD_T aType, EDA_ITEM* aContainer
     case SCH_GROUP_T:           return std::make_unique<SCH_GROUP>();
     case SCH_SYMBOL_T:          return std::make_unique<SCH_SYMBOL>();
     case LIB_SYMBOL_T:          return std::make_unique<LIB_SYMBOL>( wxEmptyString );
-    case SCH_SHEET_T:           return std::make_unique<SCH_SHEET>();
+    case SCH_SHEET_T:
+    {
+        if( aContainer && aContainer->Type() == SCH_SHEET_T )
+            return std::make_unique<SCH_SHEET>( static_cast<SCH_SHEET*>( aContainer ) );
+
+        return nullptr;
+    }
+
 
     case SCH_SHEET_PIN_T:
         if( aContainer && aContainer->Type() == SCH_SHEET_T )

@@ -73,6 +73,7 @@
 #include "cli/command_sch_export_pythonbom.h"
 #include "cli/command_sch_export_netlist.h"
 #include "cli/command_sch_export_plot.h"
+#include "cli/command_api_server.h"
 #include "cli/command_pcb_upgrade.h"
 #include "cli/command_pcb_import.h"
 #include "cli/command_fp.h"
@@ -173,6 +174,7 @@ static CLI::SYM_COMMAND                  symCmd{};
 static CLI::SYM_EXPORT_COMMAND           symExportCmd{};
 static CLI::SYM_EXPORT_SVG_COMMAND       symExportSvgCmd{};
 static CLI::SYM_UPGRADE_COMMAND          symUpgradeCmd{};
+static CLI::API_SERVER_COMMAND           apiServerCmd{};
 static CLI::VERSION_COMMAND              versionCmd{};
 
 
@@ -285,6 +287,9 @@ static std::vector<COMMAND_ENTRY> commandStack = {
     },
     {
             &versionCmd,
+        },
+        {
+            &apiServerCmd,
     }
 };
 // clang-format on

@@ -50,11 +50,14 @@ wxString KICAD_API_SERVER::s_logFileName = "api.log";
 wxDEFINE_EVENT( API_REQUEST_EVENT, wxCommandEvent );
 
 
-KICAD_API_SERVER::KICAD_API_SERVER() :
+KICAD_API_SERVER::KICAD_API_SERVER( bool aAutoStart ) :
         wxEvtHandler(),
         m_token( KIID().AsStdString() ),
         m_readyToReply( false )
 {
+    if( !aAutoStart )
+        return;
+
     if( !Pgm().GetCommonSettings()->m_Api.enable_server )
     {
         wxLogTrace( traceApi, "Server: disabled by user preferences." );
@@ -77,13 +80,24 @@ void KICAD_API_SERVER::Start()
         return;
 
     wxFileName socket;
+
+    if( m_socketPathOverride.IsEmpty() )
+    {
 #ifdef __WXMAC__
-    socket.AssignDir( wxS( "/tmp" ) );
+        socket.AssignDir( wxS( "/tmp" ) );
 #else
-    socket.AssignDir( wxStandardPaths::Get().GetTempDir() );
+        socket.AssignDir( wxStandardPaths::Get().GetTempDir() );
 #endif
-    socket.AppendDir( wxS( "kicad" ) );
-    socket.SetFullName( wxS( "api.sock" ) );
+        socket.AppendDir( wxS( "kicad" ) );
+        socket.SetFullName( wxS( "api.sock" ) );
+    }
+    else
+    {
+        socket.Assign( m_socketPathOverride );
+
+        if( !socket.IsAbsolute() )
+            socket.MakeAbsolute();
+    }
 
     if( !PATHS::EnsurePathExists( socket.GetPath() ) )
     {

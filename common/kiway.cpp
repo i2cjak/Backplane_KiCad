@@ -768,6 +768,40 @@ bool KIWAY::ProcessJobConfigDialog( KIWAY::FACE_T aFace, JOB* aJob, wxWindow* aW
 }
 
 
+bool KIWAY::ProcessApiOpenDocument( KIWAY::FACE_T aFace, const wxString& aPath, KICAD_API_SERVER* aServer,
+                                    wxString* aError )
+{
+    KIFACE* kiface = KiFACE( aFace );
+
+    if( !kiface )
+    {
+        if( aError )
+            *aError = wxS( "Failed to load requested face" );
+
+        return false;
+    }
+
+    return kiface->HandleApiOpenDocument( aPath, aServer, aError );
+}
+
+
+bool KIWAY::ProcessApiCloseDocument( KIWAY::FACE_T aFace, const wxString& aPath, KICAD_API_SERVER* aServer,
+                                     wxString* aError )
+{
+    KIFACE* kiface = KiFACE( aFace );
+
+    if( !kiface )
+    {
+        if( aError )
+            *aError = wxS( "Failed to load requested face" );
+
+        return false;
+    }
+
+    return kiface->HandleApiCloseDocument( aPath, aServer, aError );
+}
+
+
 void KIWAY::OnKiCadExit()
 {
     if( m_ctl & KFCTL_CPP_PROJECT_SUITE )

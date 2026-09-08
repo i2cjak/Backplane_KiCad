@@ -1,4 +1,13 @@
-# KiCad README
+# Backplane KiCad
+
+This is Backplane's public KiCad fork, based on the stable KiCad 10.0.6 release.
+It carries focused IPC backports for use alongside the
+[Backplane app](https://github.com/i2cjak/Backplane). See
+[the IPC build contract](BACKPLANE_IPC.md) for the current scope and build details.
+
+The original KiCad licenses, attribution, and upstream documentation are retained below.
+
+## KiCad
 
 For specific documentation about [building KiCad](https://dev-docs.kicad.org/en/build/), policies
 and guidelines, and source code documentation see the

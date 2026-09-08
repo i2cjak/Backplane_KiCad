@@ -106,6 +106,8 @@
 #include <mail_type.h>
 #include <ki_exception.h>
 
+class KICAD_API_SERVER;
+
 
 #define KIFACE_VERSION      1
 #define KIFACE_GETTER       KIFACE_1
@@ -254,6 +256,26 @@ struct KIFACE
     virtual bool HandleJobConfig( JOB* aJob, wxWindow* aParent )
     {
         return 0;
+    }
+
+    virtual bool HandleApiOpenDocument( const wxString& aPath,
+                                        KICAD_API_SERVER* aServer,
+                                        wxString* aError )
+    {
+        if( aError )
+            *aError = wxS( "OpenDocument is not implemented for this face" );
+
+        return false;
+    }
+
+    virtual bool HandleApiCloseDocument( const wxString& aBoardFileName,
+                                         KICAD_API_SERVER* aServer,
+                                         wxString* aError )
+    {
+        if( aError )
+            *aError = wxS( "CloseDocument is not implemented for this face" );
+
+        return false;
     }
 
     virtual void PreloadLibraries( KIWAY* aKiway ) {}
@@ -458,6 +480,14 @@ public:
     int  ProcessJob( KIWAY::FACE_T aFace, JOB* aJob, REPORTER* aReporter = nullptr,
                      PROGRESS_REPORTER* aProgressReporter = nullptr );
     bool ProcessJobConfigDialog( KIWAY::FACE_T aFace, JOB* aJob, wxWindow* aWindow );
+
+    bool ProcessApiOpenDocument( KIWAY::FACE_T aFace, const wxString& aPath,
+                                 KICAD_API_SERVER* aServer,
+                                 wxString* aError = nullptr );
+
+    bool ProcessApiCloseDocument( KIWAY::FACE_T aFace, const wxString& aPath,
+                                  KICAD_API_SERVER* aServer,
+                                  wxString* aError = nullptr );
 
     /**
      * Gets the window pointer to the blocking dialog (to send it signals)

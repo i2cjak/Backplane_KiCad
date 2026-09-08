@@ -140,11 +140,16 @@ message DocumentSpecifier
     // If type == DT_SYMBOL or DT_FOOTPRINT, identifies a certain library entry
     LibraryIdentifier lib_id = 2;
 
-    // If type == DT_SCHEMATIC, identifies a sheet with a given path
+    // If type == DT_SCHEMATIC, identifies a sheet with a given path.  This is relevant when
+    // specifying a child sheet in a given hierarchical schematic.
     SheetPath sheet_path = 3;
 
     // If type == DT_PCB, identifies a PCB with a given filename, e.g. "board.kicad_pcb"
     string board_filename = 4;
+
+    // If type == DT_SCHEMATIC, identifies a single schematic file. This is relevant
+    // instead of `sheet_path` when specifying a top-level schematic to open or work with.
+    string schematic_filename = 6;
   }
 
   ProjectSpecifier project = 5;

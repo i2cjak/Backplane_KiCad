@@ -78,6 +78,15 @@
 #include <toolbars_sch_editor.h>
 #include <toolbars_symbol_editor.h>
 
+#if defined( KICAD_IPC_API )
+#include <api/api_handler_sch.h>
+#include <api/api_server.h>
+#include <api/api_utils.h>
+#include <api/headless_sch_context.h>
+#include <sch_io/sch_io.h>
+#include <sch_io/sch_io_mgr.h>
+#endif
+
 #include <wx/crt.h>
 
 // The main sheet of the project
@@ -419,6 +428,16 @@ static struct IFACE : public KIFACE_BASE, public UNITS_PROVIDER
 
     bool HandleJobConfig( JOB* aJob, wxWindow* aParent ) override;
 
+#if defined( KICAD_IPC_API )
+    bool HandleApiOpenDocument( const wxString& aPath,
+                                KICAD_API_SERVER* aServer,
+                                wxString* aError ) override;
+
+    bool HandleApiCloseDocument( const wxString& aSchFileName,
+                                 KICAD_API_SERVER* aServer,
+                                 wxString* aError ) override;
+#endif
+
     void PreloadLibraries( KIWAY* aKiway ) override;
     void CancelPreload( bool aBlock = true ) override;
     void ProjectChanged() override;
@@ -429,6 +448,15 @@ private:
     std::future<void>                      m_libraryPreloadReturn;
     std::atomic_bool                       m_libraryPreloadInProgress;
     std::atomic_bool                       m_libraryPreloadAbort;
+
+#if defined( KICAD_IPC_API )
+    void closeCurrentDocument( KICAD_API_SERVER* aServer );
+
+    KIWAY*                                    m_kiway = nullptr;
+    SCHEMATIC*                                m_openSchematic = nullptr;
+    std::shared_ptr<HEADLESS_SCH_CONTEXT>     m_openContext;
+    std::unique_ptr<API_HANDLER_SCH>          m_openHandler;
+#endif
 
 } kiface( "eeschema", KIWAY::FACE_SCH );
 
@@ -466,6 +494,10 @@ bool IFACE::OnKifaceStart( PGM_BASE* aProgram, int aCtlBits, KIWAY* aKiway )
     aProgram->GetSettingsManager().RegisterSettings( KifaceSettings() );
 
     start_common( aCtlBits );
+
+#if defined( KICAD_IPC_API )
+    m_kiway = aKiway;
+#endif
 
     m_jobHandler = std::make_unique<EESCHEMA_JOBS_HANDLER>( aKiway );
 
@@ -781,3 +813,137 @@ bool IFACE::HandleJobConfig( JOB* aJob, wxWindow* aParent )
 {
     return m_jobHandler->HandleJobConfig( aJob, aParent );
 }
+
+
+#if defined( KICAD_IPC_API )
+// TODO(JE) some of the below methods can probably be factored out and shared between sch/pcb
+void IFACE::closeCurrentDocument( KICAD_API_SERVER* aServer )
+{
+    if( m_openHandler )
+    {
+        if( aServer )
+            aServer->DeregisterHandler( m_openHandler.get() );
+
+        m_openHandler.reset();
+    }
+
+    m_openContext.reset();
+
+    delete m_openSchematic;
+    m_openSchematic = nullptr;
+}
+
+
+bool IFACE::HandleApiOpenDocument( const wxString& aPath, KICAD_API_SERVER* aServer,
+                                   wxString* aError )
+{
+    wxCHECK( aServer, false );
+
+    if( aPath.IsEmpty() )
+    {
+        if( aError )
+            *aError = wxS( "No path specified to open" );
+
+        return false;
+    }
+
+    wxFileName projectPath( aPath );
+
+    if( projectPath.GetExt() == FILEEXT::KiCadSchematicFileExtension )
+        projectPath.SetExt( FILEEXT::ProjectFileExtension );
+    else if( projectPath.GetExt() != FILEEXT::ProjectFileExtension )
+        projectPath.SetExt( FILEEXT::ProjectFileExtension );
+
+    projectPath.MakeAbsolute();
+
+    SETTINGS_MANAGER& settingsManager = Pgm().GetSettingsManager();
+
+    if( !settingsManager.LoadProject( projectPath.GetFullPath(), true ) )
+    {
+        wxLogTrace( traceApi, "Warning: no project file found for %s", aPath );
+    }
+
+    PROJECT* project = settingsManager.GetProject( projectPath.GetFullPath() );
+
+    if( !project )
+    {
+        if( aError )
+            *aError = wxString::Format( wxS( "Error loading project for %s" ), aPath );
+
+        return false;
+    }
+
+    wxFileName schPath( projectPath );
+    schPath.SetExt( FILEEXT::KiCadSchematicFileExtension );
+
+    if( !schPath.FileExists() )
+    {
+        if( aError )
+            *aError = wxString::Format( wxS( "File not found: %s" ), schPath.GetFullPath() );
+
+        return false;
+    }
+
+    SCHEMATIC* schematic = nullptr;
+
+    try
+    {
+        schematic = EESCHEMA_HELPERS::LoadSchematic( schPath.GetFullPath(), false, false, project );
+
+        if( !schematic )
+        {
+            if( aError )
+                *aError = wxS( "Failed to load schematic" );
+
+            return false;
+        }
+    }
+    catch( ... )
+    {
+        if( aError )
+            *aError = wxS( "Failed to load schematic" );
+
+        return false;
+    }
+
+    closeCurrentDocument( aServer );
+    m_openSchematic = schematic;
+
+    m_openContext = std::make_shared<HEADLESS_SCH_CONTEXT>( m_openSchematic, project, m_kiway );
+    m_openHandler = std::make_unique<API_HANDLER_SCH>( m_openContext );
+    aServer->RegisterHandler( m_openHandler.get() );
+
+    return true;
+}
+
+
+bool IFACE::HandleApiCloseDocument( const wxString& aSchFileName, KICAD_API_SERVER* aServer,
+                                    wxString* aError )
+{
+    wxCHECK( aServer, false );
+
+    if( !m_openContext )
+    {
+        if( aError )
+            *aError = wxS( "No document is currently open" );
+
+        return false;
+    }
+
+    if( !aSchFileName.IsEmpty() )
+    {
+        wxFileName currentSch( m_openContext->GetCurrentFileName() );
+
+        if( currentSch.GetFullName() != aSchFileName )
+        {
+            if( aError )
+                *aError = wxS( "Requested document does not match the open document" );
+
+            return false;
+        }
+    }
+
+    closeCurrentDocument( aServer );
+    return true;
+}
+#endif

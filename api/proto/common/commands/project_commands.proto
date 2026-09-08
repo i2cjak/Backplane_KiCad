@@ -80,3 +80,29 @@ message SetTextVariables
   // Whether to merge or replace the existing text variables map with the contents of this message
   kiapi.common.types.MapMergeMode merge_mode = 3;
 }
+
+
+message OpenDocument
+{
+  kiapi.common.types.DocumentType type = 1;
+
+  string path = 2;
+}
+
+
+message OpenDocumentResponse
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+}
+
+
+message CloseDocument
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+}
+
+
+message SaveDocument
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+}

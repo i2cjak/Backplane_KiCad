@@ -19,9 +19,12 @@
  */
 
 #include <api/api_handler_editor.h>
+
+#include <api/api_enums.h>
 #include <api/api_utils.h>
 #include <eda_base_frame.h>
 #include <eda_item.h>
+#include <title_block.h>
 #include <wx/wx.h>
 
 using namespace kiapi::common::commands;
@@ -37,6 +40,8 @@ API_HANDLER_EDITOR::API_HANDLER_EDITOR( EDA_BASE_FRAME* aFrame ) :
     registerHandler<UpdateItems, UpdateItemsResponse>( &API_HANDLER_EDITOR::handleUpdateItems );
     registerHandler<DeleteItems, DeleteItemsResponse>( &API_HANDLER_EDITOR::handleDeleteItems );
     registerHandler<HitTest, HitTestResponse>( &API_HANDLER_EDITOR::handleHitTest );
+    registerHandler<GetTitleBlockInfo, types::TitleBlockInfo>( &API_HANDLER_EDITOR::handleGetTitleBlockInfo );
+    registerHandler<SetTitleBlockInfo, google::protobuf::Empty>( &API_HANDLER_EDITOR::handleSetTitleBlockInfo );
 }
 
 
@@ -183,14 +188,8 @@ HANDLER_RESULT<std::optional<KIID>> API_HANDLER_EDITOR::validateItemHeaderDocume
     if( !documentValidation )
         return tl::unexpected( documentValidation.error() );
 
-    if( !validateDocumentInternal( aHeader.document() ) )
-    {
-        ApiResponseStatus e;
-        e.set_status( ApiStatusCode::AS_BAD_REQUEST );
-        e.set_error_message( fmt::format( "the requested document {} is not open",
-                                          aHeader.document().board_filename() ) );
-        return tl::unexpected( e );
-    }
+    if( tl::expected<bool, ApiResponseStatus> result = validateDocumentInternal( aHeader.document() ); !result )
+        return tl::unexpected( result.error() );
 
     if( aHeader.has_container() )
     {
@@ -204,6 +203,9 @@ HANDLER_RESULT<std::optional<KIID>> API_HANDLER_EDITOR::validateItemHeaderDocume
 
 std::optional<ApiResponseStatus> API_HANDLER_EDITOR::checkForBusy()
 {
+    if( !m_frame )
+        return std::nullopt;
+
     if( !m_frame->CanAcceptApiCommands() )
     {
         ApiResponseStatus e;
@@ -219,12 +221,6 @@ std::optional<ApiResponseStatus> API_HANDLER_EDITOR::checkForBusy()
 HANDLER_RESULT<CreateItemsResponse> API_HANDLER_EDITOR::handleCreateItems(
         const HANDLER_CONTEXT<CreateItems>& aCtx )
 {
-    HANDLER_RESULT<std::optional<KIID>> document =
-            validateItemHeaderDocument( aCtx.Request.header() );
-
-    if( !document )
-        return tl::unexpected( document.error() );
-
     if( std::optional<ApiResponseStatus> busy = checkForBusy() )
         return tl::unexpected( *busy );
 
@@ -252,12 +248,6 @@ HANDLER_RESULT<CreateItemsResponse> API_HANDLER_EDITOR::handleCreateItems(
 HANDLER_RESULT<UpdateItemsResponse> API_HANDLER_EDITOR::handleUpdateItems(
         const HANDLER_CONTEXT<UpdateItems>& aCtx )
 {
-    HANDLER_RESULT<std::optional<KIID>> document =
-            validateItemHeaderDocument( aCtx.Request.header() );
-
-    if( !document )
-        return tl::unexpected( document.error() );
-
     if( std::optional<ApiResponseStatus> busy = checkForBusy() )
         return tl::unexpected( *busy );
 
@@ -285,6 +275,9 @@ HANDLER_RESULT<UpdateItemsResponse> API_HANDLER_EDITOR::handleUpdateItems(
 HANDLER_RESULT<DeleteItemsResponse> API_HANDLER_EDITOR::handleDeleteItems(
         const HANDLER_CONTEXT<DeleteItems>& aCtx )
 {
+    if( std::optional<ApiResponseStatus> busy = checkForBusy() )
+        return tl::unexpected( *busy );
+
     if( !validateItemHeaderDocument( aCtx.Request.header() ) )
     {
         ApiResponseStatus e;
@@ -292,9 +285,6 @@ HANDLER_RESULT<DeleteItemsResponse> API_HANDLER_EDITOR::handleDeleteItems(
         e.set_status( ApiStatusCode::AS_UNHANDLED );
         return tl::unexpected( e );
     }
-
-    if( std::optional<ApiResponseStatus> busy = checkForBusy() )
-        return tl::unexpected( *busy );
 
     std::map<KIID, ItemDeletionStatus> itemsToDelete;
 
@@ -334,6 +324,9 @@ HANDLER_RESULT<DeleteItemsResponse> API_HANDLER_EDITOR::handleDeleteItems(
 HANDLER_RESULT<HitTestResponse> API_HANDLER_EDITOR::handleHitTest(
         const HANDLER_CONTEXT<HitTest>& aCtx )
 {
+    if( std::optional<ApiResponseStatus> busy = checkForBusy() )
+        return tl::unexpected( *busy );
+
     if( !validateItemHeaderDocument( aCtx.Request.header() ) )
     {
         ApiResponseStatus e;
@@ -341,9 +334,6 @@ HANDLER_RESULT<HitTestResponse> API_HANDLER_EDITOR::handleHitTest(
         e.set_status( ApiStatusCode::AS_UNHANDLED );
         return tl::unexpected( e );
     }
-
-    if( std::optional<ApiResponseStatus> busy = checkForBusy() )
-        return tl::unexpected( *busy );
 
     HitTestResponse response;
 
@@ -364,4 +354,110 @@ HANDLER_RESULT<HitTestResponse> API_HANDLER_EDITOR::handleHitTest(
         response.set_result( HitTestResult::HTR_NO_HIT );
 
     return response;
+}
+
+
+std::vector<KICAD_T> API_HANDLER_EDITOR::parseRequestedItemTypes( const google::protobuf::RepeatedField<int>& aTypes )
+{
+    std::vector<KICAD_T> types;
+
+    for( int typeRaw : aTypes )
+    {
+        auto typeMessage = static_cast<types::KiCadObjectType>( typeRaw );
+
+        if( KICAD_T type = FromProtoEnum<KICAD_T>( typeMessage ); type != TYPE_NOT_INIT )
+            types.emplace_back( type );
+    }
+
+    return types;
+}
+
+
+HANDLER_RESULT<types::TitleBlockInfo>
+API_HANDLER_EDITOR::handleGetTitleBlockInfo( const HANDLER_CONTEXT<GetTitleBlockInfo>& aCtx )
+{
+    HANDLER_RESULT<bool> documentValidation = validateDocument( aCtx.Request.document() );
+
+    if( !documentValidation )
+        return tl::unexpected( documentValidation.error() );
+
+    std::optional<TITLE_BLOCK*> optBlock = getTitleBlock();
+
+    if( !optBlock )
+    {
+        ApiResponseStatus e;
+        e.set_status( AS_BAD_REQUEST );
+        e.set_error_message( "this editor does not support a title block" );
+        return tl::unexpected( e );
+    }
+
+    TITLE_BLOCK& block = **optBlock;
+
+    types::TitleBlockInfo response;
+
+    response.set_title( block.GetTitle().ToUTF8() );
+    response.set_date( block.GetDate().ToUTF8() );
+    response.set_revision( block.GetRevision().ToUTF8() );
+    response.set_company( block.GetCompany().ToUTF8() );
+    response.set_comment1( block.GetComment( 0 ).ToUTF8() );
+    response.set_comment2( block.GetComment( 1 ).ToUTF8() );
+    response.set_comment3( block.GetComment( 2 ).ToUTF8() );
+    response.set_comment4( block.GetComment( 3 ).ToUTF8() );
+    response.set_comment5( block.GetComment( 4 ).ToUTF8() );
+    response.set_comment6( block.GetComment( 5 ).ToUTF8() );
+    response.set_comment7( block.GetComment( 6 ).ToUTF8() );
+    response.set_comment8( block.GetComment( 7 ).ToUTF8() );
+    response.set_comment9( block.GetComment( 8 ).ToUTF8() );
+
+    return response;
+}
+
+
+HANDLER_RESULT<google::protobuf::Empty>
+API_HANDLER_EDITOR::handleSetTitleBlockInfo( const HANDLER_CONTEXT<SetTitleBlockInfo>& aCtx )
+{
+    HANDLER_RESULT<bool> documentValidation = validateDocument( aCtx.Request.document() );
+
+    if( !documentValidation )
+        return tl::unexpected( documentValidation.error() );
+
+    if( !aCtx.Request.has_title_block() )
+    {
+        ApiResponseStatus e;
+        e.set_status( ApiStatusCode::AS_BAD_REQUEST );
+        e.set_error_message( "SetTitleBlockInfo requires title_block" );
+        return tl::unexpected( e );
+    }
+
+    std::optional<TITLE_BLOCK*> optBlock = getTitleBlock();
+
+    if( !optBlock )
+    {
+        ApiResponseStatus e;
+        e.set_status( AS_BAD_REQUEST );
+        e.set_error_message( "this editor does not support a title block" );
+        return tl::unexpected( e );
+    }
+
+    TITLE_BLOCK& block = **optBlock;
+
+    const types::TitleBlockInfo& request = aCtx.Request.title_block();
+
+    block.SetTitle( wxString::FromUTF8( request.title() ) );
+    block.SetDate( wxString::FromUTF8( request.date() ) );
+    block.SetRevision( wxString::FromUTF8( request.revision() ) );
+    block.SetCompany( wxString::FromUTF8( request.company() ) );
+    block.SetComment( 0, wxString::FromUTF8( request.comment1() ) );
+    block.SetComment( 1, wxString::FromUTF8( request.comment2() ) );
+    block.SetComment( 2, wxString::FromUTF8( request.comment3() ) );
+    block.SetComment( 3, wxString::FromUTF8( request.comment4() ) );
+    block.SetComment( 4, wxString::FromUTF8( request.comment5() ) );
+    block.SetComment( 5, wxString::FromUTF8( request.comment6() ) );
+    block.SetComment( 6, wxString::FromUTF8( request.comment7() ) );
+    block.SetComment( 7, wxString::FromUTF8( request.comment8() ) );
+    block.SetComment( 8, wxString::FromUTF8( request.comment9() ) );
+
+    onModified();
+
+    return google::protobuf::Empty();
 }

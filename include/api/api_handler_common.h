@@ -21,6 +21,8 @@
 #ifndef KICAD_API_HANDLER_COMMON_H
 #define KICAD_API_HANDLER_COMMON_H
 
+#include <functional>
+
 #include <google/protobuf/empty.pb.h>
 
 #include <api/api_handler.h>
@@ -33,9 +35,25 @@ using google::protobuf::Empty;
 class API_HANDLER_COMMON : public API_HANDLER
 {
 public:
+    using OPEN_DOCUMENT_HANDLER = std::function<HANDLER_RESULT<commands::OpenDocumentResponse>(
+            const commands::OpenDocument& )>;
+
+    using CLOSE_DOCUMENT_HANDLER = std::function<HANDLER_RESULT<Empty>(
+            const commands::CloseDocument& )>;
+
     API_HANDLER_COMMON();
 
     ~API_HANDLER_COMMON() override {}
+
+    void SetOpenDocumentHandler( OPEN_DOCUMENT_HANDLER aHandler )
+    {
+        m_openDocumentHandler = std::move( aHandler );
+    }
+
+    void SetCloseDocumentHandler( CLOSE_DOCUMENT_HANDLER aHandler )
+    {
+        m_closeDocumentHandler = std::move( aHandler );
+    }
 
 private:
     HANDLER_RESULT<commands::GetVersionResponse> handleGetVersion(
@@ -69,6 +87,16 @@ private:
 
     HANDLER_RESULT<Empty> handleSetTextVariables(
         const HANDLER_CONTEXT<commands::SetTextVariables>& aCtx );
+
+    HANDLER_RESULT<commands::OpenDocumentResponse> handleOpenDocument(
+        const HANDLER_CONTEXT<commands::OpenDocument>& aCtx );
+
+    HANDLER_RESULT<Empty> handleCloseDocument(
+        const HANDLER_CONTEXT<commands::CloseDocument>& aCtx );
+
+private:
+    OPEN_DOCUMENT_HANDLER m_openDocumentHandler;
+    CLOSE_DOCUMENT_HANDLER m_closeDocumentHandler;
 };
 
 #endif //KICAD_API_HANDLER_COMMON_H

@@ -24,6 +24,7 @@
 #include <api/api_handler.h>
 #include <api/common/commands/editor_commands.pb.h>
 #include <commit.h>
+#include <google/protobuf/empty.pb.h>
 #include <kiid.h>
 
 using namespace kiapi::common;
@@ -32,6 +33,7 @@ using kiapi::common::types::ItemRequestStatus;
 using kiapi::common::commands::ItemDeletionStatus;
 
 class EDA_BASE_FRAME;
+class TITLE_BLOCK;
 
 /**
  * Base class for API handlers related to editor frames
@@ -42,12 +44,7 @@ public:
     API_HANDLER_EDITOR( EDA_BASE_FRAME* aFrame = nullptr );
 
 protected:
-    /**
-     * If the header is valid, returns the item container.
-     *
-     * The server sends a request to each editor until one replies with a status that is not
-     * AS_UNHANDLED. Call this before you read editor state.
-     */
+    /// If the header is valid, returns the item container
     HANDLER_RESULT<std::optional<KIID>> validateItemHeaderDocument(
             const kiapi::common::types::ItemHeader& aHeader );
 
@@ -81,6 +78,12 @@ protected:
     HANDLER_RESULT<commands::HitTestResponse> handleHitTest(
         const HANDLER_CONTEXT<commands::HitTest>& aCtx );
 
+    HANDLER_RESULT<types::TitleBlockInfo> handleGetTitleBlockInfo(
+            const HANDLER_CONTEXT<commands::GetTitleBlockInfo>& aCtx );
+
+    HANDLER_RESULT<google::protobuf::Empty> handleSetTitleBlockInfo(
+            const HANDLER_CONTEXT<commands::SetTitleBlockInfo>& aCtx );
+
     /**
      * Override this to create an appropriate COMMIT subclass for the frame in question
      * @return a new COMMIT, bound to the editor frame
@@ -95,7 +98,7 @@ protected:
     /**
      * @return true if the given document is valid for this editor and is currently open
      */
-    virtual bool validateDocumentInternal( const DocumentSpecifier& aDocument ) const = 0;
+    virtual tl::expected<bool, ApiResponseStatus> validateDocumentInternal( const DocumentSpecifier& aDocument ) const = 0;
 
     virtual HANDLER_RESULT<ItemRequestStatus> handleCreateUpdateItemsInternal( bool aCreate,
         const std::string& aClientName,
@@ -108,6 +111,12 @@ protected:
 
     virtual std::optional<EDA_ITEM*> getItemFromDocument( const DocumentSpecifier& aDocument,
                                                           const KIID& aId ) = 0;
+
+    static std::vector<KICAD_T> parseRequestedItemTypes( const google::protobuf::RepeatedField<int>& aTypes );
+
+    virtual std::optional<TITLE_BLOCK*> getTitleBlock() { return std::nullopt; }
+
+    virtual void onModified() {}
 
 protected:
     std::map<std::string, std::pair<KIID, std::unique_ptr<COMMIT>>> m_commits;
