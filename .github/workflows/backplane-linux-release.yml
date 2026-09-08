@@ -74,6 +74,7 @@ jobs:
       - name: Compile IPC backports first
         run: |
           cmake --build build/backplane-linux --parallel 4 --target kiapi
+          ninja -C build/backplane-linux common/pcb_lexer.h
           ninja -C build/backplane-linux -j4 \
             common/CMakeFiles/common.dir/api/api_enums.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_handler_sch.cpp.o \
@@ -81,7 +82,8 @@ jobs:
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_sch_utils.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/sch_api_save.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/sch_symbol.cpp.o \
-            pcbnew/CMakeFiles/pcbnew_kiface_objects.dir/api/api_handler_pcb.cpp.o
+            pcbnew/CMakeFiles/pcbnew_kiface_objects.dir/api/api_handler_pcb.cpp.o \
+            pcbnew/CMakeFiles/pcbnew_kiface_objects.dir/api/api_pcb_enums.cpp.o
 
       - name: Build and install KiCad runtime
         run: |
