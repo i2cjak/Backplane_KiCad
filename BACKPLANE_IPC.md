@@ -49,12 +49,16 @@ sudo apt-get update
 sudo apt-get install --no-install-recommends \
   build-essential cmake ninja-build pkg-config ccache \
   libboost-all-dev libbz2-dev libcairo2-dev libcurl4-openssl-dev \
-  libeigen3-dev libfontconfig1-dev libfreetype6-dev libgl-dev libglew-dev \
-  libglib2.0-dev libgtk-3-dev libharfbuzz-dev \
+  libeigen3-dev libfontconfig1-dev libfreetype6-dev libgl-dev libglm-dev \
+  libgl1-mesa-dev libglew-dev libglu1-mesa-dev libglib2.0-dev libgtk-3-dev \
+  libharfbuzz-dev libgit2-dev libssl-dev \
   libngspice0-dev libnng-dev libocct-data-exchange-dev libocct-foundation-dev \
-  libocct-modeling-algorithms-dev libocct-modeling-data-dev libpixman-1-dev \
-  libpng-dev libprotobuf-dev libsecret-1-dev libtool libwxgtk3.2-dev \
+  libocct-modeling-algorithms-dev libocct-modeling-data-dev libocct-ocaf-dev \
+  libocct-visualization-dev libpixman-1-dev libpng-dev libpoppler-dev \
+  libpoppler-glib-dev libprotobuf-dev libsecret-1-dev libspnav-dev libtool \
+  libwxgtk3.2-dev \
   libwxgtk-webview3.2-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev \
   libyaml-cpp-dev libzstd-dev mesa-common-dev pax-utils protobuf-compiler \
-  rapidjson-dev swig zlib1g-dev
+  python3-dev rapidjson-dev shared-mime-info swig unixodbc-dev zlib1g-dev \
+  libzint-dev
 ```
