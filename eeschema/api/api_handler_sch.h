@@ -74,6 +74,14 @@ protected:
 
     std::optional<TITLE_BLOCK*> getTitleBlock() override;
 
+    std::optional<PAGE_INFO> getPageSettings() override;
+
+    bool setPageSettings( const PAGE_INFO& aPageInfo ) override;
+
+    wxString getDrawingSheetFileName() override;
+
+    void setDrawingSheetFileName( const wxString& aFileName ) override;
+
     void onModified() override;
 
     SCH_CONTEXT* context() const { return m_context.get(); }

@@ -120,3 +120,13 @@ enum StrokeLineStyle
   SLS_DASHDOT    = 5;
   SLS_DASHDOTDOT = 6;
 }
+
+enum Units
+{
+  U_UNKNOWN = 0;
+  U_INCH = 1;
+  U_MM = 2;
+  U_MILS = 3;
+  U_METERS = 4;
+  U_TENTHS = 5;
+}

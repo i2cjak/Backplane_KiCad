@@ -40,17 +40,21 @@ commit rollback, save, hierarchy, and netlist operations are the supported
 IPC surface; clients should use the generated stable proto names such as
 `SchematicText` and `SchematicSymbolInstance`.
 
-The Backplane additions are limited to the headless IPC plumbing and its PCB
-and schematic document contexts. They do not claim compatibility with KiCad
-development or nightly builds.
+The fork retains the stable KiCad version number. Clients should generate
+bindings from this repository's `api/proto` definitions; nightly client version
+checks are not a substitute for checking supported commands.
 
 ## Linux release build
 
 The GitHub Actions workflow `backplane-linux-release.yml` builds `kicad-cli`
-with IPC enabled, installs it into a staging prefix, checks both `--version`
-and `api-server --help`, and archives the installed runtime with the KiCad
-source and license files. It builds the selected fork commit, or the fork tag
-that triggered the release.
+with IPC enabled and installs it into a staging prefix. Before archiving the
+relocated runtime, `scripts/backplane-ipc-smoke.py` opens disposable PCB and
+schematic fixtures, checks item creation and editing, rolls back transactions,
+and verifies that saved changes survive reopening. It also queries schematic
+symbols, hierarchy, and nets, and exports a BOM, schematic SVG, and board GLB.
+The release includes the matching source archive
+and license files. It builds the selected fork commit, or the fork tag that
+triggered the release.
 
 On Ubuntu 24.04, the local equivalent starts with the following dependency
 installation (the workflow is the reproducible path):
@@ -63,13 +67,13 @@ sudo apt-get install --no-install-recommends \
   libeigen3-dev libfontconfig1-dev libfreetype6-dev libgl-dev libglm-dev \
   libgl1-mesa-dev libglew-dev libglu1-mesa-dev libglib2.0-dev libgtk-3-dev \
   libharfbuzz-dev libgit2-dev libssl-dev \
-  libngspice0-dev libnng-dev libocct-data-exchange-dev libocct-foundation-dev \
+  libngspice0-dev ngspice libnng-dev libocct-data-exchange-dev libocct-foundation-dev \
   libocct-modeling-algorithms-dev libocct-modeling-data-dev libocct-ocaf-dev \
   libocct-visualization-dev libpixman-1-dev libpng-dev libpoppler-dev \
   libpoppler-glib-dev libprotobuf-dev libsecret-1-dev libspnav-dev libtool \
   libwxgtk3.2-dev \
   libwxgtk-webview3.2-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev \
   libyaml-cpp-dev libzstd-dev mesa-common-dev pax-utils protobuf-compiler \
-  python3-dev rapidjson-dev shared-mime-info swig unixodbc-dev zlib1g-dev \
+  python3-dev python3-venv rapidjson-dev shared-mime-info swig unixodbc-dev zlib1g-dev \
   libzint-dev
 ```

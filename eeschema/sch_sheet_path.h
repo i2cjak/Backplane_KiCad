@@ -819,11 +819,6 @@ public:
     void SetInitialPageNumbers();
 
     /**
-     * @return the next available page number in this hierarchy
-     */
-    wxString GetNextPageNumber() const;
-
-    /**
      * Assign valid page numbers to sheet paths whose stored page number is missing or collides
      * with an earlier sheet.
      *

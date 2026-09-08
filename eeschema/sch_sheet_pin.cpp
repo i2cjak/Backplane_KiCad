@@ -27,6 +27,7 @@
 #include <bitmaps.h>
 #include <api/api_enums.h>
 #include <api/api_utils.h>
+#include <import_export.h>
 #include <api/schematic/schematic_types.pb.h>
 #include <general.h>
 #include <geometry/shape_line_chain.h>

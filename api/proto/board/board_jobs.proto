@@ -1,0 +1,539 @@
+/*
+ * This program source code file is part of KiCad, a free EDA CAD application.
+ *
+ * Copyright (C) KiCad Developers, see AUTHORS.txt for contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package kiapi.board.jobs;
+
+import "common/types/base_types.proto";
+import "common/types/jobs.proto";
+import "common/types/enums.proto";
+import "board/board_types.proto";
+
+
+// Controls whether drill holes are drawn in plot outputs that support hole marks.
+enum PlotDrillMarks
+{
+    PDM_UNKNOWN = 0;
+    // Do not draw drill holes.
+    PDM_NONE = 1;
+    // Draw small fixed-size drill holes.
+    PDM_SMALL = 2;
+    // Draw drill holes using their real size.
+    PDM_FULL = 3;
+}
+
+message BoardPlotSettings
+{
+    // One or more board layers to export.
+    repeated kiapi.board.types.BoardLayer layers = 1;
+
+    // Layers to include on all individual layer plots.
+    repeated kiapi.board.types.BoardLayer common_layers = 2;
+
+    string color_theme = 3;
+    string drawing_sheet = 4;
+    string variant = 5;
+
+    bool mirror = 6;
+    bool black_and_white = 7;
+    bool negative = 8;
+    double scale = 9;
+
+    bool sketch_pads_on_fab_layers = 10;
+    bool hide_dnp_footprints_on_fab_layers = 11;
+    bool sketch_dnp_footprints_on_fab_layers = 12;
+    bool crossout_dnp_footprints_on_fab_layers = 13;
+
+    bool plot_footprint_values = 14;
+    bool plot_reference_designators = 15;
+    bool plot_drawing_sheet = 16;
+    bool subtract_solder_mask_from_silk = 17;
+    bool plot_pad_numbers = 18;
+
+    PlotDrillMarks drill_marks = 19;
+    bool use_drill_origin = 20;
+    bool check_zones_before_plot = 21;
+}
+
+// Output format for board 3D export jobs.
+enum Board3DFormat
+{
+    B3D_UNKNOWN = 0;
+    // Export as STEP AP214.
+    B3D_STEP = 1;
+    // Export as compressed STEP.
+    B3D_STEPZ = 2;
+    // Export as OpenCascade BREP.
+    B3D_BREP = 3;
+    // Export as XAO.
+    B3D_XAO = 4;
+    // Export as binary glTF.
+    B3D_GLB = 5;
+    // Export as VRML.
+    B3D_VRML = 6;
+    // Export as PLY mesh.
+    B3D_PLY = 7;
+    // Export as STL mesh.
+    B3D_STL = 8;
+    // Export as U3D.
+    B3D_U3D = 9;
+    // Export as embedded 3D PDF.
+    B3D_PDF = 10;
+}
+
+// Exports a board as a 3D model file.  Returns RunJobResponse.
+message RunBoardJobExport3D
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    string variant = 2;
+    Board3DFormat format = 3;
+
+    string net_filter = 4;
+    string component_filter = 5;
+
+    bool has_user_origin = 6;
+    kiapi.common.types.Vector2 origin = 7;
+
+    bool overwrite = 8;
+    bool use_grid_origin = 9;
+    bool use_drill_origin = 10;
+    bool use_defined_origin = 11;
+    bool use_pcb_center_origin = 12;
+
+    bool include_unspecified = 13;
+    bool include_dnp = 14;
+    bool substitute_models = 15;
+
+    double board_outlines_chaining_epsilon = 16;
+    bool board_only = 17;
+    bool cut_vias_in_body = 18;
+    bool export_board_body = 19;
+    bool export_components = 20;
+    bool export_tracks_and_vias = 21;
+    bool export_pads = 22;
+    bool export_zones = 23;
+    bool export_inner_copper = 24;
+    bool export_silkscreen = 25;
+    bool export_soldermask = 26;
+    bool fuse_shapes = 27;
+    bool fill_all_vias = 28;
+    bool optimize_step = 29;
+    bool extra_pad_thickness = 30;
+
+    // Inches, millimeters, meters, or tenths of an inch are accepted
+    kiapi.common.types.Units vrml_units = 31;
+    string vrml_model_dir = 32;
+    bool vrml_relative_paths = 33;
+}
+
+enum RenderFormat
+{
+    RF_UNKNOWN = 0;
+    RF_PNG = 1;
+    RF_JPEG = 2;
+}
+
+// Rendering quality preset selection
+enum RenderQuality
+{
+    RQ_UNKNOWN = 0;
+    // Basic quality preset.
+    RQ_BASIC = 1;
+    // High quality preset.
+    RQ_HIGH = 2;
+    // User-defined quality options.
+    RQ_USER = 3;
+    // Use quality from job/display settings.
+    RQ_JOB_SETTINGS = 4;
+}
+
+// Background style for rendered board snapshots
+enum RenderBackgroundStyle
+{
+    RBS_UNKNOWN = 0;
+    // Use renderer default background behavior.
+    RBS_DEFAULT = 1;
+    // Transparent background.
+    RBS_TRANSPARENT = 2;
+    // Opaque background.
+    RBS_OPAQUE = 3;
+}
+
+// Camera direction for rendered board snapshots
+enum RenderSide
+{
+    RS_UNKNOWN = 0;
+    RS_TOP = 1;
+    RS_BOTTOM = 2;
+    RS_LEFT = 3;
+    RS_RIGHT = 4;
+    RS_FRONT = 5;
+    RS_BACK = 6;
+}
+
+// Exports a raytraced 3D render of a board.  Returns RunJobResponse.
+message RunBoardJobExportRender
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    RenderFormat format = 2;
+    RenderQuality quality = 3;
+    RenderBackgroundStyle background_style = 4;
+
+    int32 width = 5;
+    int32 height = 6;
+
+    string appearance_preset = 7;
+    bool use_board_stackup_colors = 8;
+    RenderSide side = 9;
+    double zoom = 10;
+    bool perspective = 11;
+
+    kiapi.common.types.Vector3D rotation = 12;
+    kiapi.common.types.Vector3D pan = 13;
+    kiapi.common.types.Vector3D pivot = 14;
+
+    bool procedural_textures = 15;
+    bool floor = 16;
+    bool anti_alias = 17;
+    bool post_process = 18;
+
+    kiapi.common.types.Vector3D light_top_intensity = 19;
+    kiapi.common.types.Vector3D light_bottom_intensity = 20;
+    kiapi.common.types.Vector3D light_camera_intensity = 21;
+    kiapi.common.types.Vector3D light_side_intensity = 22;
+    int32 light_side_elevation = 23;
+}
+
+// Shared pagination/output grouping mode for board plot/export jobs.
+enum BoardJobPaginationMode
+{
+    BJPM_UNKNOWN = 0;
+
+    // Put all selected layers on one page/canvas in a single output file.
+    BJPM_ALL_LAYERS_ONE_PAGE = 1;
+
+    // Put each selected layer on its own page inside a single output file.
+    BJPM_EACH_LAYER_OWN_PAGE = 2;
+
+    // Generate one output file per selected layer.
+    BJPM_EACH_LAYER_OWN_FILE = 3;
+}
+
+// Plots a board to an SVG file. Returns RunJobResponse.
+message RunBoardJobExportSvg
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    BoardPlotSettings plot_settings = 2;
+    bool fit_page_to_board = 3;
+    uint32 precision = 4;
+    // Supports BJPM_ALL_LAYERS_ONE_PAGE and BJPM_EACH_LAYER_OWN_FILE.
+    BoardJobPaginationMode page_mode = 5;
+}
+
+// Exports a board to a DXF file. Returns RunJobResponse.
+message RunBoardJobExportDxf
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    BoardPlotSettings plot_settings = 2;
+    bool plot_graphic_items_using_contours = 3;
+    bool polygon_mode = 4;
+
+    // Inches or millimeters are accepted
+    kiapi.common.types.Units units = 5;
+    // Supports BJPM_ALL_LAYERS_ONE_PAGE and BJPM_EACH_LAYER_OWN_FILE.
+    BoardJobPaginationMode page_mode = 6;
+}
+
+// Plots a board to a PDF file. Returns RunJobResponse.
+message RunBoardJobExportPdf
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    BoardPlotSettings plot_settings = 2;
+    bool front_footprint_property_popups = 3;
+    bool back_footprint_property_popups = 4;
+    bool include_metadata = 5;
+    bool single_document = 6;
+    BoardJobPaginationMode page_mode = 7;
+    string background_color = 8;
+}
+
+// Plots a board to a PostScript file. Returns RunJobResponse.
+message RunBoardJobExportPs
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    BoardPlotSettings plot_settings = 2;
+    // Supports BJPM_ALL_LAYERS_ONE_PAGE and BJPM_EACH_LAYER_OWN_FILE.
+    BoardJobPaginationMode page_mode = 3;
+    double track_width_correction = 4;
+    double x_scale_adjust = 5;
+    double y_scale_adjust = 6;
+    bool force_a4 = 7;
+    bool use_global_settings = 8;
+}
+
+// Plots a board to Gerber files. Returns RunJobResponse.
+message RunBoardJobExportGerbers
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    // One or more board layers to export.
+    repeated kiapi.board.types.BoardLayer layers = 2;
+}
+
+enum DrillFormat
+{
+    DF_UNKNOWN = 0;
+    DF_EXCELLON = 1;
+    DF_GERBER = 2;
+}
+
+enum DrillOrigin
+{
+    DO_UNKNOWN = 0;
+    DO_ABSOLUTE = 1;
+    DO_PLOT = 2;
+}
+
+enum DrillZerosFormat
+{
+    DZF_UNKNOWN = 0;
+    DZF_DECIMAL = 1;
+    DZF_SUPPRESS_LEADING = 2;
+    DZF_SUPPRESS_TRAILING = 3;
+    DZF_KEEP_ZEROS = 4;
+}
+
+enum DrillMapFormat
+{
+    DMF_UNKNOWN = 0;
+    DMF_POSTSCRIPT = 1;
+    DMF_GERBER_X2 = 2;
+    DMF_DXF = 3;
+    DMF_SVG = 4;
+    DMF_PDF = 5;
+}
+
+// Gerber drill numeric precision (format is always 4.x for drill outputs).
+enum DrillGerberPrecision
+{
+    DGP_UNKNOWN = 0;
+    DGP_4_5 = 1;
+    DGP_4_6 = 2;
+}
+
+message ExcellonFormatOptions
+{
+    // If true, Y coordinates will be negated in the drill file
+    optional bool mirror_y = 1;
+
+    // If true, comments and other optional info will be omitted from the drill file header
+    optional bool minimal_header = 2;
+
+    // If true, a single drill file will be created with both PTH and NPTH holes
+    optional bool combine_pth_npth = 3;
+
+    // If true, will generate a "route" operation instead of "drill" for oval-shaped holes
+    optional bool route_oval_holes = 4;
+}
+
+// What format to export drill reports in (only one supported so far...)
+enum DrillReportFormat
+{
+    DRF_UNKNOWN = 0;
+
+    // KiCad text drill report
+    DRF_STANDARD = 1;
+}
+
+// Exports NC drill files from a board.  Returns RunJobResponse.
+message RunBoardJobExportDrill
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    DrillFormat format = 2;
+
+    // Inches or millimeters are accepted
+    kiapi.common.types.Units units = 3;
+
+    DrillOrigin origin = 4;
+    DrillZerosFormat zeros_format = 5;
+
+    ExcellonFormatOptions excellon = 6;
+
+    // Set to a valid value to generate a drill map.  Leave unset for no drill map.
+    DrillMapFormat map_format = 11;
+
+    // When generating drill files in Gerber format, the precision to use for coordinates
+    DrillGerberPrecision gerber_precision = 12;
+
+    // When generating drill files in Gerber format, will create additional gerbers specifying
+    // front and back tenting locations for tented pads and vias.
+    optional bool gerber_generate_tenting = 13;
+
+    // Set to a valid value to generate a drill report.  Leave unset for no report.
+    DrillReportFormat report_format = 14;
+    optional string report_filename = 15;
+}
+
+// Which board side(s) to include in position file output.
+enum PositionSide
+{
+    PS_UNKNOWN = 0;
+    // Front side only.
+    PS_FRONT = 1;
+    // Back side only.
+    PS_BACK = 2;
+    // Both front and back sides.
+    PS_BOTH = 3;
+}
+
+// Unit system used for position file coordinates
+enum PositionFormat
+{
+    PF_UNKNOWN = 0;
+    PF_ASCII = 1;
+    PF_CSV = 2;
+    PF_GERBER = 3;
+}
+
+// Exports position files (pick-and-place centroids) from a board.  Returns RunJobResponse.
+message RunBoardJobExportPosition
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    optional bool use_drill_place_file_origin = 2;
+    bool smd_only = 3;
+    bool exclude_footprints_with_th = 4;
+    bool exclude_dnp = 5;
+    bool exclude_from_bom = 6;
+    bool negate_bottom_x = 7;
+    bool single_file = 8;
+    bool naked_filename = 9;
+    PositionSide side = 10;
+
+    // Inches or millimeters are accepted
+    kiapi.common.types.Units units = 11;
+    PositionFormat format = 12;
+    optional bool include_board_edge_for_gerber = 13;
+    string variant = 14;
+}
+
+// Exports a board to Gencad format.  Returns RunJobResponse.
+message RunBoardJobExportGencad
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    bool flip_bottom_pads = 2;
+    bool use_individual_shapes = 3;
+    bool store_origin_coords = 4;
+    bool use_drill_origin = 5;
+    bool use_unique_pins = 6;
+}
+
+enum Ipc2581Version
+{
+    IPC2581V_UNKNOWN = 0;
+    IPC2581V_B = 1;
+    IPC2581V_C = 2;
+}
+
+// Exports a board to IPC-2581 format.  Returns RunJobResponse.
+message RunBoardJobExportIpc2581
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    string drawing_sheet = 2;
+    string variant = 3;
+
+    // Inches or millimeters are accepted
+    kiapi.common.types.Units units = 4;
+    Ipc2581Version version = 5;
+    optional int32 precision = 6;
+    bool compress = 7;
+
+    string internal_id_column = 8;
+    string manufacturer_part_number_column = 9;
+    string manufacturer_column = 10;
+    string distributor_part_number_column = 11;
+    string distributor_column = 12;
+    string bom_revision = 13;
+}
+
+// Exports a board netlist in IPC-D-356 format.  Returns RunJobResponse.
+message RunBoardJobExportIpcD356
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+}
+
+// Archive/compression mode used for ODB++ output.
+enum OdbCompression
+{
+    ODBC_UNKNOWN = 0;
+    // Uncompressed ODB++ folder structure.
+    ODBC_NONE = 1;
+    // ZIP archive.
+    ODBC_ZIP = 2;
+    // Tar+gzip archive (.tgz).
+    ODBC_TGZ = 3;
+}
+
+// Exports a board to ODB++ format.  Returns RunJobResponse.
+message RunBoardJobExportODB
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    string drawing_sheet = 2;
+    string variant = 3;
+
+    // Inches or millimeters are accepted
+    kiapi.common.types.Units units = 4;
+    optional int32 precision = 5;
+    OdbCompression compression = 6;
+}
+
+// Board statistics output format.
+enum StatsOutputFormat
+{
+    SOF_UNKNOWN = 0;
+    // Human-readable text report.
+    SOF_REPORT = 1;
+    // JSON structured output.
+    SOF_JSON = 2;
+}
+
+// Exports board statistics.  Returns RunJobResponse.
+message RunBoardJobExportStats
+{
+    kiapi.common.types.RunJobSettings job_settings = 1;
+
+    StatsOutputFormat format = 2;
+
+    // Inches or millimeters are accepted
+    kiapi.common.types.Units units = 3;
+    bool exclude_footprints_without_pads = 4;
+    bool subtract_holes_from_board_area = 5;
+    bool subtract_holes_from_copper_areas = 6;
+}

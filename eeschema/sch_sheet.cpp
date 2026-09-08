@@ -39,6 +39,7 @@
 #include <geometry/geometry_utils.h>
 #include <api/api_enums.h>
 #include <api/api_utils.h>
+#include <import_export.h>
 #include <api/schematic/schematic_types.pb.h>
 #include <sch_sheet.h>
 #include <sch_sheet_path.h>

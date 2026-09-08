@@ -137,6 +137,26 @@ def main():
                             expected = count + (action == editor.CMA_COMMIT)
                             assert len(items()) == expected, "Commit/rollback changed item count"
 
+                        if kind == types.DOCTYPE_PCB:
+                            track = board.Track()
+                            assert items()[0].Unpack(track)
+                            original_end = track.end.x_nm
+                            for action in (editor.CMA_DROP, editor.CMA_COMMIT):
+                                transaction = request(editor.BeginCommit(header=header), editor.BeginCommitResponse)
+                                track.end.x_nm = original_end + 1000000
+                                update = editor.UpdateItems(header=header)
+                                update.items.add().Pack(track)
+                                result = request(update, editor.UpdateItemsResponse)
+                                assert result.status == types.IRS_OK, result
+                                assert result.updated_items[0].status.code == editor.ISC_OK, result
+                                request(editor.EndCommit(header=header, id=transaction.id, action=action,
+                                                         message="Disposable track edit"),
+                                        editor.EndCommitResponse)
+                                saved_track = board.Track()
+                                assert items()[0].Unpack(saved_track)
+                                expected_end = original_end + (1000000 if action == editor.CMA_COMMIT else 0)
+                                assert saved_track.end.x_nm == expected_end, "Track edit/rollback failed"
+
                         title = request(editor.GetTitleBlockInfo(document=document),
                                         types.TitleBlockInfo)
                         title.title = "Backplane IPC smoke"
@@ -146,6 +166,10 @@ def main():
                         document = open_document()
                         header = types.ItemHeader(document=document)
                         assert len(items()) == count + 1, "Saved item did not survive reopening"
+                        if kind == types.DOCTYPE_PCB:
+                            saved_track = board.Track()
+                            assert items()[0].Unpack(saved_track)
+                            assert saved_track.end.x_nm == original_end + 1000000, "Track edit did not persist"
                         title = request(editor.GetTitleBlockInfo(document=document),
                                         types.TitleBlockInfo)
                         assert title.title == "Backplane IPC smoke", "Saved title did not survive reopening"
@@ -219,6 +243,32 @@ def main():
                     except subprocess.TimeoutExpired:
                         server.kill()
                         server.wait()
+
+        # Use the same relocated CLI entry point as Backplane's BOM and 3D
+        # viewers. This also exercises libraries loaded after process startup.
+        exported = root / "exports"
+        exported.mkdir()
+        commands = (
+            ["sch", "export", "bom", "--output", str(exported / "bom.csv"), str(sch_path)],
+            ["sch", "export", "svg", "--output", str(exported / "schematic"), str(sch_path)],
+            ["pcb", "export", "glb", "--subst-models", "--include-tracks", "--include-pads",
+             "--include-zones", "--include-silkscreen", "--include-soldermask",
+             "--cut-vias-in-body", "--output", str(exported / "board.glb"),
+             str(populated / "ecc83-pp.kicad_pcb")],
+        )
+        for command in commands:
+            exported_command = subprocess.run(
+                [str(cli), *command], env=env, timeout=120,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
+            if exported_command.returncode:
+                print(exported_command.stdout, file=sys.stderr)
+                exported_command.check_returncode()
+        assert (exported / "bom.csv").stat().st_size > 0, "BOM export is empty"
+        assert list((exported / "schematic").glob("*.svg")), "Schematic export is empty"
+        with (exported / "board.glb").open("rb") as model:
+            assert model.read(4) == b"glTF", "3D export is not a GLB"
+        print("CLI exports: BOM, schematic SVG and board GLB passed", flush=True)
 
 
 if __name__ == "__main__":

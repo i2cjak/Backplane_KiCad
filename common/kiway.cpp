@@ -134,6 +134,19 @@ const wxString KIWAY::dso_search_path( FACE_T aFaceId )
 #ifndef __WXMAC__
     wxString path;
 
+    // Relocatable runtimes may keep kifaces beside the bundled executable while
+    // using a loader wrapper.  In that case /proc/self/exe can identify the
+    // loader (and APPDIR may refer to the outer AppImage), so allow the
+    // launcher to provide the exact kiface directory.
+    wxString kifaceDir;
+
+    if( wxGetEnv( wxT( "KICAD_KIFACE_HOME" ), &kifaceDir ) && !kifaceDir.IsEmpty() )
+    {
+        wxFileName fn( kifaceDir, wxString::FromUTF8( name ) );
+        fn.SetExt( &KIFACE_SUFFIX[1] );
+        return fn.GetFullPath();
+    }
+
     if( m_ctl & (KFCTL_STANDALONE | KFCTL_CPP_PROJECT_SUITE) )
     {
         // The 2 *.cpp program launchers: single_top.cpp and kicad.cpp expect

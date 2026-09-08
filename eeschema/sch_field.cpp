@@ -25,6 +25,7 @@
 #include <wx/log.h>
 #include <wx/menu.h>
 
+#include <import_export.h>
 #include <google/protobuf/any.pb.h>
 #include <api/schematic/schematic_types.pb.h>
 #include <advanced_config.h>

@@ -33,6 +33,7 @@ set( KIAPI_PROTO_SRCS
     board/board.proto
     board/board_commands.proto
     board/board_types.proto
+    board/board_jobs.proto
 
     schematic/schematic_types.proto
     schematic/schematic_commands.proto

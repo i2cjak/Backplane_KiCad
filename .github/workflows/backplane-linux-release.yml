@@ -35,7 +35,7 @@ jobs:
             libglm-dev \
             libgl1-mesa-dev libglew-dev libglu1-mesa-dev libglib2.0-dev \
             libgtk-3-dev libharfbuzz-dev libgit2-dev libssl-dev \
-            libngspice0-dev libnng-dev libocct-data-exchange-dev \
+            libngspice0-dev ngspice libnng-dev libocct-data-exchange-dev \
             libocct-foundation-dev libocct-modeling-algorithms-dev \
             libocct-modeling-data-dev libocct-ocaf-dev \
             libocct-visualization-dev libpixman-1-dev libpng-dev \
@@ -73,8 +73,8 @@ jobs:
 
       - name: Compile IPC backports first
         run: |
-          cmake --build build/backplane-linux --parallel 2 --target kiapi
-          ninja -C build/backplane-linux -j2 \
+          cmake --build build/backplane-linux --parallel 4 --target kiapi
+          ninja -C build/backplane-linux -j4 \
             common/CMakeFiles/common.dir/api/api_enums.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_handler_sch.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_sch_enums.cpp.o \
@@ -85,7 +85,7 @@ jobs:
 
       - name: Build and install KiCad runtime
         run: |
-          cmake --build build/backplane-linux --parallel 2
+          cmake --build build/backplane-linux --parallel 4
           cmake --install build/backplane-linux
 
       - name: Preserve compiler cache after build attempts
@@ -110,46 +110,71 @@ jobs:
           cp -a stage/. "release/${archive_root}/"
           cp LICENSE* AUTHORS.txt README.md "release/${archive_root}/licenses/"
           cp -a /usr/share/common-licenses "release/${archive_root}/licenses/"
+          mkdir -p "release/${archive_root}/licenses/vendor"
+          while IFS= read -r -d '' notice; do
+            cp --parents "$notice" "release/${archive_root}/licenses/vendor/"
+          done < <(find thirdparty -type f \( -iname 'LICENSE*' -o -iname 'COPYING*' -o -iname 'NOTICE*' -o -iname 'COPYRIGHT*' \) -print0)
           git rev-parse HEAD > "release/${archive_root}/SOURCE_COMMIT"
           git describe --tags --always > "release/${archive_root}/SOURCE_VERSION"
           source_commit="$(git rev-parse HEAD)"
-          source_version="$(git describe --tags --always)"
           cat > "release/${archive_root}/manifest.json" <<MANIFEST
           {
             "sourceRepository": "https://github.com/i2cjak/Backplane_KiCad",
             "sourceCommit": "${source_commit}",
-            "version": "${source_version}",
+            "version": "${version}",
             "license": "GPL-3.0-or-later"
           }
           MANIFEST
           git archive --format=tar.gz --prefix="${archive_root}-source/" HEAD > "release/${archive_root}-source.tar.gz"
-          mapfile -d '' elf_files < <(find "release/${archive_root}" -type f \( -perm /111 -o -name '*.so*' \) -print0)
+          # ngspice and its code models are loaded dynamically, outside ELF NEEDED.
+          mkdir -p "release/${archive_root}/lib/ngspice"
+          cp -L /usr/lib/x86_64-linux-gnu/libngspice.so.0 "release/${archive_root}/lib/"
+          cp -L /usr/lib/x86_64-linux-gnu/ngspice/*.cm "release/${archive_root}/lib/ngspice/"
+          mapfile -d '' elf_files < <(find "release/${archive_root}" -type f \( -perm /111 -o -name '*.so*' -o -name '*.cm' \) -print0)
           declare -A package_notices=()
+          record_package_notice() {
+            local package_id="$1"
+            if [ -n "${package_notices[$package_id]+set}" ]; then return; fi
+            package_notices[$package_id]=1
+            local notice_dir="release/${archive_root}/licenses/debian/${package_id}"
+            mkdir -p "$notice_dir"
+            dpkg-query -W -f='Package: ${binary:Package}\nVersion: ${Version}\nSource: ${source:Package}\nSource-Version: ${source:Version}\nSource-URL: https://launchpad.net/ubuntu/+source/${source:Package}/${source:Version}\nArchitecture: ${Architecture}\n' "$package_id" > "$notice_dir/metadata.txt"
+            local copyright_file="/usr/share/doc/${package_id%%:*}/copyright"
+            if [ ! -f "$copyright_file" ]; then
+              copyright_file="$(dpkg -L "$package_id" | grep -E '/copyright$' | head -n 1 || true)"
+            fi
+            test -f "$copyright_file"
+            cp "$copyright_file" "$notice_dir/copyright"
+          }
+          record_package_notice ngspice
+          record_package_notice libngspice0
           for binary in "${elf_files[@]}"; do
             file -b "$binary" | grep -q 'ELF' || continue
-            lddtree -l "$binary" | while IFS= read -r library; do
+            lddtree -l "$binary" > "$RUNNER_TEMP/kicad-library-list"
+            while IFS= read -r library; do
               case "$library" in
                 /*)
                   mkdir -p "release/${archive_root}/lib"
-                  cp -L "$library" "release/${archive_root}/lib/$(basename "$library")"
-                  package_id="$(dpkg-query -S "$library" 2>/dev/null | sed -n '1s/: .*//p' || true)"
-                  if [ -n "$package_id" ] && [ -z "${package_notices[$package_id]+set}" ]; then
-                    package_notices[$package_id]=1
-                    notice_dir="release/${archive_root}/licenses/debian/${package_id}"
-                    mkdir -p "$notice_dir"
-                    dpkg-query -W -f='Package: ${binary:Package}\nVersion: ${Version}\nSource: ${source:Package}\nSource-Version: ${source:Version}\nSource-URL: https://launchpad.net/ubuntu/+source/${source:Package}/${source:Version}\nArchitecture: ${Architecture}\n' "$package_id" > "$notice_dir/metadata.txt"
-                    copyright_file="$(dpkg -L "$package_id" 2>/dev/null | grep -E '/copyright$' | head -n 1 || true)"
-                    if [ -n "$copyright_file" ]; then cp "$copyright_file" "$notice_dir/copyright"; fi
+                  destination="release/${archive_root}/lib/$(basename "$library")"
+                  if [ -f "$destination" ]; then
+                    cmp --silent "$library" "$destination" || { echo "Conflicting runtime library: $library" >&2; exit 1; }
+                  else
+                    cp -L "$library" "$destination"
                   fi
+                  package_id="$(dpkg-query -S "$library" "$(realpath "$library")" 2>/dev/null | sed -n '1s/: .*//p' || true)"
+                  if [ -n "$package_id" ]; then record_package_notice "$package_id"; fi
                   ;;
               esac
-            done
+            done < "$RUNNER_TEMP/kicad-library-list"
           done
           mv "release/${archive_root}/bin/kicad-cli" "release/${archive_root}/bin/kicad-cli.real"
           cat > "release/${archive_root}/bin/kicad-cli" <<'LAUNCHER'
           #!/usr/bin/env sh
           set -eu
           root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+          export KICAD_KIFACE_HOME="$root/bin"
+          export KICAD_STOCK_DATA_HOME="$root/share/kicad"
+          export KICAD_STOCK_PLUGIN_HOME="$root/lib/kicad/plugins"
           exec "$root/lib/ld-linux-x86-64.so.2" --library-path "$root/lib" "$root/bin/kicad-cli.real" "$@"
           LAUNCHER
           chmod +x "release/${archive_root}/bin/kicad-cli"
@@ -160,6 +185,8 @@ jobs:
             echo "IPC API: enabled"
             echo "Entry point: bin/kicad-cli api-server"
           } > "release/${archive_root}/RUNTIME_MANIFEST.txt"
+          # The runtime must work after relocation, with its build prefix absent.
+          mv stage "$RUNNER_TEMP/kicad-build-stage"
           "release/${archive_root}/bin/kicad-cli" --version
           "release/${archive_root}/bin/kicad-cli" api-server --help
           "$RUNNER_TEMP/ipc-smoke-venv/bin/python" scripts/backplane-ipc-smoke.py "release/${archive_root}/bin/kicad-cli"
@@ -170,6 +197,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: backplane-kicad-linux-x86_64
+          compression-level: 0
           retention-days: 1
           path: |
             release/backplane-kicad-linux-x86_64-*.tar.gz

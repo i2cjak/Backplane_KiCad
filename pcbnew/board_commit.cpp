@@ -751,7 +751,7 @@ void BOARD_COMMIT::Revert()
         case CHT_ADD:
             if( changeFlags & CHT_DONE )
             {
-                if( boardItem->Type() != PCB_NETINFO_T )
+                if( boardItem->Type() != PCB_NETINFO_T && view )
                     view->Remove( boardItem );
 
                 connectivity->Remove( boardItem );
@@ -782,7 +782,7 @@ void BOARD_COMMIT::Revert()
             if( !( changeFlags & CHT_DONE ) )
                 break;
 
-            if( boardItem->Type() != PCB_NETINFO_T )
+            if( boardItem->Type() != PCB_NETINFO_T && view )
                 view->Add( boardItem );
 
             if( m_isFootprintEditor )
@@ -802,7 +802,7 @@ void BOARD_COMMIT::Revert()
 
         case CHT_MODIFY:
         {
-            if( boardItem->Type() != PCB_NETINFO_T )
+            if( boardItem->Type() != PCB_NETINFO_T && view )
                 view->Remove( boardItem );
 
             connectivity->Remove( boardItem );
@@ -811,7 +811,7 @@ void BOARD_COMMIT::Revert()
             BOARD_ITEM* boardItemCopy = static_cast<BOARD_ITEM*>( entry.m_copy );
             boardItem->SwapItemData( boardItemCopy );
 
-            if( boardItem->Type() != PCB_NETINFO_T )
+            if( boardItem->Type() != PCB_NETINFO_T && view )
                 view->Add( boardItem );
 
             connectivity->Add( boardItem );
@@ -855,8 +855,8 @@ void BOARD_COMMIT::Revert()
         board->OnRatsnestChanged();
     }
 
-    PCB_SELECTION_TOOL* selTool = m_toolMgr->GetTool<PCB_SELECTION_TOOL>();
-    selTool->RebuildSelection();
+    if( PCB_SELECTION_TOOL* selTool = m_toolMgr->GetTool<PCB_SELECTION_TOOL>() )
+        selTool->RebuildSelection();
 
     // Property panel needs to know about the reselect
     m_toolMgr->PostEvent( EVENTS::SelectedItemsModified );

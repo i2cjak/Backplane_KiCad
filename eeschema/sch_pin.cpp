@@ -43,6 +43,7 @@
 #include <string_utils.h>
 #include <properties/property.h>
 #include <properties/property_mgr.h>
+#include <import_export.h>
 #include <api/schematic/schematic_types.pb.h>
 
 wxString FormatStackedPinForDisplay( const wxString& aPinNumber, int aPinLength, int aTextSize, KIFONT::FONT* aFont,

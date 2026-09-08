@@ -418,6 +418,13 @@ wxString PATHS::GetStockPlugins3DPath()
         fn.AppendDir( wxT( ".." ) );
         fn.AppendDir( wxT( "plugins" ) );
     }
+    // A relocatable runtime can provide its plugin directory explicitly.  This
+    // takes precedence over APPDIR, which may identify the outer AppImage when
+    // kicad-cli is launched through a bundled dynamic-loader wrapper.
+    else if( wxGetEnv( wxT( "KICAD_STOCK_PLUGIN_HOME" ), &envPath ) && !envPath.IsEmpty() )
+    {
+        fn.Assign( envPath, wxEmptyString );
+    }
     // AppImages have a different path to the plugins, otherwise we end up with host system
     // plugins being loaded.
     else if( wxGetEnv( wxT( "APPDIR" ), &envPath ) )

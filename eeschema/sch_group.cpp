@@ -21,6 +21,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
  */
 #include <bitmaps.h>
+#include <import_export.h>
 #include <api/schematic/schematic_types.pb.h>
 #include <google/protobuf/any.pb.h>
 #include <eda_draw_frame.h>

@@ -24,6 +24,7 @@
 #include <memory>
 #include <tl/expected.hpp>
 #include <core/typeinfo.h>
+#include <import_export.h>
 #include <api/common/envelope.pb.h>
 #include <api/schematic/schematic_types.pb.h>
 

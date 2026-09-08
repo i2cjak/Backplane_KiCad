@@ -23,6 +23,7 @@
  */
 
 #include <base_units.h>
+#include <import_export.h>
 #include <bitmaps.h>
 #include <string_utils.h>
 #include <core/mirror.h>

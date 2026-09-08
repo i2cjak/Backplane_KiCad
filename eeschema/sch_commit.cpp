@@ -590,6 +590,7 @@ void SCH_COMMIT::Revert()
     std::vector<SCH_ITEM*> bulkAddedItems;
     std::vector<SCH_ITEM*> bulkRemovedItems;
     std::vector<SCH_ITEM*> itemsChanged;
+    std::vector<SCH_ITEM*> itemsToDelete;
 
     for( COMMIT_LINE& ent : m_entries )
     {
@@ -608,13 +609,21 @@ void SCH_COMMIT::Revert()
         {
         case CHT_ADD:
             if( !( changeFlags & CHT_DONE ) )
+            {
+                // The item was staged but never attached to its screen.  It is
+                // owned by the commit until rollback and must not be leaked.
+                delete item;
+                ent.m_item = nullptr;
                 break;
+            }
 
             if( view )
                 view->Remove( item );
 
             screen->Remove( item );
             bulkRemovedItems.push_back( item );
+            itemsToDelete.push_back( item );
+            ent.m_item = nullptr;
             break;
 
         case CHT_REMOVE:
@@ -714,6 +723,10 @@ void SCH_COMMIT::Revert()
             schematic->OnItemsChanged( itemsChanged );
     }
 
+    // Remove ownership only after listeners have seen the complete update.
+    for( SCH_ITEM* item : itemsToDelete )
+        delete item;
+
     if( selTool )
         selTool->RebuildSelection();
 
@@ -722,4 +735,3 @@ void SCH_COMMIT::Revert()
 
     clear();
 }
-

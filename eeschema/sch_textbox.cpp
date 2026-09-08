@@ -26,6 +26,7 @@
 #include <advanced_config.h>
 #include <api/api_enums.h>
 #include <api/api_utils.h>
+#include <import_export.h>
 #include <api/schematic/schematic_types.pb.h>
 #include <base_units.h>
 #include <pgm_base.h>

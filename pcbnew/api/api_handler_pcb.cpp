@@ -374,7 +374,8 @@ std::optional<BOARD_ITEM*> API_HANDLER_PCB::getItemById( const KIID& aId ) const
 }
 
 
-bool API_HANDLER_PCB::validateDocumentInternal( const DocumentSpecifier& aDocument ) const
+tl::expected<bool, ApiResponseStatus>
+API_HANDLER_PCB::validateDocumentInternal( const DocumentSpecifier& aDocument ) const
 {
     if( aDocument.type() != DocumentType::DOCTYPE_PCB )
         return false;

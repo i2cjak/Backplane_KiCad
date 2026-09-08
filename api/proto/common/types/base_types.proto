@@ -346,9 +346,14 @@ message StrokeAttributes
 
 enum GraphicFillType
 {
-  GFT_UNKNOWN  = 0;
-  GFT_UNFILLED = 1;
-  GFT_FILLED   = 2;
+  GFT_UNKNOWN                         = 0;
+  GFT_UNFILLED                        = 1;
+  GFT_FILLED                          = 2;
+  GFT_FILLED_WITH_COLOR               = 3;
+  GFT_FILLED_WITH_BACKGROUND_BODY_COLOR = 4;
+  GFT_HATCH                           = 5;
+  GFT_REVERSE_HATCH                   = 6;
+  GFT_CROSS_HATCH                     = 7;
 }
 
 message GraphicFillAttributes
@@ -483,4 +488,66 @@ enum ElectricalPinType
 
   // A no-connect pin should not be connected to any net
   EPT_NO_CONNECT = 12;
+}
+
+enum RuleSeverity
+{
+  RS_UNKNOWN = 0;
+  RS_WARNING = 1;
+  RS_ERROR = 2;
+  RS_EXCLUSION = 3;
+  RS_IGNORE = 4;
+  RS_INFO = 5;
+  RS_ACTION = 6;
+  RS_DEBUG = 7;
+  RS_UNDEFINED = 8;
+}
+
+message MinOptMax
+{
+  optional int32 min = 1;
+  optional int32 opt = 2;
+  optional int32 max = 3;
+}
+
+enum PageSize
+{
+  PS_UNKNOWN = 0;
+  PS_A5 = 1;
+  PS_A4 = 2;
+  PS_A3 = 3;
+  PS_A2 = 4;
+  PS_A1 = 5;
+  PS_A0 = 6;
+  PS_ANSI_A = 7;   // ANSI A (8.5 x 11 in)
+  PS_ANSI_B = 8;   // ANSI B (11 x 17 in)
+  PS_ANSI_C = 9;   // ANSI C (17 x 22 in)
+  PS_ANSI_D = 10;  // ANSI D (22 x 34 in)
+  PS_ANSI_E = 11;  // ANSI E (34 x 44 in)
+  PS_GERBER = 12;  // 32 x 32 in
+  PS_US_LETTER = 13;
+  PS_US_LEGAL = 14;
+  PS_US_LEDGER = 15;
+  PS_USER = 16;
+}
+
+enum PageOrientation
+{
+  PO_UNKNOWN = 0;
+  PO_LANDSCAPE = 1;
+  PO_PORTRAIT = 2;
+}
+
+message PageSettings
+{
+  PageSize page_size = 1;
+
+  // Relevant only when page_size == PS_USER
+  Vector2 user_page_size = 2;
+
+  PageOrientation orientation = 4;
+
+  // Path to a .kicad_wks drawing sheet file.
+  // Empty string means the default (built-in) drawing sheet is used.
+  string drawing_sheet = 5;
 }

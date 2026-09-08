@@ -24,6 +24,7 @@
  */
 
 #include "markup_parser.h"
+#include <import_export.h>
 #include <google/protobuf/any.pb.h>
 
 #include <advanced_config.h>

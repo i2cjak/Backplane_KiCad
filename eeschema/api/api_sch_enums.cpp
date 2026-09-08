@@ -19,6 +19,7 @@
  */
 
 #include <api/api_enums.h>
+#include <import_export.h>
 #include <api/schematic/schematic_types.pb.h>
 #include <wx/wx.h>
 

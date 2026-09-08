@@ -54,6 +54,7 @@
 #include <magic_enum.hpp>
 #include <api/api_enums.h>
 #include <api/api_utils.h>
+#include <import_export.h>
 #include <api/schematic/schematic_types.pb.h>
 #include <properties/property.h>
 #include <properties/property_mgr.h>
