@@ -51,6 +51,9 @@ public:
                VECTOR2I aSize = VECTOR2I( schIUScale.MilsToIU( MIN_SHEET_WIDTH ),
                                           schIUScale.MilsToIU( MIN_SHEET_HEIGHT ) ) );
 
+    void Serialize( google::protobuf::Any& aContainer ) const override;
+    bool Deserialize( const google::protobuf::Any& aContainer ) override;
+
     /**
      * Copy \a aSheet into a new object.
      *

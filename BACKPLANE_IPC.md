@@ -29,6 +29,17 @@ license and third-party notices remain in the
 repository root. Any binary distribution must ship those files alongside the
 KiCad runtime and preserve the corresponding third-party notices.
 
+The schematic item and hierarchy backports are based on the following public
+upstream revisions, applied without replacing the 10.0.6 base: `4ccede3a24`
+(graphic types and serializers), `7526d2901e` (groups and sheet symbols),
+`edc6236b07` (text and labels), `9533fdac22` (symbols and pins),
+`76ac9e07a6` (symbol/sheet instances), `6cca4c734f` (naming follow-up),
+`48f4d67cfe` (hierarchy query), `df8f79916a` (subsheet handling), and
+`b90628aa0d` (schematic netlist). Schematic `GetItems`, create/update/delete,
+commit rollback, save, hierarchy, and netlist operations are the supported
+IPC surface; clients should use the generated stable proto names such as
+`SchematicText` and `SchematicSymbolInstance`.
+
 The Backplane additions are limited to the headless IPC plumbing and its PCB
 and schematic document contexts. They do not claim compatibility with KiCad
 development or nightly builds.

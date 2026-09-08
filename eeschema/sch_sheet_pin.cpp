@@ -25,6 +25,9 @@
 #include <algorithm>
 
 #include <bitmaps.h>
+#include <api/api_enums.h>
+#include <api/api_utils.h>
+#include <api/schematic/schematic_types.pb.h>
 #include <general.h>
 #include <geometry/shape_line_chain.h>
 #include <string_utils.h>
@@ -58,6 +61,56 @@ SCH_SHEET_PIN::SCH_SHEET_PIN( SCH_SHEET* parent, const VECTOR2I& pos, const wxSt
     m_shape      = LABEL_FLAG_SHAPE::L_INPUT;
     m_isDangling = true;
     m_number     = 2;
+}
+
+
+void SCH_SHEET_PIN::Serialize( google::protobuf::Any& aContainer ) const
+{
+    using namespace kiapi::schematic::types;
+
+    SheetPin pin;
+
+    pin.mutable_id()->set_value( m_Uuid.AsStdString() );
+    kiapi::common::PackVector2( *pin.mutable_position(), GetPosition() );
+    pin.set_spin_style(
+            ToProtoEnum<SPIN_STYLE::SPIN, SchematicLabelSpinStyle>(
+                    static_cast<SPIN_STYLE::SPIN>( static_cast<int>( GetSpinStyle() ) ) ) );
+    pin.set_shape( ToProtoEnum<LABEL_FLAG_SHAPE, SchematicLabelShape>( GetShape() ) );
+    pin.set_side( ToProtoEnum<SHEET_SIDE, SheetSide>( GetSide() ) );
+    pin.set_locked( SCH_ITEM::IsLocked() ? kiapi::common::types::LockedState::LS_LOCKED
+                                         : kiapi::common::types::LockedState::LS_UNLOCKED );
+
+    google::protobuf::Any any;
+    EDA_TEXT::Serialize( any );
+    any.UnpackTo( pin.mutable_text() );
+
+    aContainer.PackFrom( pin );
+}
+
+
+bool SCH_SHEET_PIN::Deserialize( const google::protobuf::Any& aContainer )
+{
+    using namespace kiapi::schematic::types;
+
+    SheetPin pin;
+
+    if( !aContainer.UnpackTo( &pin ) )
+        return false;
+
+    const_cast<KIID&>( m_Uuid ) = KIID( pin.id().value() );
+
+    google::protobuf::Any any;
+    any.PackFrom( pin.text() );
+
+    if( !EDA_TEXT::Deserialize( any ) )
+        return false;
+
+    SetPosition( kiapi::common::UnpackVector2( pin.position() ) );
+    SetSide( FromProtoEnum<SHEET_SIDE, SheetSide>( pin.side() ) );
+    SetSpinStyle( FromProtoEnum<SPIN_STYLE::SPIN, SchematicLabelSpinStyle>( pin.spin_style() ) );
+    SetShape( FromProtoEnum<LABEL_FLAG_SHAPE, SchematicLabelShape>( pin.shape() ) );
+    SetLocked( pin.locked() == kiapi::common::types::LockedState::LS_LOCKED );
+    return true;
 }
 
 

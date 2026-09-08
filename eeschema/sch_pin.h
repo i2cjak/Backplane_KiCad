@@ -71,6 +71,9 @@ public:
 
     SCH_PIN& operator=( const SCH_PIN& aPin );
 
+    void Serialize( google::protobuf::Any& aContainer ) const override;
+    bool Deserialize( const google::protobuf::Any& aContainer ) override;
+
     wxString GetClass() const override
     {
         return wxT( "SCH_PIN" );

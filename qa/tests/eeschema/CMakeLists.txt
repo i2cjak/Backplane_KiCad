@@ -161,6 +161,8 @@ set( QA_EESCHEMA_SRCS
     test_incremental_netlister.cpp
     test_legacy_power_symbols.cpp
     test_history_autosave_legacy.cpp
+    test_sch_api_enums.cpp
+    test_sch_api_proto.cpp
     test_sch_commit.cpp
     test_shape_corner_radius.cpp
     test_sch_group.cpp

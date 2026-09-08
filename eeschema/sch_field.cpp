@@ -25,6 +25,8 @@
 #include <wx/log.h>
 #include <wx/menu.h>
 
+#include <google/protobuf/any.pb.h>
+#include <api/schematic/schematic_types.pb.h>
 #include <advanced_config.h>
 #include <base_units.h>
 #include <common.h> // for ExpandTextVars
@@ -190,6 +192,41 @@ SCH_FIELD::SCH_FIELD( const SCH_FIELD& aField ) :
     m_lastResolvedColor = aField.m_lastResolvedColor;
 
     m_renderCache.reset();
+}
+
+
+void SCH_FIELD::Serialize( google::protobuf::Any& aContainer ) const
+{
+    kiapi::schematic::types::SchematicField field;
+
+    field.set_name( GetName( false ).ToUTF8() );
+    field.set_visible( IsVisible() );
+    field.set_show_name( IsNameShown() );
+    field.set_allow_auto_place( CanAutoplace() );
+
+    google::protobuf::Any any;
+    EDA_TEXT::Serialize( any );
+    any.UnpackTo( field.mutable_text() );
+
+    aContainer.PackFrom( field );
+}
+
+
+bool SCH_FIELD::Deserialize( const google::protobuf::Any& aContainer )
+{
+    kiapi::schematic::types::SchematicField field;
+
+    if( !aContainer.UnpackTo( &field ) )
+        return false;
+
+    SetName( wxString::FromUTF8( field.name() ) );
+    SetVisible( field.visible() );
+    SetNameShown( field.show_name() );
+    SetCanAutoplace( field.allow_auto_place() );
+
+    google::protobuf::Any any;
+    any.PackFrom( field.text() );
+    return EDA_TEXT::Deserialize( any );
 }
 
 
@@ -1461,11 +1498,17 @@ bool SCH_FIELD::operator==( const SCH_ITEM& aOther ) const
 
 bool SCH_FIELD::operator==( const SCH_FIELD& aOther ) const
 {
-    // Identical fields of different symbols are not equal.
-    if( !GetParentSymbol() || !aOther.GetParentSymbol()
-        || GetParentSymbol()->m_Uuid != aOther.GetParentSymbol()->m_Uuid )
+    // Identical fields owned by different items are not equal.
+    if( m_parent || aOther.m_parent )
     {
-        return false;
+        if( !m_parent || !aOther.m_parent )
+            return false;
+
+        if( m_parent->Type() != aOther.m_parent->Type() )
+            return false;
+
+        if( m_parent->m_Uuid != aOther.m_parent->m_Uuid )
+            return false;
     }
 
     if( IsMandatory() != aOther.IsMandatory() )

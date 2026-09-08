@@ -31,6 +31,7 @@
 #include <eda_item.h>
 #include <base_units.h>
 #include <callback_gal.h>
+#include <api/api_utils.h>
 #include <eda_text.h>    // for EDA_TEXT, TEXT_EFFECTS, GR_TEXT_VJUSTIF...
 #include <gal/color4d.h> // for COLOR4D, COLOR4D::BLACK
 #include <font/glyph.h>
@@ -201,6 +202,9 @@ void EDA_TEXT::Serialize( google::protobuf::Any& aContainer ) const
     attrs->set_keep_upright( IsKeepUpright() );
     PackVector2( *attrs->mutable_size(), GetTextSize() );
 
+    if( GetTextColor() != COLOR4D::UNSPECIFIED )
+        PackColor( *attrs->mutable_color(), GetTextColor() );
+
     aContainer.PackFrom( text );
 }
 
@@ -228,6 +232,11 @@ bool EDA_TEXT::Deserialize( const google::protobuf::Any& aContainer )
         attrs.m_Multiline = text.attributes().multiline();
         attrs.m_KeepUpright = text.attributes().keep_upright();
         attrs.m_Size = UnpackVector2( text.attributes().size() );
+
+        if( text.attributes().has_color() )
+            attrs.m_Color = UnpackColor( text.attributes().color() );
+        else
+            attrs.m_Color = COLOR4D::UNSPECIFIED;
 
         if( !text.attributes().font_name().empty() )
         {

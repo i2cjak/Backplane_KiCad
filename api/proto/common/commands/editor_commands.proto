@@ -117,6 +117,8 @@ message RunActionResponse
  */
 message BeginCommit
 {
+  // Specifies which document to associate the commit with
+  kiapi.common.types.ItemHeader header = 1;
 }
 
 
@@ -145,6 +147,9 @@ message EndCommit
 
   // Optional message describing this changeset
   string message = 3;
+
+  // Specifies which document to associate the commit with
+  kiapi.common.types.ItemHeader header = 4;
 }
 
 

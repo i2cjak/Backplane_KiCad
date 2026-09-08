@@ -24,6 +24,9 @@
 #include <api/api_handler_editor.h>
 #include <api/sch_context.h>
 #include <api/common/commands/editor_commands.pb.h>
+#include <api/common/commands/project_commands.pb.h>
+#include <google/protobuf/empty.pb.h>
+#include <api/schematic/schematic_commands.pb.h>
 #include <api/schematic/schematic_jobs.pb.h>
 #include <kiid.h>
 
@@ -32,6 +35,7 @@ using namespace kiapi::common;
 
 class SCH_EDIT_FRAME;
 class SCH_ITEM;
+class SCH_SHEET;
 
 
 class API_HANDLER_SCH : public API_HANDLER_EDITOR
@@ -72,7 +76,18 @@ protected:
 
     void onModified() override;
 
+    SCH_CONTEXT* context() const { return m_context.get(); }
+
+    TOOL_MANAGER* toolManager() const { return context()->GetToolManager(); }
+
+    PROJECT& project() const { return context()->Prj(); }
 private:
+    HANDLER_RESULT<google::protobuf::Empty> handleSaveDocument(
+            const HANDLER_CONTEXT<commands::SaveDocument>& aCtx );
+
+    HANDLER_RESULT<google::protobuf::Empty> handleSaveCopyOfDocument(
+            const HANDLER_CONTEXT<commands::SaveCopyOfDocument>& aCtx );
+
     HANDLER_RESULT<commands::GetOpenDocumentsResponse>
     handleGetOpenDocuments( const HANDLER_CONTEXT<commands::GetOpenDocuments>& aCtx );
 
@@ -98,6 +113,15 @@ private:
 
     HANDLER_RESULT<types::RunJobResponse>
     handleRunSchematicJobExportBOM( const HANDLER_CONTEXT<kiapi::schematic::jobs::RunSchematicJobExportBOM>& aCtx );
+
+    HANDLER_RESULT<kiapi::schematic::types::SchematicHierarchyResponse>
+    handleGetSchematicHierarchy( const HANDLER_CONTEXT<kiapi::schematic::types::GetSchematicHierarchy>& aCtx );
+
+    void packSheetInstance( kiapi::schematic::types::SheetInstance* aInstance, SCH_SHEET_PATH& aPath,
+                            SCH_SHEET* aSheet );
+
+    HANDLER_RESULT<kiapi::schematic::types::SchematicNetlistResponse>
+    handleGetSchematicNetlist( const HANDLER_CONTEXT<kiapi::schematic::types::GetSchematicNetlist>& aCtx );
 
     SCHEMATIC* schematic() const;
 

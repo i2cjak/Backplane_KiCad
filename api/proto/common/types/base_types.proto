@@ -146,10 +146,6 @@ message DocumentSpecifier
 
     // If type == DT_PCB, identifies a PCB with a given filename, e.g. "board.kicad_pcb"
     string board_filename = 4;
-
-    // If type == DT_SCHEMATIC, identifies a single schematic file. This is relevant
-    // instead of `sheet_path` when specifying a top-level schematic to open or work with.
-    string schematic_filename = 6;
   }
 
   ProjectSpecifier project = 5;
@@ -310,6 +306,9 @@ message TextAttributes
   bool                        multiline            = 12;
   bool                        keep_upright         = 13;
   kiapi.common.types.Vector2  size                 = 14;
+
+  // May be present for schematic text; meaningless for board text
+  optional kiapi.common.types.Color color = 15;
 }
 
 message Text

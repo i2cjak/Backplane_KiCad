@@ -22,6 +22,9 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
  */
 
+#include <api/api_enums.h>
+#include <api/api_sch_utils.h>
+#include <api/api_utils.h>
 #include <sch_collectors.h>
 #include <sch_commit.h>
 #include <sch_edit_frame.h>
@@ -29,6 +32,7 @@
 #include <bitmaps.h>
 #include <common.h>
 #include <core/mirror.h>
+#include "lib_symbol.h"
 #include <sch_shape.h>
 #include <pgm_base.h>
 #include <sim/sim_model.h>
@@ -43,6 +47,7 @@
 #include <string_utils.h>
 #include <geometry/geometry_utils.h>
 #include <sch_rule_area.h>
+#include <api/schematic/schematic_types.pb.h>
 
 #include <utility>
 #include <validators.h>
@@ -207,6 +212,219 @@ void SCH_SYMBOL::Init( const VECTOR2I& pos )
 EDA_ITEM* SCH_SYMBOL::Clone() const
 {
     return new SCH_SYMBOL( *this );
+}
+
+
+void SCH_SYMBOL::Serialize( google::protobuf::Any& aContainer ) const
+{
+    using namespace kiapi::common;
+    using namespace kiapi::schematic::types;
+
+    SchematicSymbolInstance symbol;
+
+    symbol.mutable_id()->set_value( m_Uuid.AsStdString() );
+    PackVector2( *symbol.mutable_position(), GetPosition() );
+    symbol.set_locked( IsLocked() ? types::LockedState::LS_LOCKED : types::LockedState::LS_UNLOCKED );
+
+    SchematicSymbolTransform* transform = symbol.mutable_transform();
+    transform->set_orientation(
+            ToProtoEnum<SYMBOL_ORIENTATION_PROP, SchematicSymbolOrientation>( GetOrientationProp() ) );
+    transform->set_mirror_x( GetMirrorX() );
+    transform->set_mirror_y( GetMirrorY() );
+
+    if( GetBodyStyleCount() > 1 )
+        symbol.mutable_body_style()->set_style( GetBodyStyle() );
+
+    SchematicSymbol* def = symbol.mutable_definition();
+
+    for( SCH_PIN* pin : GetAllLibPins() )
+    {
+        SchematicSymbolChild* item = def->add_items();
+        item->mutable_unit()->set_unit( pin->GetUnit() );
+        item->mutable_body_style()->set_style( pin->GetBodyStyle() );
+        item->set_is_private( pin->IsPrivate() );
+        pin->Serialize( *item->mutable_item() );
+    }
+
+    google::protobuf::Any any;
+
+    GetField( FIELD_T::REFERENCE )->Serialize( any );
+    any.UnpackTo( symbol.mutable_reference_field() );
+
+    GetField( FIELD_T::VALUE )->Serialize( any );
+    any.UnpackTo( symbol.mutable_value_field() );
+
+    GetField( FIELD_T::FOOTPRINT )->Serialize( any );
+    any.UnpackTo( symbol.mutable_footprint_field() );
+
+    GetField( FIELD_T::DATASHEET )->Serialize( any );
+    any.UnpackTo( symbol.mutable_datasheet_field() );
+
+    GetField( FIELD_T::DESCRIPTION )->Serialize( any );
+    any.UnpackTo( symbol.mutable_description_field() );
+
+    if( m_part )
+    {
+        m_part->GetField( FIELD_T::REFERENCE )->Serialize( any );
+        any.UnpackTo( def->mutable_reference_field() );
+
+        m_part->GetField( FIELD_T::VALUE )->Serialize( any );
+        any.UnpackTo( def->mutable_value_field() );
+
+        m_part->GetField( FIELD_T::FOOTPRINT )->Serialize( any );
+        any.UnpackTo( def->mutable_footprint_field() );
+
+        m_part->GetField( FIELD_T::DATASHEET )->Serialize( any );
+        any.UnpackTo( def->mutable_datasheet_field() );
+
+        m_part->GetField( FIELD_T::DESCRIPTION )->Serialize( any );
+        any.UnpackTo( def->mutable_description_field() );
+
+        for( const SCH_ITEM& drawItem : m_part->GetDrawItems() )
+        {
+            if( drawItem.Type() == SCH_FIELD_T && static_cast<const SCH_FIELD&>( drawItem ).IsMandatory() )
+                continue;
+
+            if( drawItem.Type() == SCH_PIN_T )
+                continue;
+
+            SchematicSymbolChild* item = def->add_items();
+            item->mutable_unit()->set_unit( drawItem.GetUnit() );
+            item->mutable_body_style()->set_style( drawItem.GetBodyStyle() );
+            item->set_is_private( drawItem.IsPrivate() );
+            drawItem.Serialize( *item->mutable_item() );
+        }
+
+        def->set_unit_count( m_part->GetUnitCount() );
+        def->set_body_style_count( m_part->GetBodyStyleCount() );
+        def->set_keywords( m_part->GetKeyWords().ToUTF8() );
+
+        for( const wxString& filter : m_part->GetFPFilters() )
+            def->add_footprint_filters( filter.ToUTF8() );
+    }
+
+    symbol.set_show_pin_names( GetShowPinNames() );
+    symbol.set_show_pin_numbers( GetShowPinNumbers() );
+
+    // TODO(JE) comment says this is in mils; convert to nm
+    symbol.mutable_pin_name_offset()->set_value_nm( GetPinNameOffset() );
+
+    aContainer.PackFrom( symbol );
+}
+
+
+bool SCH_SYMBOL::Deserialize( const google::protobuf::Any& aContainer )
+{
+    using namespace kiapi::common;
+    using namespace kiapi::common::types;
+    using namespace kiapi::schematic::types;
+
+    SchematicSymbolInstance symbol;
+
+    if( !aContainer.UnpackTo( &symbol ) )
+        return false;
+
+    const_cast<::KIID&>( m_Uuid ) = ::KIID( symbol.id().value() );
+    SetPosition( UnpackVector2( symbol.position() ) );
+    SetLocked( symbol.locked() == LockedState::LS_LOCKED );
+
+    SetOrientationProp( FromProtoEnum<SYMBOL_ORIENTATION_PROP>( symbol.transform().orientation() ) );
+    SetMirrorX( symbol.transform().mirror_x() );
+    SetMirrorY( symbol.transform().mirror_y() );
+
+    const SchematicSymbol& def = symbol.definition();
+
+    LIB_ID libId = LibIdFromProto( def.id() );
+    m_lib_id = libId;
+
+    LIB_SYMBOL* libSymbol = new LIB_SYMBOL( libId.GetLibItemName() );
+    libSymbol->SetLibId( libId );
+
+    google::protobuf::Any any;
+
+    any.PackFrom( def.reference_field() );
+    libSymbol->GetField( FIELD_T::REFERENCE )->Deserialize( any );
+
+    any.PackFrom( def.value_field() );
+    libSymbol->GetField( FIELD_T::VALUE )->Deserialize( any );
+
+    any.PackFrom( def.footprint_field() );
+    libSymbol->GetField( FIELD_T::FOOTPRINT )->Deserialize( any );
+
+    any.PackFrom( def.datasheet_field() );
+    libSymbol->GetField( FIELD_T::DATASHEET )->Deserialize( any );
+
+    any.PackFrom( def.description_field() );
+    libSymbol->GetField( FIELD_T::DESCRIPTION )->Deserialize( any );
+
+    for( const SchematicSymbolChild& child : def.items() )
+    {
+        std::optional<KICAD_T> type = TypeNameFromAny( child.item() );
+
+        if( !type )
+            continue;
+
+        std::unique_ptr<EDA_ITEM> item = CreateItemForType( *type, libSymbol );
+
+        if( !item || !item->Deserialize( child.item() ) )
+            continue;
+
+        SCH_ITEM* schItem = static_cast<SCH_ITEM*>( item.release() );
+
+        if( child.has_unit() )
+            schItem->SetUnit( child.unit().unit() );
+
+        if( child.has_body_style() )
+            schItem->SetBodyStyle( child.body_style().style() );
+
+        schItem->SetPrivate( child.is_private() );
+        libSymbol->AddDrawItem( schItem );
+    }
+
+    if( def.unit_count() > 0 )
+        libSymbol->SetUnitCount( def.unit_count(), false );
+
+    if( def.body_style_count() > 0 )
+        libSymbol->SetBodyStyleCount( def.body_style_count(), false, false );
+
+    if( !def.keywords().empty() )
+        libSymbol->SetKeyWords( wxString::FromUTF8( def.keywords() ) );
+
+    if( def.footprint_filters_size() > 0 )
+    {
+        wxArrayString filters;
+
+        for( const std::string& filter : def.footprint_filters() )
+            filters.Add( wxString::FromUTF8( filter ) );
+
+        libSymbol->SetFPFilters( filters );
+    }
+
+    SetLibSymbol( libSymbol );
+
+    if( symbol.has_body_style() )
+        SetBodyStyle( symbol.body_style().style() );
+
+    any.PackFrom( symbol.reference_field() );
+    GetField( FIELD_T::REFERENCE )->Deserialize( any );
+
+    any.PackFrom( symbol.value_field() );
+    GetField( FIELD_T::VALUE )->Deserialize( any );
+
+    any.PackFrom( symbol.footprint_field() );
+    GetField( FIELD_T::FOOTPRINT )->Deserialize( any );
+
+    any.PackFrom( symbol.datasheet_field() );
+    GetField( FIELD_T::DATASHEET )->Deserialize( any );
+
+    any.PackFrom( symbol.description_field() );
+    GetField( FIELD_T::DESCRIPTION )->Deserialize( any );
+
+    SetShowPinNames( symbol.show_pin_names() );
+    SetShowPinNumbers( symbol.show_pin_numbers() );
+    SetPinNameOffset( symbol.pin_name_offset().value_nm() );
+
+    return true;
 }
 
 

@@ -105,13 +105,40 @@ SCH_LINE::SCH_LINE( const SCH_LINE& aLine ) :
 
 void SCH_LINE::Serialize( google::protobuf::Any &aContainer ) const
 {
-    kiapi::schematic::types::Line line;
+    using namespace kiapi::common;
+
+    kiapi::schematic::types::SchematicLine line;
+    types::StrokeAttributes* stroke = line.mutable_stroke();
 
     line.mutable_id()->set_value( m_Uuid.AsStdString() );
-    kiapi::common::PackVector2( *line.mutable_start(), GetStartPoint() );
-    kiapi::common::PackVector2( *line.mutable_end(), GetEndPoint() );
-    line.set_layer(
-            ToProtoEnum<SCH_LAYER_ID, kiapi::schematic::types::SchematicLayer>( GetLayer() ) );
+    PackVector2( *line.mutable_start(), GetStartPoint() );
+    PackVector2( *line.mutable_end(), GetEndPoint() );
+    line.set_locked( IsLocked() ? types::LockedState::LS_LOCKED : types::LockedState::LS_UNLOCKED );
+
+    stroke->mutable_width()->set_value_nm( m_stroke.GetWidth() );
+    stroke->set_style( ToProtoEnum<LINE_STYLE, types::StrokeLineStyle>( m_stroke.GetLineStyle() ) );
+
+    if( m_stroke.GetColor() != COLOR4D::UNSPECIFIED )
+        PackColor( *stroke->mutable_color(), m_stroke.GetColor() );
+
+    switch( GetLayer() )
+    {
+    case LAYER_WIRE:
+        line.set_type( kiapi::schematic::types::SLT_WIRE );
+        break;
+
+    case LAYER_BUS:
+        line.set_type( kiapi::schematic::types::SLT_BUS );
+        break;
+
+    case LAYER_NOTES:
+        line.set_type( kiapi::schematic::types::SLT_GRAPHIC );
+        break;
+
+    default:
+        line.set_type( kiapi::schematic::types::SLT_UNKNOWN );
+        break;
+    }
 
     aContainer.PackFrom( line );
 }
@@ -119,26 +146,39 @@ void SCH_LINE::Serialize( google::protobuf::Any &aContainer ) const
 
 bool SCH_LINE::Deserialize( const google::protobuf::Any &aContainer )
 {
-    kiapi::schematic::types::Line line;
+    using namespace kiapi::common;
+
+    kiapi::schematic::types::SchematicLine line;
 
     if( !aContainer.UnpackTo( &line ) )
         return false;
 
     const_cast<KIID&>( m_Uuid ) = KIID( line.id().value() );
-    SetStartPoint( kiapi::common::UnpackVector2( line.start() ) );
-    SetEndPoint( kiapi::common::UnpackVector2( line.end() ) );
-    SCH_LAYER_ID layer =
-            FromProtoEnum<SCH_LAYER_ID, kiapi::schematic::types::SchematicLayer>( line.layer() );
+    SetStartPoint( UnpackVector2( line.start() ) );
+    SetEndPoint( UnpackVector2( line.end() ) );
+    SetLocked( line.locked() == types::LockedState::LS_LOCKED );
 
-    switch( layer )
+    m_stroke.SetWidth( line.stroke().width().value_nm() );
+    m_stroke.SetLineStyle( FromProtoEnum<LINE_STYLE, types::StrokeLineStyle>( line.stroke().style() ) );
+
+    if( line.stroke().has_color() )
+        m_stroke.SetColor( UnpackColor( line.stroke().color() ) );
+    else
+        m_stroke.SetColor( COLOR4D::UNSPECIFIED );
+
+    switch( line.type() )
     {
-    case LAYER_WIRE:
-    case LAYER_BUS:
-    case LAYER_NOTES:
-        SetLayer( layer );
+    case kiapi::schematic::types::SLT_WIRE:
+        SetLayer( LAYER_WIRE );
+        break;
+
+    case kiapi::schematic::types::SLT_BUS:
+        SetLayer( LAYER_BUS );
         break;
 
     default:
+    case kiapi::schematic::types::SLT_GRAPHIC:
+        SetLayer( LAYER_NOTES );
         break;
     }
 

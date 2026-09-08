@@ -143,7 +143,7 @@ void testProtoFromKiCadObject( KiCadClass* aInput, Factory&& aCreateOutput )
             BOOST_TEST_FAIL( "Round-tripped protobuf does not match" );
         }
 
-        if( !( *output == *aInput ) )
+        if( !output->operator==( *aInput ) )
             BOOST_TEST_FAIL( "Round-tripped object does not match" );
     }
 }

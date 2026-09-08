@@ -1,7 +1,8 @@
 /*
  * This program source code file is part of KiCad, a free EDA CAD application.
  *
- * Copyright (C) 2024 KiCad Developers, see AUTHORS.txt for contributors.
+ * Copyright The KiCad Developers, see AUTHORS.txt for contributors.
+ * @author Jon Evans <jon@craftyjon.com>
  *
  * This program is free software: you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the
@@ -21,55 +22,430 @@ syntax = "proto3";
 
 package kiapi.schematic.types;
 
+import "google/protobuf/any.proto";
 import "common/types/base_types.proto";
 
-enum SchematicLayer
+message SchematicField
 {
-  SL_UNKNOWN = 0;
+  // Fields do not currently track a unique ID; but may in the future
+  //kiapi.common.types.KIID id = 1;
+  string name = 2;
+  kiapi.common.types.Text text = 3;
+  bool visible = 4;
+  bool show_name = 5;
+  bool allow_auto_place = 6;
+  bool is_private = 7;
+}
+
+enum SchematicLineType
+{
+  SLT_UNKNOWN = 0;
+  SLT_WIRE = 1;
+  SLT_BUS = 2;
+  SLT_GRAPHIC = 3;
 }
 
 /// Represents a schematic line segment, which may be a wire, bus, or graphical line
-message Line
+message SchematicLine
 {
-  kiapi.common.types.KIID    id     = 1;
-  kiapi.common.types.Vector2 start  = 2;
-  kiapi.common.types.Vector2 end    = 3;
-
-  /**
-   * One of: LAYER_BUS, LAYER_WIRE, LAYER_NOTES
-   */
-  SchematicLayer layer = 4;
+  kiapi.common.types.KIID id = 1;
+  kiapi.common.types.Vector2 start = 2;
+  kiapi.common.types.Vector2 end = 3;
+  SchematicLineType type = 4;
+  kiapi.common.types.StrokeAttributes stroke = 5;
+  kiapi.common.types.LockedState locked = 6;
 }
 
-message Text
+message Junction
 {
-  kiapi.common.types.Text text = 1;
+  kiapi.common.types.KIID id = 1;
+  kiapi.common.types.Vector2 position = 2;
+  kiapi.common.types.Distance diameter = 3;
+  kiapi.common.types.Color color = 4;
+  kiapi.common.types.LockedState locked = 5;
+}
+
+message NoConnectMarker
+{
+  kiapi.common.types.KIID id = 1;
+  kiapi.common.types.Vector2 position = 2;
+  kiapi.common.types.Distance size = 3;
+  kiapi.common.types.LockedState locked = 4;
+}
+
+enum BusEntryType
+{
+  BET_UNKNOWN = 0;
+  BET_WIRE_TO_BUS = 1;
+  BET_BUS_TO_BUS = 2;
+}
+
+message BusEntry
+{
+  kiapi.common.types.KIID id = 1;
+  kiapi.common.types.Vector2 position = 2;
+  kiapi.common.types.Vector2 size = 3;
+  kiapi.common.types.StrokeAttributes stroke = 4;
+  kiapi.common.types.LockedState locked = 5;
+  BusEntryType type = 6;
+}
+
+message SchematicText
+{
+  kiapi.common.types.KIID id = 1;
+  kiapi.common.types.Text text = 2;
+  kiapi.common.types.LockedState locked = 3;
+  bool exclude_from_sim = 4;
+}
+
+message SchematicTextBox
+{
+  kiapi.common.types.KIID id = 1;
+  kiapi.common.types.TextBox textbox = 2;
+  kiapi.common.types.GraphicAttributes graphic_attributes = 3;
+  kiapi.common.types.LockedState locked = 4;
+  bool exclude_from_sim = 5;
+  kiapi.common.types.Distance margin_left = 6;
+  kiapi.common.types.Distance margin_top = 7;
+  kiapi.common.types.Distance margin_right = 8;
+  kiapi.common.types.Distance margin_bottom = 9;
+}
+
+message SchematicGraphicShape
+{
+  kiapi.common.types.GraphicShape shape = 1;
+  kiapi.common.types.KIID id = 2;
+  kiapi.common.types.LockedState locked = 3;
+}
+
+message SchematicImage
+{
+  kiapi.common.types.KIID id = 1;
+  kiapi.common.types.Vector2 position = 2;
+  kiapi.common.types.Vector2 transform_origin_offset = 3;
+  kiapi.common.types.Ratio image_scale = 4;
+  bytes image_data = 5;
+  kiapi.common.types.LockedState locked = 6;
+}
+
+enum SchematicLabelShape
+{
+  SLSH_UNKNOWN = 0;
+  SLSH_INPUT = 1;
+  SLSH_OUTPUT = 2;
+  SLSH_BIDI = 3;
+  SLSH_TRISTATE = 4;
+  SLSH_PASSIVE = 5;
+  SLSH_DOT = 6;
+  SLSH_CIRCLE = 7;
+  SLSH_DIAMOND = 8;
+  SLSH_RECTANGLE = 9;
+}
+
+enum SchematicLabelSpinStyle
+{
+  SLSS_UNKNOWN = 0;
+  SLSS_LEFT = 1;
+  SLSS_UP = 2;
+  SLSS_RIGHT = 3;
+  SLSS_BOTTOM = 4;
 }
 
 message LocalLabel
 {
-  kiapi.common.types.KIID    id       = 1;
+  kiapi.common.types.KIID id = 1;
   kiapi.common.types.Vector2 position = 2;
-  Text                       text     = 3;
+  kiapi.common.types.Text text = 3;
+  SchematicLabelSpinStyle spin_style = 4;
+  repeated SchematicField fields = 5;
+  kiapi.common.types.LockedState locked = 6;
 }
 
 message GlobalLabel
 {
-  kiapi.common.types.KIID    id       = 1;
+  kiapi.common.types.KIID id = 1;
   kiapi.common.types.Vector2 position = 2;
-  Text                       text     = 3;
+  kiapi.common.types.Text text = 3;
+  SchematicLabelSpinStyle spin_style = 4;
+  SchematicLabelShape shape = 5;
+  repeated SchematicField fields = 6;
+  kiapi.common.types.LockedState locked = 7;
+  SchematicField intersheet_refs_field = 8;
 }
 
 message HierarchicalLabel
 {
-  kiapi.common.types.KIID    id       = 1;
+  kiapi.common.types.KIID id = 1;
   kiapi.common.types.Vector2 position = 2;
-  Text                       text     = 3;
+  kiapi.common.types.Text text = 3;
+  SchematicLabelSpinStyle spin_style = 4;
+  SchematicLabelShape shape = 5;
+  repeated SchematicField fields = 6;
+  kiapi.common.types.LockedState locked = 7;
 }
 
 message DirectiveLabel
 {
-  kiapi.common.types.KIID    id       = 1;
+  kiapi.common.types.KIID id = 1;
   kiapi.common.types.Vector2 position = 2;
-  Text                       text     = 3;
+  kiapi.common.types.Text text = 3;
+  SchematicLabelSpinStyle spin_style = 4;
+  SchematicLabelShape shape = 5;
+  repeated SchematicField fields = 6;
+  kiapi.common.types.LockedState locked = 7;
+  kiapi.common.types.Distance pin_length = 8;
+  kiapi.common.types.Distance symbol_size = 9;
+}
+
+message Group
+{
+  kiapi.common.types.KIID id = 1;
+  string name = 2;
+  repeated kiapi.common.types.KIID items = 3;
+  kiapi.common.types.LockedState locked = 4;
+}
+
+enum SheetSide
+{
+  SHS_UNKNOWN = 0;
+  SHS_LEFT = 1;
+  SHS_RIGHT = 2;
+  SHS_TOP = 3;
+  SHS_BOTTOM = 4;
+}
+
+message SheetPin
+{
+  kiapi.common.types.KIID id = 1;
+  kiapi.common.types.Vector2 position = 2;
+  kiapi.common.types.Text text = 3;
+  SchematicLabelSpinStyle spin_style = 4;
+  SchematicLabelShape shape = 5;
+  SheetSide side = 6;
+  kiapi.common.types.LockedState locked = 7;
+}
+
+message SheetSymbol
+{
+  kiapi.common.types.KIID id = 1;
+  kiapi.common.types.Vector2 position = 2;
+  kiapi.common.types.Vector2 size = 3;
+  kiapi.common.types.StrokeAttributes border_stroke = 4;
+  kiapi.common.types.GraphicFillAttributes fill = 5;
+  kiapi.common.types.LockedState locked = 6;
+  SchematicField name_field = 7;
+  SchematicField filename_field = 8;
+  repeated SchematicField user_fields = 9;
+  repeated SheetPin pins = 10;
+  bool exclude_from_sim = 11;
+  bool exclude_from_bom = 12;
+  bool exclude_from_board = 13;
+  bool dnp = 14;
+
+  // For existing sheets, gives the path to the subsheet instance.  Leave blank for new sheets.
+  kiapi.common.types.SheetPath path = 15;
+
+  // Page numbers in KiCad are arbitrary user data and don't have to be numeric
+  string page_number = 16;
+}
+
+enum SchematicSymbolType
+{
+  SST_UNKNOWN = 0;
+  SST_NORMAL = 1;
+  SST_GLOBAL_POWER = 2;
+  SST_LOCAL_POWER = 3;
+}
+
+enum SchematicSymbolOrientation
+{
+  SSO_UNKNOWN = 0;
+  SSO_0 = 1;
+  SSO_90 = 2;
+  SSO_180 = 3;
+  SSO_270 = 4;
+}
+
+enum SchematicPinOrientation
+{
+  SPO_UNKNOWN = 0;
+  SPO_RIGHT = 1;
+  SPO_LEFT = 2;
+  SPO_UP = 3;
+  SPO_DOWN = 4;
+}
+
+enum SchematicPinShape
+{
+  SPS_UNKNOWN = 0;
+  SPS_LINE = 1;
+  SPS_INVERTED = 2;
+  SPS_CLOCK = 3;
+  SPS_INVERTED_CLOCK = 4;
+  SPS_INPUT_LOW = 5;
+  SPS_CLOCK_LOW = 6;
+  SPS_OUTPUT_LOW = 7;
+  SPS_FALLING_EDGE_CLOCK = 8;
+  SPS_NONLOGIC = 9;
+}
+
+message SchematicPinAlternate
+{
+  string name = 1;
+  SchematicPinShape shape = 2;
+  kiapi.common.types.ElectricalPinType electrical_type = 3;
+}
+
+message SchematicPin
+{
+  kiapi.common.types.KIID id = 1;
+
+  string name = 2;
+  string number = 3;
+
+  kiapi.common.types.Vector2 position = 4;
+  kiapi.common.types.Distance length = 5;
+  SchematicPinOrientation orientation = 6;
+
+  kiapi.common.types.ElectricalPinType electrical_type = 7;
+  SchematicPinShape shape = 8;
+  bool visible = 9;
+
+  kiapi.common.types.Distance name_text_size = 10;
+  kiapi.common.types.Distance number_text_size = 11;
+
+  repeated SchematicPinAlternate alternates = 12;
+  optional string active_alternate = 13;
+}
+
+message SchematicSymbolUnit
+{
+  int32 unit = 1;
+}
+
+message SchematicSymbolBodyStyle
+{
+  int32 style = 1;
+}
+
+// A schematic item that is stored in a symbol definition
+message SchematicSymbolChild
+{
+  google.protobuf.Any item = 1;
+
+  // if absent, item is common to all units
+  optional SchematicSymbolUnit unit = 2;
+
+  // if absent, item is common to all body styles
+  optional SchematicSymbolBodyStyle body_style = 3;
+
+  // Private items are only shown in the symbol editor, not the schematic
+  bool is_private = 4;
+}
+
+message SchematicSymbolAttributes
+{
+  bool exclude_from_simulation = 1;
+  bool exclude_from_bill_of_materials = 2;
+  bool exclude_from_board = 3;
+  bool exclude_from_position_files = 4;
+  bool do_not_populate = 5;
+}
+
+// Data that can change between design variants
+message SchematicSymbolVariant
+{
+  string name = 1;
+  string description = 2;
+
+  SchematicSymbolAttributes attributes = 3;
+
+  map<string, string> fields = 4;
+}
+
+message SchematicSymbol
+{
+  kiapi.common.types.LibraryIdentifier id = 1;
+
+  SchematicSymbolType type = 2;
+  SchematicSymbolAttributes attributes = 3;
+
+  SchematicField reference_field = 4;
+  SchematicField value_field = 5;
+  SchematicField footprint_field = 6;
+  SchematicField datasheet_field = 7;
+  SchematicField description_field = 8;
+
+  // The pins, graphics, text, fields, etc that form the library definition of the symbol
+  repeated SchematicSymbolChild items = 9;
+
+  uint32 unit_count = 10;
+  uint32 body_style_count = 11;
+
+  string keywords = 12;
+  repeated string footprint_filters = 13;
+}
+
+message SchematicSymbolTransform
+{
+  SchematicSymbolOrientation orientation = 1;
+  bool mirror_x = 2;
+  bool mirror_y = 3;
+}
+
+// An instance of a symbol placed on a schematic sheet.
+message SchematicSymbolInstance
+{
+  kiapi.common.types.KIID id = 1;
+
+  // Symbol instances may refer to the same graphical symbol from multiple different sheets
+  // in a hierarchical schematic.  Each instance will have its own reference designator, and
+  // may also have a different selected unit and other attributes.
+  kiapi.common.types.SheetPath path = 2;
+
+  kiapi.common.types.Vector2 position = 3;
+  SchematicSymbolTransform transform = 4;
+  kiapi.common.types.LockedState locked = 5;
+
+  SchematicSymbol definition = 6;
+
+  SchematicField reference_field = 7;
+  SchematicField value_field = 8;
+  SchematicField footprint_field = 9;
+  SchematicField datasheet_field = 10;
+  SchematicField description_field = 11;
+
+  SchematicSymbolAttributes attributes = 12;
+
+  SchematicSymbolUnit unit = 13;
+  optional SchematicSymbolBodyStyle body_style = 14;
+  bool show_pin_names = 15;
+  bool show_pin_numbers = 16;
+  kiapi.common.types.Distance pin_name_offset = 17;
+
+  repeated SchematicSymbolVariant variants = 18;
+}
+
+message SheetInstance
+{
+  kiapi.common.types.SheetPath path = 1;
+  string name = 2;
+  string filename = 3;
+  string page_number = 4;
+
+  repeated SheetInstance children = 5;
+}
+
+message SchematicNetSheetContents
+{
+  kiapi.common.types.SheetPath path = 1;
+
+  repeated kiapi.common.types.KIID items = 2;
+}
+
+message SchematicNet
+{
+  string name = 1;
+
+  repeated SchematicNetSheetContents sheets = 2;
 }

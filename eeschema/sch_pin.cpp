@@ -27,6 +27,8 @@
 
 #include "sch_pin.h"
 
+#include <api/api_enums.h>
+#include <api/api_utils.h>
 #include <base_units.h>
 #include <pgm_base.h>
 #include <pin_layout_cache.h>
@@ -41,6 +43,7 @@
 #include <string_utils.h>
 #include <properties/property.h>
 #include <properties/property_mgr.h>
+#include <api/schematic/schematic_types.pb.h>
 
 wxString FormatStackedPinForDisplay( const wxString& aPinNumber, int aPinLength, int aTextSize, KIFONT::FONT* aFont,
                                      const KIFONT::METRICS& aFontMetrics )
@@ -248,6 +251,85 @@ SCH_PIN& SCH_PIN::operator=( const SCH_PIN& aPin )
     m_layoutCache.reset();
 
     return *this;
+}
+
+
+void SCH_PIN::Serialize( google::protobuf::Any& aContainer ) const
+{
+    using namespace kiapi::common;
+    using namespace kiapi::schematic::types;
+    SchematicPin pin;
+
+    pin.mutable_id()->set_value( m_Uuid.AsStdString() );
+    pin.set_name( GetName().ToUTF8() );
+    pin.set_number( GetNumber().ToUTF8() );
+
+    PackVector2( *pin.mutable_position(), GetPosition() );
+    pin.mutable_length()->set_value_nm( GetLength() );
+    pin.set_orientation( ToProtoEnum<PIN_ORIENTATION, SchematicPinOrientation>( GetOrientation() ) );
+
+    pin.set_electrical_type( ToProtoEnum<ELECTRICAL_PINTYPE, types::ElectricalPinType>( GetType() ) );
+    pin.set_shape( ToProtoEnum<GRAPHIC_PINSHAPE, SchematicPinShape>( GetShape() ) );
+    pin.set_visible( IsVisible() );
+
+    pin.mutable_name_text_size()->set_value_nm( GetNameTextSize() );
+    pin.mutable_number_text_size()->set_value_nm( GetNumberTextSize() );
+
+    for( const ALT& alt : GetAlternates() | std::views::values )
+    {
+        SchematicPinAlternate* altProto = pin.add_alternates();
+        altProto->set_name( alt.m_Name.ToUTF8() );
+        altProto->set_shape( ToProtoEnum<GRAPHIC_PINSHAPE, SchematicPinShape>( alt.m_Shape ) );
+        altProto->set_electrical_type( ToProtoEnum<ELECTRICAL_PINTYPE, types::ElectricalPinType>( alt.m_Type ) );
+    }
+
+    if( !m_alt.IsEmpty() )
+        pin.set_active_alternate( m_alt.ToUTF8() );
+
+    aContainer.PackFrom( pin );
+}
+
+
+bool SCH_PIN::Deserialize( const google::protobuf::Any& aContainer )
+{
+    using namespace kiapi::common;
+    using namespace kiapi::schematic::types;
+
+    SchematicPin pin;
+
+    if( !aContainer.UnpackTo( &pin ) )
+        return false;
+
+    const_cast<KIID&>( m_Uuid ) = KIID( pin.id().value() );
+    SetName( wxString::FromUTF8( pin.name() ) );
+    SetNumber( wxString::FromUTF8( pin.number() ) );
+
+    SetPosition( UnpackVector2( pin.position() ) );
+    SetLength( pin.length().value_nm() );
+    SetOrientation( FromProtoEnum<PIN_ORIENTATION>( pin.orientation() ) );
+
+    SetType( FromProtoEnum<ELECTRICAL_PINTYPE>( pin.electrical_type() ) );
+    SetShape( FromProtoEnum<GRAPHIC_PINSHAPE>( pin.shape() ) );
+    SetVisible( pin.visible() );
+
+    SetNameTextSize( pin.name_text_size().value_nm() );
+    SetNumberTextSize( pin.number_text_size().value_nm() );
+
+    std::map<wxString, ALT>& alts = GetAlternates();
+
+    for( const SchematicPinAlternate& altProto : pin.alternates() )
+    {
+        ALT alt;
+        alt.m_Name = wxString::FromUTF8( altProto.name() );
+        alt.m_Shape = FromProtoEnum<GRAPHIC_PINSHAPE>( altProto.shape() );
+        alt.m_Type = FromProtoEnum<ELECTRICAL_PINTYPE>( altProto.electrical_type() );
+        alts.emplace( alt.m_Name, alt );
+    }
+
+    if( pin.has_active_alternate() )
+        SetAlt( wxString::FromUTF8( pin.active_alternate() ) );
+
+    return true;
 }
 
 

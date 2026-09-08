@@ -447,6 +447,7 @@ set( EESCHEMA_SRCS
     toolbars_sch_editor.cpp
     toolbars_symbol_viewer.cpp
 
+    api/api_sch_enums.cpp
     api/api_sch_utils.cpp
 
     libraries/legacy_symbol_library.cpp
@@ -498,6 +499,7 @@ if( KICAD_IPC_API )
         ${EESCHEMA_SRCS}
         api/api_handler_sch.cpp
         api/headless_sch_context.cpp
+        api/sch_api_save.cpp
         api/sch_context.cpp
     )
 endif()

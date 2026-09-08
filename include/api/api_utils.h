@@ -35,6 +35,7 @@
 
 class SHAPE_LINE_CHAIN;
 class KIID_PATH;
+class PROJECT;
 
 /**
  * Flag to enable debug output related to the IPC API and its plugin system
@@ -81,6 +82,8 @@ KICOMMON_API KIGFX::COLOR4D UnpackColor( const types::Color& aInput );
 KICOMMON_API void PackSheetPath( types::SheetPath& aOutput, const KIID_PATH& aInput );
 
 KICOMMON_API KIID_PATH UnpackSheetPath( const types::SheetPath& aInput );
+
+KICOMMON_API void PackProject( types::ProjectSpecifier& aOutput, const PROJECT& aInput );
 
 } // namespace kiapi::common
 

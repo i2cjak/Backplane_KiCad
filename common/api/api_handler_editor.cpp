@@ -51,6 +51,15 @@ HANDLER_RESULT<BeginCommitResponse> API_HANDLER_EDITOR::handleBeginCommit(
     if( std::optional<ApiResponseStatus> busy = checkForBusy() )
         return tl::unexpected( *busy );
 
+    // Before 11.0, commit requests had no header so we assume they are for the PCB editor
+    if( aCtx.Request.has_header() && !validateItemHeaderDocument( aCtx.Request.header() ) )
+    {
+        ApiResponseStatus e;
+        // No message needed for AS_UNHANDLED; this is an internal flag for the API server
+        e.set_status( ApiStatusCode::AS_UNHANDLED );
+        return tl::unexpected( e );
+    }
+
     if( m_commits.count( aCtx.ClientName ) )
     {
         ApiResponseStatus e;
@@ -79,6 +88,15 @@ HANDLER_RESULT<EndCommitResponse> API_HANDLER_EDITOR::handleEndCommit(
 {
     if( std::optional<ApiResponseStatus> busy = checkForBusy() )
         return tl::unexpected( *busy );
+
+    // Before 11.0, commit requests had no header so we assume they are for the PCB editor
+    if( aCtx.Request.has_header() && !validateItemHeaderDocument( aCtx.Request.header() ) )
+    {
+        ApiResponseStatus e;
+        // No message needed for AS_UNHANDLED; this is an internal flag for the API server
+        e.set_status( ApiStatusCode::AS_UNHANDLED );
+        return tl::unexpected( e );
+    }
 
     if( !m_commits.count( aCtx.ClientName ) )
     {

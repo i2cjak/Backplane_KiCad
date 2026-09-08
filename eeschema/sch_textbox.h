@@ -43,6 +43,9 @@ public:
 
     ~SCH_TEXTBOX() { }
 
+    void Serialize( google::protobuf::Any& aContainer ) const override;
+    bool Deserialize( const google::protobuf::Any& aContainer ) override;
+
     static bool ClassOf( const EDA_ITEM* aItem )
     {
         return aItem && SCH_TEXTBOX_T == aItem->Type();

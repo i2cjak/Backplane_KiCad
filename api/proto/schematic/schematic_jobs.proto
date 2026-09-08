@@ -1,0 +1,197 @@
+/*
+ * This program source code file is part of KiCad, a free EDA CAD application.
+ *
+ * Copyright (C) KiCad Developers, see AUTHORS.txt for contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package kiapi.schematic.jobs;
+
+import "common/types/jobs.proto";
+
+
+// Page size override used for schematic plotting jobs
+enum SchematicJobPageSize
+{
+	SJPS_UNKNOWN = 0;
+	// Auto-select page size from sheet settings
+	SJPS_AUTO = 1;
+	// Force A4 page size
+	SJPS_A4 = 2;
+	// Force ANSI A page size
+	SJPS_A = 3;
+}
+
+// Shared plot options for schematic plot exports
+message SchematicPlotSettings
+{
+	string drawing_sheet = 1;
+	string default_font = 2;
+	string variant = 3;
+
+	bool plot_all = 4;
+	bool plot_drawing_sheet = 5;
+	repeated string plot_pages = 6;
+
+	bool show_hop_over = 7;
+	bool black_and_white = 8;
+	SchematicJobPageSize page_size = 9;
+	bool use_background_color = 10;
+	int32 min_pen_width = 11;
+	string theme = 12;
+}
+
+// Plots a schematic to SVG. Returns RunJobResponse.
+message RunSchematicJobExportSvg
+{
+	kiapi.common.types.RunJobSettings job_settings = 1;
+	SchematicPlotSettings plot_settings = 2;
+}
+
+// Plots a schematic to DXF. Returns RunJobResponse.
+message RunSchematicJobExportDxf
+{
+	kiapi.common.types.RunJobSettings job_settings = 1;
+	SchematicPlotSettings plot_settings = 2;
+}
+
+// Plots a schematic to PDF. Returns RunJobResponse.
+message RunSchematicJobExportPdf
+{
+	kiapi.common.types.RunJobSettings job_settings = 1;
+	SchematicPlotSettings plot_settings = 2;
+
+	bool property_popups = 3;
+	bool hierarchical_links = 4;
+	bool include_metadata = 5;
+}
+
+// Plots a schematic to PostScript. Returns RunJobResponse.
+message RunSchematicJobExportPs
+{
+	kiapi.common.types.RunJobSettings job_settings = 1;
+	SchematicPlotSettings plot_settings = 2;
+}
+
+// Netlist format for schematic netlist export.
+enum SchematicNetlistFormat
+{
+	SNF_UNKNOWN = 0;
+	SNF_KICAD_XML = 1;
+	SNF_KICAD_SEXPR = 2;
+	SNF_ORCAD_PCB2 = 3;
+	SNF_CADSTAR = 4;
+	SNF_SPICE = 5;
+	SNF_SPICE_MODEL = 6;
+	SNF_PADS = 7;
+	SNF_ALLEGRO = 8;
+}
+
+// Exports a schematic netlist. Returns RunJobResponse.
+message RunSchematicJobExportNetlist
+{
+	kiapi.common.types.RunJobSettings job_settings = 1;
+
+	SchematicNetlistFormat format = 2;
+
+	// If the design contains variants, this field can be set to the name of a variant to use
+	// for the BOM export
+	string variant_name = 3;
+}
+
+message BOMFormatSettings
+{
+	// If supplied, will apply a preset to the other format settings.  Built-in values 'CSV', 'TSV',
+	// and 'Semicolons' are always available, as well as any user-saved presets.
+	string preset_name = 1;
+
+	// Delimiter between fields (columns) in a data row
+	string field_delimiter = 2;
+
+	// Character to use for quoting strings
+	string string_delimiter = 3;
+
+	// Delimiter between reference designators when exporting a list (e.g. "R1,R3,R5")
+	string ref_delimiter = 4;
+
+	// Delimiter between reference designators when exporting a range (e.g. "R1-R10")
+	string ref_range_delimiter = 5;
+
+	// Whether tab characters in field values will be preserved when exporting or stripped (default)
+	bool keep_tabs = 6;
+
+	// Whether line breaks in field values will be preserved when exporting or stripped (default)
+	bool keep_line_breaks = 7;
+}
+
+message BOMField
+{
+	// The name of the field in KiCad to export
+	string name = 1;
+
+	// The name to give the field in the exported BOM (i.e. the column header name)
+	string label = 2;
+
+	// Whether or not to group exported components by this field
+	bool group_by = 3;
+}
+
+enum BOMSortDirection
+{
+	BSD_UNKNOWN = 0;
+	BSD_ASCENDING = 1;
+	BSD_DESCENDING = 2;
+}
+
+message BOMFieldSettings
+{
+	// If supplied, will apply a default or user-stored preset to the other field settings.
+	// Default values available include 'Default Editing', 'Grouped By Value',
+	// 'Grouped By Value and Footprint', and 'Attributes'.
+	string preset_name = 1;
+
+	// An ordered list of fields to export
+	repeated BOMField fields = 2;
+
+	string sort_field = 3;
+
+	// Sort direction; defaults to ascending if unspecified
+	BOMSortDirection sort_direction = 4;
+
+	string filter = 5;
+}
+
+// Exports a schematic bill of materials. Returns RunJobResponse.
+message RunSchematicJobExportBOM
+{
+	kiapi.common.types.RunJobSettings job_settings = 1;
+
+	BOMFormatSettings format = 2;
+
+	BOMFieldSettings fields = 3;
+
+	// If true, "do not populate" components will be omitted from the exported BOM
+	bool exclude_dnp = 4;
+
+	// If true, will group symbols into a single BOM row when they have matching values for any
+	// fields where group_by is true
+	bool group_symbols = 5;
+
+	// If the design contains variants, this field can be set to the name of a variant to use
+	// for the BOM export
+	string variant_name = 6;
+}

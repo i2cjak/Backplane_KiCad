@@ -37,6 +37,9 @@
 #include <widgets/msgpanel.h>
 #include <math/util.h>      // for KiROUND
 #include <geometry/geometry_utils.h>
+#include <api/api_enums.h>
+#include <api/api_utils.h>
+#include <api/schematic/schematic_types.pb.h>
 #include <sch_sheet.h>
 #include <sch_sheet_path.h>
 #include <sch_sheet_pin.h>
@@ -77,6 +80,137 @@ SCH_SHEET::SCH_SHEET( EDA_ITEM* aParent, const VECTOR2I& aPos, VECTOR2I aSize ) 
                            GetDefaultFieldName( FIELD_T::SHEET_FILENAME, DO_TRANSLATE ) );
 
     AutoplaceFields( nullptr, m_fieldsAutoplaced );
+}
+
+
+void SCH_SHEET::Serialize( google::protobuf::Any& aContainer ) const
+{
+    using namespace kiapi::common;
+    using namespace kiapi::common::types;
+    using namespace kiapi::schematic::types;
+
+    SheetSymbol sheet;
+
+    sheet.mutable_id()->set_value( m_Uuid.AsStdString() );
+    PackVector2( *sheet.mutable_position(), GetPosition() );
+    PackVector2( *sheet.mutable_size(), GetSize() );
+    sheet.set_locked( IsLocked() ? LockedState::LS_LOCKED : LockedState::LS_UNLOCKED );
+    sheet.set_exclude_from_sim( GetExcludedFromSim() );
+    sheet.set_exclude_from_bom( GetExcludedFromBOM() );
+    sheet.set_exclude_from_board( GetExcludedFromBoard() );
+    sheet.set_dnp( GetDNP() );
+
+    StrokeAttributes* borderStroke = sheet.mutable_border_stroke();
+    borderStroke->mutable_width()->set_value_nm( GetBorderWidth() );
+    borderStroke->set_style( ToProtoEnum<LINE_STYLE, StrokeLineStyle>( LINE_STYLE::SOLID ) );
+
+    if( GetBorderColor() != COLOR4D::UNSPECIFIED )
+        PackColor( *borderStroke->mutable_color(), GetBorderColor() );
+
+    GraphicFillAttributes* fill = sheet.mutable_fill();
+    fill->set_fill_type( GetBackgroundColor() == COLOR4D::UNSPECIFIED ? GraphicFillType::GFT_UNFILLED
+                                                                      : GraphicFillType::GFT_FILLED_WITH_COLOR );
+
+    if( GetBackgroundColor() != COLOR4D::UNSPECIFIED )
+        PackColor( *fill->mutable_color(), GetBackgroundColor() );
+
+    google::protobuf::Any any;
+
+    GetField( FIELD_T::SHEET_NAME )->Serialize( any );
+    any.UnpackTo( sheet.mutable_name_field() );
+
+    GetField( FIELD_T::SHEET_FILENAME )->Serialize( any );
+    any.UnpackTo( sheet.mutable_filename_field() );
+
+    for( const SCH_FIELD& field : GetFields() )
+    {
+        if( field.IsMandatory() )
+            continue;
+
+        field.Serialize( any );
+        any.UnpackTo( sheet.add_user_fields() );
+    }
+
+    for( const SCH_SHEET_PIN* pin : GetPins() )
+    {
+        pin->Serialize( any );
+        any.UnpackTo( sheet.add_pins() );
+    }
+
+    aContainer.PackFrom( sheet );
+}
+
+
+bool SCH_SHEET::Deserialize( const google::protobuf::Any& aContainer )
+{
+    using namespace kiapi::common;
+    using namespace kiapi::common::types;
+    using namespace kiapi::schematic::types;
+
+    SheetSymbol sheet;
+
+    if( !aContainer.UnpackTo( &sheet ) )
+        return false;
+
+    const_cast<::KIID&>( m_Uuid ) = ::KIID( sheet.id().value() );
+    SetPosition( UnpackVector2( sheet.position() ) );
+    SetSize( UnpackVector2( sheet.size() ) );
+    SetLocked( sheet.locked() == LockedState::LS_LOCKED );
+    SetExcludedFromSim( sheet.exclude_from_sim() );
+    SetExcludedFromBOM( sheet.exclude_from_bom() );
+    SetExcludedFromBoard( sheet.exclude_from_board() );
+    SetDNP( sheet.dnp() );
+
+    SetBorderWidth( sheet.border_stroke().width().value_nm() );
+    SetBorderColor( sheet.border_stroke().has_color() ? UnpackColor( sheet.border_stroke().color() )
+                                                       : COLOR4D::UNSPECIFIED );
+
+    if( sheet.fill().fill_type() == GraphicFillType::GFT_UNFILLED || !sheet.fill().has_color() )
+        SetBackgroundColor( COLOR4D::UNSPECIFIED );
+    else
+        SetBackgroundColor( UnpackColor( sheet.fill().color() ) );
+
+    for( SCH_SHEET_PIN* pin : m_pins )
+        delete pin;
+
+    m_pins.clear();
+
+    m_fields.clear();
+    m_fields.emplace_back( this, FIELD_T::SHEET_NAME,
+                           GetDefaultFieldName( FIELD_T::SHEET_NAME, DO_TRANSLATE ) );
+    m_fields.emplace_back( this, FIELD_T::SHEET_FILENAME,
+                           GetDefaultFieldName( FIELD_T::SHEET_FILENAME, DO_TRANSLATE ) );
+
+    google::protobuf::Any any;
+
+    any.PackFrom( sheet.name_field() );
+    GetField( FIELD_T::SHEET_NAME )->Deserialize( any );
+
+    any.PackFrom( sheet.filename_field() );
+    GetField( FIELD_T::SHEET_FILENAME )->Deserialize( any );
+
+    for( const auto& field : sheet.user_fields() )
+    {
+        m_fields.emplace_back( this, FIELD_T::SHEET_USER );
+
+        any.PackFrom( field );
+        m_fields.back().Deserialize( any );
+    }
+
+    for( const auto& pinProto : sheet.pins() )
+    {
+        auto pin = std::make_unique<SCH_SHEET_PIN>( this );
+        any.PackFrom( pinProto );
+
+        if( !pin->Deserialize( any ) )
+            return false;
+
+        AddPin( pin.release() );
+    }
+
+    SetScreen( nullptr );
+
+    return true;
 }
 
 

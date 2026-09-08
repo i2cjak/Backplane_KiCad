@@ -1,0 +1,54 @@
+/*
+ * This program source code file is part of KiCad, a free EDA CAD application.
+ *
+ * Copyright (C) KiCad Developers, see AUTHORS.txt for contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or (at your
+ * option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but
+ * WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+syntax = "proto3";
+
+package kiapi.common.types;
+
+import "common/types/base_types.proto";
+
+enum JobStatus
+{
+    JS_UNSPECIFIED = 0;
+    JS_SUCCESS = 1;
+    JS_WARNING = 2;
+    JS_ERROR = 3;
+}
+
+message RunJobResponse
+{
+    JobStatus status = 1;
+
+    // The path of the generated output (may not actually exist in the filesystem if the job failed)
+    // May be a file, multiple files, or a directory depending on the context of the job
+    repeated string output_path = 2;
+
+    // Optional message containing warning or error details. Should be empty if status is JS_SUCCESS.
+    string message = 3;
+}
+
+message RunJobSettings
+{
+    // The document on which the job should be run
+    kiapi.common.types.DocumentSpecifier document = 1;
+
+    // The path where the job's output should be saved
+    // May be a file or a directory depending on the context of the job
+    string output_path = 2;
+}

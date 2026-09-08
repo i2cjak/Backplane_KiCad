@@ -44,11 +44,21 @@ jobs:
             libwxgtk3.2-dev libwxgtk-webview3.2-dev libx11-dev \
             libx11-xcb-dev libxkbcommon-x11-dev libyaml-cpp-dev \
             libzstd-dev mesa-common-dev pax-utils protobuf-compiler \
-            python3-dev rapidjson-dev shared-mime-info swig unixodbc-dev \
+            python3-dev python3-venv rapidjson-dev shared-mime-info swig unixodbc-dev \
             zlib1g-dev libzint-dev
+
+      - name: Restore compiler cache
+        id: compiler-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ccache
+          key: kicad-ccache-${{ runner.os }}-${{ github.sha }}-${{ github.run_id }}
+          restore-keys: |
+            kicad-ccache-${{ runner.os }}-
 
       - name: Configure
         run: |
+          ccache --max-size=2G
           cmake -S . -B build/backplane-linux -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PWD/stage" \
@@ -57,12 +67,38 @@ jobs:
             -DKICAD_USE_SENTRY=OFF \
             -DKICAD_SCRIPTING_WXPYTHON=OFF \
             -DKICAD_USE_PCH=OFF \
-            -DKICAD_IPC_API=ON
+            -DKICAD_IPC_API=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Compile IPC backports first
+        run: |
+          cmake --build build/backplane-linux --parallel 2 --target kiapi
+          ninja -C build/backplane-linux -j2 \
+            common/CMakeFiles/common.dir/api/api_enums.cpp.o \
+            eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_handler_sch.cpp.o \
+            eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_sch_enums.cpp.o \
+            eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_sch_utils.cpp.o \
+            eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/sch_api_save.cpp.o \
+            eeschema/CMakeFiles/eeschema_kiface_objects.dir/sch_symbol.cpp.o \
+            pcbnew/CMakeFiles/pcbnew_kiface_objects.dir/api/api_handler_pcb.cpp.o
 
       - name: Build and install KiCad runtime
         run: |
           cmake --build build/backplane-linux --parallel 2
           cmake --install build/backplane-linux
+
+      - name: Preserve compiler cache after build attempts
+        if: always() && steps.compiler-cache.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
+
+      - name: Install IPC smoke test dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ipc-smoke-venv"
+          "$RUNNER_TEMP/ipc-smoke-venv/bin/pip" install protobuf==5.29.6 pynng==0.9.0
 
       - name: Assemble runtime archive
         shell: bash
@@ -73,6 +109,7 @@ jobs:
           mkdir -p "release/${archive_root}/licenses"
           cp -a stage/. "release/${archive_root}/"
           cp LICENSE* AUTHORS.txt README.md "release/${archive_root}/licenses/"
+          cp -a /usr/share/common-licenses "release/${archive_root}/licenses/"
           git rev-parse HEAD > "release/${archive_root}/SOURCE_COMMIT"
           git describe --tags --always > "release/${archive_root}/SOURCE_VERSION"
           source_commit="$(git rev-parse HEAD)"
@@ -87,11 +124,24 @@ jobs:
           MANIFEST
           git archive --format=tar.gz --prefix="${archive_root}-source/" HEAD > "release/${archive_root}-source.tar.gz"
           mapfile -d '' elf_files < <(find "release/${archive_root}" -type f \( -perm /111 -o -name '*.so*' \) -print0)
+          declare -A package_notices=()
           for binary in "${elf_files[@]}"; do
             file -b "$binary" | grep -q 'ELF' || continue
             lddtree -l "$binary" | while IFS= read -r library; do
               case "$library" in
-                /*) mkdir -p "release/${archive_root}/lib"; cp -L "$library" "release/${archive_root}/lib/$(basename "$library")" ;;
+                /*)
+                  mkdir -p "release/${archive_root}/lib"
+                  cp -L "$library" "release/${archive_root}/lib/$(basename "$library")"
+                  package_id="$(dpkg-query -S "$library" 2>/dev/null | sed -n '1s/: .*//p' || true)"
+                  if [ -n "$package_id" ] && [ -z "${package_notices[$package_id]+set}" ]; then
+                    package_notices[$package_id]=1
+                    notice_dir="release/${archive_root}/licenses/debian/${package_id}"
+                    mkdir -p "$notice_dir"
+                    dpkg-query -W -f='Package: ${binary:Package}\nVersion: ${Version}\nSource: ${source:Package}\nSource-Version: ${source:Version}\nSource-URL: https://launchpad.net/ubuntu/+source/${source:Package}/${source:Version}\nArchitecture: ${Architecture}\n' "$package_id" > "$notice_dir/metadata.txt"
+                    copyright_file="$(dpkg -L "$package_id" 2>/dev/null | grep -E '/copyright$' | head -n 1 || true)"
+                    if [ -n "$copyright_file" ]; then cp "$copyright_file" "$notice_dir/copyright"; fi
+                  fi
+                  ;;
               esac
             done
           done
@@ -100,8 +150,7 @@ jobs:
           #!/usr/bin/env sh
           set -eu
           root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-          export LD_LIBRARY_PATH="$root/lib:${LD_LIBRARY_PATH:-}"
-          exec "$root/bin/kicad-cli.real" "$@"
+          exec "$root/lib/ld-linux-x86-64.so.2" --library-path "$root/lib" "$root/bin/kicad-cli.real" "$@"
           LAUNCHER
           chmod +x "release/${archive_root}/bin/kicad-cli"
           {
@@ -113,19 +162,7 @@ jobs:
           } > "release/${archive_root}/RUNTIME_MANIFEST.txt"
           "release/${archive_root}/bin/kicad-cli" --version
           "release/${archive_root}/bin/kicad-cli" api-server --help
-          socket_path="${RUNNER_TEMP}/backplane-kicad-api.sock"
-          timeout 8s "release/${archive_root}/bin/kicad-cli" api-server --socket "$socket_path" > "${RUNNER_TEMP}/kicad-api.log" 2>&1 &
-          server_pid=$!
-          for attempt in $(seq 1 40); do
-            test -S "$socket_path" && break
-            sleep 0.2
-          done
-          if ! test -S "$socket_path"; then
-            cat "${RUNNER_TEMP}/kicad-api.log"
-            kill "$server_pid" 2>/dev/null || true
-            exit 1
-          fi
-          kill "$server_pid" 2>/dev/null || true
+          "$RUNNER_TEMP/ipc-smoke-venv/bin/python" scripts/backplane-ipc-smoke.py "release/${archive_root}/bin/kicad-cli"
           (cd release && tar -czf "${archive_root}.tar.gz" "${archive_root}")
           (cd release && sha256sum "${archive_root}.tar.gz" "${archive_root}-source.tar.gz" > SHA256SUMS)
 
