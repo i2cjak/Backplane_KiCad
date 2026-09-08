@@ -92,7 +92,7 @@
 #include <api/api_utils.h>
 #include <api/headless_board_context.h>
 #include <board.h>
-#include <board_loader.h>
+#include <pcb_io/pcb_io_mgr.h>
 #endif
 
 /* init functions defined by swig */
@@ -879,7 +879,8 @@ bool IFACE::HandleApiOpenDocument( const wxString& aPath, KICAD_API_SERVER* aSer
 
     try
     {
-        std::unique_ptr<BOARD> loadedBoard = BOARD_LOADER::Load( boardPath.GetFullPath(), pluginType, project );
+        std::unique_ptr<BOARD> loadedBoard(
+                PCB_IO_MGR::Load( pluginType, boardPath.GetFullPath(), nullptr, nullptr, project ) );
 
         if( !loadedBoard )
         {

@@ -82,8 +82,10 @@ jobs:
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_sch_utils.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/sch_api_save.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/sch_symbol.cpp.o \
+            eeschema/CMakeFiles/eeschema_kiface.dir/eeschema.cpp.o \
             pcbnew/CMakeFiles/pcbnew_kiface_objects.dir/api/api_handler_pcb.cpp.o \
-            pcbnew/CMakeFiles/pcbnew_kiface_objects.dir/api/api_pcb_enums.cpp.o
+            common/CMakeFiles/pcbcommon.dir/__/pcbnew/api/api_pcb_enums.cpp.o \
+            pcbnew/CMakeFiles/pcbnew_kiface.dir/pcbnew.cpp.o
 
       - name: Build and install KiCad runtime
         run: |
