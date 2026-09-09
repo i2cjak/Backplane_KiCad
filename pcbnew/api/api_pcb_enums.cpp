@@ -22,6 +22,8 @@
 #include <api/api_enums.h>
 #include <api/board/board_types.pb.h>
 #include <api/board/board_commands.pb.h>
+#include <api/board/board_jobs.pb.h>
+#include <api/common/types/enums.pb.h>
 #include <wx/wx.h>
 #include <widgets/report_severity.h>
 
@@ -29,6 +31,18 @@
 #include <padstack.h>
 #include <pcb_dimension.h>
 #include <pcb_track.h>
+#include <jobs/job_export_pcb_3d.h>
+#include <jobs/job_export_pcb_dxf.h>
+#include <jobs/job_export_pcb_drill.h>
+#include <jobs/job_export_pcb_ipc2581.h>
+#include <jobs/job_export_pcb_odb.h>
+#include <jobs/job_export_pcb_pdf.h>
+#include <jobs/job_export_pcb_pos.h>
+#include <jobs/job_export_pcb_ps.h>
+#include <jobs/job_export_pcb_stats.h>
+#include <jobs/job_export_pcb_svg.h>
+#include <jobs/job_pcb_render.h>
+#include <plotprint_opts.h>
 #include <zones.h>
 #include <zone_settings.h>
 #include <project/board_project_settings.h>
@@ -37,6 +51,7 @@
 
 using namespace kiapi::board;
 using namespace kiapi::board::commands;
+using namespace kiapi::board::jobs;
 
 template<>
 types::PadType ToProtoEnum( PAD_ATTRIB aValue )
@@ -896,6 +911,690 @@ SEVERITY FromProtoEnum( DrcSeverity aValue )
     case DrcSeverity::DRS_UNKNOWN:
     default:
         return RPT_SEVERITY_UNDEFINED;
+    }
+}
+
+template<>
+PlotDrillMarks ToProtoEnum( DRILL_MARKS aValue )
+{
+    switch( aValue )
+    {
+    case DRILL_MARKS::NO_DRILL_SHAPE:    return PlotDrillMarks::PDM_NONE;
+    case DRILL_MARKS::SMALL_DRILL_SHAPE: return PlotDrillMarks::PDM_SMALL;
+    case DRILL_MARKS::FULL_DRILL_SHAPE:  return PlotDrillMarks::PDM_FULL;
+    default:
+        wxCHECK_MSG( false, PlotDrillMarks::PDM_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<DRILL_MARKS>" );
+    }
+}
+
+
+template<>
+DRILL_MARKS FromProtoEnum( PlotDrillMarks aValue )
+{
+    switch( aValue )
+    {
+    case PlotDrillMarks::PDM_NONE:    return DRILL_MARKS::NO_DRILL_SHAPE;
+    case PlotDrillMarks::PDM_SMALL:   return DRILL_MARKS::SMALL_DRILL_SHAPE;
+    case PlotDrillMarks::PDM_FULL:    return DRILL_MARKS::FULL_DRILL_SHAPE;
+    case PlotDrillMarks::PDM_UNKNOWN:
+    default:
+        return DRILL_MARKS::NO_DRILL_SHAPE;
+    }
+}
+
+
+template<>
+Board3DFormat ToProtoEnum( JOB_EXPORT_PCB_3D::FORMAT aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_3D::FORMAT::STEP:    return Board3DFormat::B3D_STEP;
+    case JOB_EXPORT_PCB_3D::FORMAT::STEPZ:   return Board3DFormat::B3D_STEPZ;
+    case JOB_EXPORT_PCB_3D::FORMAT::BREP:    return Board3DFormat::B3D_BREP;
+    case JOB_EXPORT_PCB_3D::FORMAT::XAO:     return Board3DFormat::B3D_XAO;
+    case JOB_EXPORT_PCB_3D::FORMAT::GLB:     return Board3DFormat::B3D_GLB;
+    case JOB_EXPORT_PCB_3D::FORMAT::VRML:    return Board3DFormat::B3D_VRML;
+    case JOB_EXPORT_PCB_3D::FORMAT::PLY:     return Board3DFormat::B3D_PLY;
+    case JOB_EXPORT_PCB_3D::FORMAT::STL:     return Board3DFormat::B3D_STL;
+    case JOB_EXPORT_PCB_3D::FORMAT::U3D:     return Board3DFormat::B3D_U3D;
+    case JOB_EXPORT_PCB_3D::FORMAT::PDF:     return Board3DFormat::B3D_PDF;
+    default:
+        wxCHECK_MSG( false, Board3DFormat::B3D_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_3D::FORMAT>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_3D::FORMAT FromProtoEnum( Board3DFormat aValue )
+{
+    switch( aValue )
+    {
+    case Board3DFormat::B3D_STEP:  return JOB_EXPORT_PCB_3D::FORMAT::STEP;
+    case Board3DFormat::B3D_STEPZ: return JOB_EXPORT_PCB_3D::FORMAT::STEPZ;
+    case Board3DFormat::B3D_BREP:  return JOB_EXPORT_PCB_3D::FORMAT::BREP;
+    case Board3DFormat::B3D_XAO:   return JOB_EXPORT_PCB_3D::FORMAT::XAO;
+    case Board3DFormat::B3D_GLB:   return JOB_EXPORT_PCB_3D::FORMAT::GLB;
+    case Board3DFormat::B3D_VRML:  return JOB_EXPORT_PCB_3D::FORMAT::VRML;
+    case Board3DFormat::B3D_PLY:   return JOB_EXPORT_PCB_3D::FORMAT::PLY;
+    case Board3DFormat::B3D_STL:   return JOB_EXPORT_PCB_3D::FORMAT::STL;
+    case Board3DFormat::B3D_U3D:   return JOB_EXPORT_PCB_3D::FORMAT::U3D;
+    case Board3DFormat::B3D_PDF:   return JOB_EXPORT_PCB_3D::FORMAT::PDF;
+    case Board3DFormat::B3D_UNKNOWN:
+    default:
+        return JOB_EXPORT_PCB_3D::FORMAT::UNKNOWN;
+    }
+}
+
+
+template<>
+kiapi::common::types::Units ToProtoEnum( JOB_EXPORT_PCB_3D::VRML_UNITS aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_3D::VRML_UNITS::INCH:   return kiapi::common::types::Units::U_INCH;
+    case JOB_EXPORT_PCB_3D::VRML_UNITS::MM:     return kiapi::common::types::Units::U_MM;
+    case JOB_EXPORT_PCB_3D::VRML_UNITS::METERS: return kiapi::common::types::Units::U_METERS;
+    case JOB_EXPORT_PCB_3D::VRML_UNITS::TENTHS: return kiapi::common::types::Units::U_TENTHS;
+    default:
+        wxCHECK_MSG( false, kiapi::common::types::Units::U_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_3D::VRML_UNITS>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_3D::VRML_UNITS FromProtoEnum( kiapi::common::types::Units aValue )
+{
+    switch( aValue )
+    {
+    case kiapi::common::types::Units::U_INCH:   return JOB_EXPORT_PCB_3D::VRML_UNITS::INCH;
+    case kiapi::common::types::Units::U_MM:     return JOB_EXPORT_PCB_3D::VRML_UNITS::MM;
+    case kiapi::common::types::Units::U_METERS: return JOB_EXPORT_PCB_3D::VRML_UNITS::METERS;
+    case kiapi::common::types::Units::U_TENTHS: return JOB_EXPORT_PCB_3D::VRML_UNITS::TENTHS;
+    case kiapi::common::types::Units::U_UNKNOWN:
+    default:
+        return JOB_EXPORT_PCB_3D::VRML_UNITS::METERS;
+    }
+}
+
+
+template<>
+RenderFormat ToProtoEnum( JOB_PCB_RENDER::FORMAT aValue )
+{
+    switch( aValue )
+    {
+    case JOB_PCB_RENDER::FORMAT::PNG:  return RenderFormat::RF_PNG;
+    case JOB_PCB_RENDER::FORMAT::JPEG: return RenderFormat::RF_JPEG;
+    default:
+        wxCHECK_MSG( false, RenderFormat::RF_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_PCB_RENDER::FORMAT>" );
+    }
+}
+
+
+template<>
+JOB_PCB_RENDER::FORMAT FromProtoEnum( RenderFormat aValue )
+{
+    switch( aValue )
+    {
+    case RenderFormat::RF_PNG: return JOB_PCB_RENDER::FORMAT::PNG;
+    case RenderFormat::RF_JPEG:return JOB_PCB_RENDER::FORMAT::JPEG;
+    case RenderFormat::RF_UNKNOWN:
+    default:
+        return JOB_PCB_RENDER::FORMAT::PNG;
+    }
+}
+
+
+template<>
+RenderQuality ToProtoEnum( JOB_PCB_RENDER::QUALITY aValue )
+{
+    switch( aValue )
+    {
+    case JOB_PCB_RENDER::QUALITY::BASIC:        return RenderQuality::RQ_BASIC;
+    case JOB_PCB_RENDER::QUALITY::HIGH:         return RenderQuality::RQ_HIGH;
+    case JOB_PCB_RENDER::QUALITY::USER:         return RenderQuality::RQ_USER;
+    case JOB_PCB_RENDER::QUALITY::JOB_SETTINGS: return RenderQuality::RQ_JOB_SETTINGS;
+    default:
+        wxCHECK_MSG( false, RenderQuality::RQ_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_PCB_RENDER::QUALITY>" );
+    }
+}
+
+
+template<>
+JOB_PCB_RENDER::QUALITY FromProtoEnum( RenderQuality aValue )
+{
+    switch( aValue )
+    {
+    case RenderQuality::RQ_BASIC:        return JOB_PCB_RENDER::QUALITY::BASIC;
+    case RenderQuality::RQ_HIGH:         return JOB_PCB_RENDER::QUALITY::HIGH;
+    case RenderQuality::RQ_USER:         return JOB_PCB_RENDER::QUALITY::USER;
+    case RenderQuality::RQ_JOB_SETTINGS: return JOB_PCB_RENDER::QUALITY::JOB_SETTINGS;
+    case RenderQuality::RQ_UNKNOWN:
+    default:
+        return JOB_PCB_RENDER::QUALITY::BASIC;
+    }
+}
+
+
+template<>
+RenderBackgroundStyle ToProtoEnum( JOB_PCB_RENDER::BG_STYLE aValue )
+{
+    switch( aValue )
+    {
+    case JOB_PCB_RENDER::BG_STYLE::DEFAULT:     return RenderBackgroundStyle::RBS_DEFAULT;
+    case JOB_PCB_RENDER::BG_STYLE::TRANSPARENT: return RenderBackgroundStyle::RBS_TRANSPARENT;
+    case JOB_PCB_RENDER::BG_STYLE::OPAQUE:      return RenderBackgroundStyle::RBS_OPAQUE;
+    default:
+        wxCHECK_MSG( false, RenderBackgroundStyle::RBS_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_PCB_RENDER::BG_STYLE>" );
+    }
+}
+
+
+template<>
+JOB_PCB_RENDER::BG_STYLE FromProtoEnum( RenderBackgroundStyle aValue )
+{
+    switch( aValue )
+    {
+    case RenderBackgroundStyle::RBS_DEFAULT:     return JOB_PCB_RENDER::BG_STYLE::DEFAULT;
+    case RenderBackgroundStyle::RBS_TRANSPARENT: return JOB_PCB_RENDER::BG_STYLE::TRANSPARENT;
+    case RenderBackgroundStyle::RBS_OPAQUE:      return JOB_PCB_RENDER::BG_STYLE::OPAQUE;
+    case RenderBackgroundStyle::RBS_UNKNOWN:
+    default:
+        return JOB_PCB_RENDER::BG_STYLE::DEFAULT;
+    }
+}
+
+
+template<>
+RenderSide ToProtoEnum( JOB_PCB_RENDER::SIDE aValue )
+{
+    switch( aValue )
+    {
+    case JOB_PCB_RENDER::SIDE::TOP:    return RenderSide::RS_TOP;
+    case JOB_PCB_RENDER::SIDE::BOTTOM: return RenderSide::RS_BOTTOM;
+    case JOB_PCB_RENDER::SIDE::LEFT:   return RenderSide::RS_LEFT;
+    case JOB_PCB_RENDER::SIDE::RIGHT:  return RenderSide::RS_RIGHT;
+    case JOB_PCB_RENDER::SIDE::FRONT:  return RenderSide::RS_FRONT;
+    case JOB_PCB_RENDER::SIDE::BACK:   return RenderSide::RS_BACK;
+    default:
+        wxCHECK_MSG( false, RenderSide::RS_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_PCB_RENDER::SIDE>" );
+    }
+}
+
+
+template<>
+JOB_PCB_RENDER::SIDE FromProtoEnum( RenderSide aValue )
+{
+    switch( aValue )
+    {
+    case RenderSide::RS_TOP:    return JOB_PCB_RENDER::SIDE::TOP;
+    case RenderSide::RS_BOTTOM: return JOB_PCB_RENDER::SIDE::BOTTOM;
+    case RenderSide::RS_LEFT:   return JOB_PCB_RENDER::SIDE::LEFT;
+    case RenderSide::RS_RIGHT:  return JOB_PCB_RENDER::SIDE::RIGHT;
+    case RenderSide::RS_FRONT:  return JOB_PCB_RENDER::SIDE::FRONT;
+    case RenderSide::RS_BACK:   return JOB_PCB_RENDER::SIDE::BACK;
+    case RenderSide::RS_UNKNOWN:
+    default:
+        return JOB_PCB_RENDER::SIDE::TOP;
+    }
+}
+
+
+template<>
+BoardJobPaginationMode ToProtoEnum( JOB_EXPORT_PCB_SVG::GEN_MODE aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_SVG::GEN_MODE::SINGLE: return BoardJobPaginationMode::BJPM_ALL_LAYERS_ONE_PAGE;
+    case JOB_EXPORT_PCB_SVG::GEN_MODE::MULTI:  return BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_FILE;
+    default:
+        wxCHECK_MSG( false, BoardJobPaginationMode::BJPM_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_SVG::GEN_MODE>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_SVG::GEN_MODE FromProtoEnum( BoardJobPaginationMode aValue )
+{
+    switch( aValue )
+    {
+    case BoardJobPaginationMode::BJPM_ALL_LAYERS_ONE_PAGE:
+        return JOB_EXPORT_PCB_SVG::GEN_MODE::SINGLE;
+    case BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_FILE:
+        return JOB_EXPORT_PCB_SVG::GEN_MODE::MULTI;
+    case BoardJobPaginationMode::BJPM_UNKNOWN:
+    case BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_PAGE:
+    default:
+        return JOB_EXPORT_PCB_SVG::GEN_MODE::SINGLE;
+    }
+}
+
+
+template<>
+BoardJobPaginationMode ToProtoEnum( JOB_EXPORT_PCB_DXF::GEN_MODE aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_DXF::GEN_MODE::SINGLE: return BoardJobPaginationMode::BJPM_ALL_LAYERS_ONE_PAGE;
+    case JOB_EXPORT_PCB_DXF::GEN_MODE::MULTI:  return BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_FILE;
+    default:
+        wxCHECK_MSG( false, BoardJobPaginationMode::BJPM_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_DXF::GEN_MODE>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_DXF::GEN_MODE FromProtoEnum( BoardJobPaginationMode aValue )
+{
+    switch( aValue )
+    {
+    case BoardJobPaginationMode::BJPM_ALL_LAYERS_ONE_PAGE:
+        return JOB_EXPORT_PCB_DXF::GEN_MODE::SINGLE;
+    case BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_FILE:
+        return JOB_EXPORT_PCB_DXF::GEN_MODE::MULTI;
+    case BoardJobPaginationMode::BJPM_UNKNOWN:
+    case BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_PAGE:
+    default:
+        return JOB_EXPORT_PCB_DXF::GEN_MODE::SINGLE;
+    }
+}
+
+
+template<>
+BoardJobPaginationMode ToProtoEnum( JOB_EXPORT_PCB_PDF::GEN_MODE aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_PDF::GEN_MODE::ALL_LAYERS_ONE_FILE:
+        return BoardJobPaginationMode::BJPM_ALL_LAYERS_ONE_PAGE;
+    case JOB_EXPORT_PCB_PDF::GEN_MODE::ONE_PAGE_PER_LAYER_ONE_FILE:
+        return BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_PAGE;
+    case JOB_EXPORT_PCB_PDF::GEN_MODE::ALL_LAYERS_SEPARATE_FILE:
+        return BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_FILE;
+    default:
+        wxCHECK_MSG( false, BoardJobPaginationMode::BJPM_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_PDF::GEN_MODE>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_PDF::GEN_MODE FromProtoEnum( BoardJobPaginationMode aValue )
+{
+    switch( aValue )
+    {
+    case BoardJobPaginationMode::BJPM_ALL_LAYERS_ONE_PAGE:
+        return JOB_EXPORT_PCB_PDF::GEN_MODE::ALL_LAYERS_ONE_FILE;
+    case BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_PAGE:
+        return JOB_EXPORT_PCB_PDF::GEN_MODE::ONE_PAGE_PER_LAYER_ONE_FILE;
+    case BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_FILE:
+        return JOB_EXPORT_PCB_PDF::GEN_MODE::ALL_LAYERS_SEPARATE_FILE;
+    case BoardJobPaginationMode::BJPM_UNKNOWN:
+    default:
+        return JOB_EXPORT_PCB_PDF::GEN_MODE::ALL_LAYERS_ONE_FILE;
+    }
+}
+
+
+template<>
+BoardJobPaginationMode ToProtoEnum( JOB_EXPORT_PCB_PS::GEN_MODE aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_PS::GEN_MODE::SINGLE: return BoardJobPaginationMode::BJPM_ALL_LAYERS_ONE_PAGE;
+    case JOB_EXPORT_PCB_PS::GEN_MODE::MULTI:  return BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_FILE;
+    default:
+        wxCHECK_MSG( false, BoardJobPaginationMode::BJPM_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_PS::GEN_MODE>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_PS::GEN_MODE FromProtoEnum( BoardJobPaginationMode aValue )
+{
+    switch( aValue )
+    {
+    case BoardJobPaginationMode::BJPM_ALL_LAYERS_ONE_PAGE:
+        return JOB_EXPORT_PCB_PS::GEN_MODE::SINGLE;
+    case BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_FILE:
+        return JOB_EXPORT_PCB_PS::GEN_MODE::MULTI;
+    case BoardJobPaginationMode::BJPM_UNKNOWN:
+    case BoardJobPaginationMode::BJPM_EACH_LAYER_OWN_PAGE:
+    default:
+        return JOB_EXPORT_PCB_PS::GEN_MODE::SINGLE;
+    }
+}
+
+
+template<>
+DrillFormat ToProtoEnum( JOB_EXPORT_PCB_DRILL::DRILL_FORMAT aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_DRILL::DRILL_FORMAT::EXCELLON: return DrillFormat::DF_EXCELLON;
+    case JOB_EXPORT_PCB_DRILL::DRILL_FORMAT::GERBER:   return DrillFormat::DF_GERBER;
+    default:
+        wxCHECK_MSG( false, DrillFormat::DF_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_DRILL::DRILL_FORMAT>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_DRILL::DRILL_FORMAT FromProtoEnum( DrillFormat aValue )
+{
+    switch( aValue )
+    {
+    case DrillFormat::DF_EXCELLON: return JOB_EXPORT_PCB_DRILL::DRILL_FORMAT::EXCELLON;
+    case DrillFormat::DF_GERBER:   return JOB_EXPORT_PCB_DRILL::DRILL_FORMAT::GERBER;
+    case DrillFormat::DF_UNKNOWN:
+    default:
+        return JOB_EXPORT_PCB_DRILL::DRILL_FORMAT::EXCELLON;
+    }
+}
+
+
+template<>
+PositionSide ToProtoEnum( JOB_EXPORT_PCB_POS::SIDE aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_POS::SIDE::FRONT: return PositionSide::PS_FRONT;
+    case JOB_EXPORT_PCB_POS::SIDE::BACK:  return PositionSide::PS_BACK;
+    case JOB_EXPORT_PCB_POS::SIDE::BOTH:  return PositionSide::PS_BOTH;
+    default:
+        wxCHECK_MSG( false, PositionSide::PS_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_POS::SIDE>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_POS::SIDE FromProtoEnum( PositionSide aValue )
+{
+    switch( aValue )
+    {
+    case PositionSide::PS_FRONT: return JOB_EXPORT_PCB_POS::SIDE::FRONT;
+    case PositionSide::PS_BACK:  return JOB_EXPORT_PCB_POS::SIDE::BACK;
+    case PositionSide::PS_BOTH:  return JOB_EXPORT_PCB_POS::SIDE::BOTH;
+    case PositionSide::PS_UNKNOWN:
+    default:
+        return JOB_EXPORT_PCB_POS::SIDE::BOTH;
+    }
+}
+
+
+template<>
+PositionFormat ToProtoEnum( JOB_EXPORT_PCB_POS::FORMAT aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_POS::FORMAT::ASCII:  return PositionFormat::PF_ASCII;
+    case JOB_EXPORT_PCB_POS::FORMAT::CSV:    return PositionFormat::PF_CSV;
+    case JOB_EXPORT_PCB_POS::FORMAT::GERBER: return PositionFormat::PF_GERBER;
+    default:
+        wxCHECK_MSG( false, PositionFormat::PF_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_POS::FORMAT>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_POS::FORMAT FromProtoEnum( PositionFormat aValue )
+{
+    switch( aValue )
+    {
+    case PositionFormat::PF_ASCII:  return JOB_EXPORT_PCB_POS::FORMAT::ASCII;
+    case PositionFormat::PF_CSV:    return JOB_EXPORT_PCB_POS::FORMAT::CSV;
+    case PositionFormat::PF_GERBER: return JOB_EXPORT_PCB_POS::FORMAT::GERBER;
+    case PositionFormat::PF_UNKNOWN:
+    default:
+        return JOB_EXPORT_PCB_POS::FORMAT::ASCII;
+    }
+}
+
+
+template<>
+Ipc2581Version ToProtoEnum( JOB_EXPORT_PCB_IPC2581::IPC2581_VERSION aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_IPC2581::IPC2581_VERSION::B: return Ipc2581Version::IPC2581V_B;
+    case JOB_EXPORT_PCB_IPC2581::IPC2581_VERSION::C: return Ipc2581Version::IPC2581V_C;
+    default:
+        wxCHECK_MSG( false, Ipc2581Version::IPC2581V_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_IPC2581::IPC2581_VERSION>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_IPC2581::IPC2581_VERSION FromProtoEnum( Ipc2581Version aValue )
+{
+    switch( aValue )
+    {
+    case Ipc2581Version::IPC2581V_B: return JOB_EXPORT_PCB_IPC2581::IPC2581_VERSION::B;
+    case Ipc2581Version::IPC2581V_C: return JOB_EXPORT_PCB_IPC2581::IPC2581_VERSION::C;
+    case Ipc2581Version::IPC2581V_UNKNOWN:
+    default:
+        return JOB_EXPORT_PCB_IPC2581::IPC2581_VERSION::C;
+    }
+}
+
+
+template<>
+OdbCompression ToProtoEnum( JOB_EXPORT_PCB_ODB::ODB_COMPRESSION aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_ODB::ODB_COMPRESSION::NONE: return OdbCompression::ODBC_NONE;
+    case JOB_EXPORT_PCB_ODB::ODB_COMPRESSION::ZIP:  return OdbCompression::ODBC_ZIP;
+    case JOB_EXPORT_PCB_ODB::ODB_COMPRESSION::TGZ:  return OdbCompression::ODBC_TGZ;
+    default:
+        wxCHECK_MSG( false, OdbCompression::ODBC_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_ODB::ODB_COMPRESSION>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_ODB::ODB_COMPRESSION FromProtoEnum( OdbCompression aValue )
+{
+    switch( aValue )
+    {
+    case OdbCompression::ODBC_NONE: return JOB_EXPORT_PCB_ODB::ODB_COMPRESSION::NONE;
+    case OdbCompression::ODBC_ZIP:  return JOB_EXPORT_PCB_ODB::ODB_COMPRESSION::ZIP;
+    case OdbCompression::ODBC_TGZ:  return JOB_EXPORT_PCB_ODB::ODB_COMPRESSION::TGZ;
+    case OdbCompression::ODBC_UNKNOWN:
+    default:
+        return JOB_EXPORT_PCB_ODB::ODB_COMPRESSION::ZIP;
+    }
+}
+
+
+template<>
+StatsOutputFormat ToProtoEnum( JOB_EXPORT_PCB_STATS::OUTPUT_FORMAT aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_STATS::OUTPUT_FORMAT::REPORT: return StatsOutputFormat::SOF_REPORT;
+    case JOB_EXPORT_PCB_STATS::OUTPUT_FORMAT::JSON:   return StatsOutputFormat::SOF_JSON;
+    default:
+        wxCHECK_MSG( false, StatsOutputFormat::SOF_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_STATS::OUTPUT_FORMAT>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_STATS::OUTPUT_FORMAT FromProtoEnum( StatsOutputFormat aValue )
+{
+    switch( aValue )
+    {
+    case StatsOutputFormat::SOF_REPORT: return JOB_EXPORT_PCB_STATS::OUTPUT_FORMAT::REPORT;
+    case StatsOutputFormat::SOF_JSON:   return JOB_EXPORT_PCB_STATS::OUTPUT_FORMAT::JSON;
+    case StatsOutputFormat::SOF_UNKNOWN:
+    default:
+        return JOB_EXPORT_PCB_STATS::OUTPUT_FORMAT::REPORT;
+    }
+}
+
+
+template<>
+kiapi::common::types::Units ToProtoEnum( JOB_EXPORT_PCB_DXF::DXF_UNITS aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_DXF::DXF_UNITS::INCH: return kiapi::common::types::Units::U_INCH;
+    case JOB_EXPORT_PCB_DXF::DXF_UNITS::MM:   return kiapi::common::types::Units::U_MM;
+    default:
+        wxCHECK_MSG( false, kiapi::common::types::Units::U_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_DXF::DXF_UNITS>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_DXF::DXF_UNITS FromProtoEnum( kiapi::common::types::Units aValue )
+{
+    switch( aValue )
+    {
+    case kiapi::common::types::Units::U_INCH: return JOB_EXPORT_PCB_DXF::DXF_UNITS::INCH;
+    case kiapi::common::types::Units::U_MM:   return JOB_EXPORT_PCB_DXF::DXF_UNITS::MM;
+    case kiapi::common::types::Units::U_UNKNOWN:
+    case kiapi::common::types::Units::U_METERS:
+    case kiapi::common::types::Units::U_TENTHS:
+    default:
+        return JOB_EXPORT_PCB_DXF::DXF_UNITS::INCH;
+    }
+}
+
+
+template<>
+kiapi::common::types::Units ToProtoEnum( JOB_EXPORT_PCB_POS::UNITS aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_POS::UNITS::INCH: return kiapi::common::types::Units::U_INCH;
+    case JOB_EXPORT_PCB_POS::UNITS::MM:   return kiapi::common::types::Units::U_MM;
+    default:
+        wxCHECK_MSG( false, kiapi::common::types::Units::U_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_POS::UNITS>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_POS::UNITS FromProtoEnum( kiapi::common::types::Units aValue )
+{
+    switch( aValue )
+    {
+    case kiapi::common::types::Units::U_INCH: return JOB_EXPORT_PCB_POS::UNITS::INCH;
+    case kiapi::common::types::Units::U_MM:   return JOB_EXPORT_PCB_POS::UNITS::MM;
+    case kiapi::common::types::Units::U_UNKNOWN:
+    case kiapi::common::types::Units::U_METERS:
+    case kiapi::common::types::Units::U_TENTHS:
+    default:
+        return JOB_EXPORT_PCB_POS::UNITS::MM;
+    }
+}
+
+
+template<>
+kiapi::common::types::Units ToProtoEnum( JOB_EXPORT_PCB_IPC2581::IPC2581_UNITS aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_IPC2581::IPC2581_UNITS::INCH: return kiapi::common::types::Units::U_INCH;
+    case JOB_EXPORT_PCB_IPC2581::IPC2581_UNITS::MM:   return kiapi::common::types::Units::U_MM;
+    default:
+        wxCHECK_MSG( false, kiapi::common::types::Units::U_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_IPC2581::IPC2581_UNITS>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_IPC2581::IPC2581_UNITS FromProtoEnum( kiapi::common::types::Units aValue )
+{
+    switch( aValue )
+    {
+    case kiapi::common::types::Units::U_INCH: return JOB_EXPORT_PCB_IPC2581::IPC2581_UNITS::INCH;
+    case kiapi::common::types::Units::U_MM:   return JOB_EXPORT_PCB_IPC2581::IPC2581_UNITS::MM;
+    case kiapi::common::types::Units::U_UNKNOWN:
+    case kiapi::common::types::Units::U_METERS:
+    case kiapi::common::types::Units::U_TENTHS:
+    default:
+        return JOB_EXPORT_PCB_IPC2581::IPC2581_UNITS::MM;
+    }
+}
+
+
+template<>
+kiapi::common::types::Units ToProtoEnum( JOB_EXPORT_PCB_ODB::ODB_UNITS aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_ODB::ODB_UNITS::INCH: return kiapi::common::types::Units::U_INCH;
+    case JOB_EXPORT_PCB_ODB::ODB_UNITS::MM:   return kiapi::common::types::Units::U_MM;
+    default:
+        wxCHECK_MSG( false, kiapi::common::types::Units::U_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_ODB::ODB_UNITS>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_ODB::ODB_UNITS FromProtoEnum( kiapi::common::types::Units aValue )
+{
+    switch( aValue )
+    {
+    case kiapi::common::types::Units::U_INCH: return JOB_EXPORT_PCB_ODB::ODB_UNITS::INCH;
+    case kiapi::common::types::Units::U_MM:   return JOB_EXPORT_PCB_ODB::ODB_UNITS::MM;
+    case kiapi::common::types::Units::U_UNKNOWN:
+    case kiapi::common::types::Units::U_METERS:
+    case kiapi::common::types::Units::U_TENTHS:
+    default:
+        return JOB_EXPORT_PCB_ODB::ODB_UNITS::MM;
+    }
+}
+
+
+template<>
+kiapi::common::types::Units ToProtoEnum( JOB_EXPORT_PCB_STATS::UNITS aValue )
+{
+    switch( aValue )
+    {
+    case JOB_EXPORT_PCB_STATS::UNITS::INCH: return kiapi::common::types::Units::U_INCH;
+    case JOB_EXPORT_PCB_STATS::UNITS::MM:   return kiapi::common::types::Units::U_MM;
+    default:
+        wxCHECK_MSG( false, kiapi::common::types::Units::U_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<JOB_EXPORT_PCB_STATS::UNITS>" );
+    }
+}
+
+
+template<>
+JOB_EXPORT_PCB_STATS::UNITS FromProtoEnum( kiapi::common::types::Units aValue )
+{
+    switch( aValue )
+    {
+    case kiapi::common::types::Units::U_INCH: return JOB_EXPORT_PCB_STATS::UNITS::INCH;
+    case kiapi::common::types::Units::U_MM:   return JOB_EXPORT_PCB_STATS::UNITS::MM;
+    case kiapi::common::types::Units::U_UNKNOWN:
+    case kiapi::common::types::Units::U_METERS:
+    case kiapi::common::types::Units::U_TENTHS:
+    default:
+        return JOB_EXPORT_PCB_STATS::UNITS::MM;
     }
 }
 

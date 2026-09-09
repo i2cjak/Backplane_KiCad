@@ -50,8 +50,11 @@ def main():
         design = root / "project"
         shutil.copytree(source / "qa/data/libraries/test_project", design)
         socket_path = root / "api.sock"
-        env = dict(os.environ, XDG_CONFIG_HOME=str(root / "config"),
+        env = dict(os.environ, HOME=str(root / "home"),
+                   XDG_DATA_HOME=str(root / "data"), XDG_CACHE_HOME=str(root / "cache"),
+                   XDG_CONFIG_HOME=str(root / "config"),
                    KICAD_CONFIG_HOME=str(root / "config/kicad"))
+        (root / "home").mkdir()
         env.pop("DISPLAY", None)
         env.pop("WAYLAND_DISPLAY", None)
 
@@ -64,7 +67,7 @@ def main():
                 deadline = time.monotonic() + 20
                 while not socket_path.is_socket():
                     if server.poll() is not None or time.monotonic() >= deadline:
-                        raise RuntimeError("Headless API server did not start")
+                        raise RuntimeError(f"Headless API server did not start (exit={server.poll()})")
                     time.sleep(0.05)
 
                 with pynng.Req0(dial=f"ipc://{socket_path}", block_on_dial=True,

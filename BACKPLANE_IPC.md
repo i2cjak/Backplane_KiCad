@@ -44,6 +44,10 @@ The fork retains the stable KiCad version number. Clients should generate
 bindings from this repository's `api/proto` definitions; nightly client version
 checks are not a substitute for checking supported commands.
 
+The board-job enum conversion specializations and their round-trip QA coverage
+are restored from upstream KiCad commit `46da153141` (`ADDED: IPC API support
+for jobs`) for the stable 10.0.6 IPC backport.
+
 ## Linux release build
 
 The GitHub Actions workflow `backplane-linux-release.yml` builds `kicad-cli`

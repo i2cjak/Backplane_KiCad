@@ -208,6 +208,11 @@ private:
 protected:
     std::unique_ptr<COMMIT> createCommit() override;
 
+    std::optional<TITLE_BLOCK*> getTitleBlock() override;
+    std::optional<PAGE_INFO> getPageSettings() override;
+    bool setPageSettings( const PAGE_INFO& aPageInfo ) override;
+    void onModified() override;
+
     kiapi::common::types::DocumentType thisDocumentType() const override
     {
         return kiapi::common::types::DOCTYPE_PCB;

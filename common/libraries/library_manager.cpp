@@ -385,6 +385,12 @@ private:
     void addRowIfNecessary( LIBRARY_TABLE* aTable, const wxFileName& aSource, ADD_MODE aMode,
                             int aExtensionLength )
     {
+        // A headless CLI may have no user-created global table yet.  PCM
+        // discovery still runs against the configured third-party directory,
+        // but there is nowhere to record a discovered library in that case.
+        if( !aTable )
+            return;
+
         wxString versionedPath = wxString::Format( wxS( "${%s}" ),
         ENV_VAR::GetVersionedEnvVarName( wxS( "3RD_PARTY" ) ) );
 

@@ -1458,6 +1458,44 @@ HANDLER_RESULT<types::TitleBlockInfo> API_HANDLER_PCB::handleGetTitleBlockInfo(
 }
 
 
+std::optional<TITLE_BLOCK*> API_HANDLER_PCB::getTitleBlock()
+{
+    if( !board() )
+        return std::nullopt;
+
+    return &board()->GetTitleBlock();
+}
+
+
+std::optional<PAGE_INFO> API_HANDLER_PCB::getPageSettings()
+{
+    if( !board() )
+        return std::nullopt;
+
+    return board()->GetPageSettings();
+}
+
+
+bool API_HANDLER_PCB::setPageSettings( const PAGE_INFO& aPageInfo )
+{
+    if( !board() )
+        return false;
+
+    board()->SetPageSettings( aPageInfo );
+    return true;
+}
+
+
+void API_HANDLER_PCB::onModified()
+{
+    if( board() )
+        board()->SetModified();
+
+    if( frame() )
+        frame()->OnModify();
+}
+
+
 HANDLER_RESULT<ExpandTextVariablesResponse> API_HANDLER_PCB::handleExpandTextVariables(
     const HANDLER_CONTEXT<ExpandTextVariables>& aCtx )
 {

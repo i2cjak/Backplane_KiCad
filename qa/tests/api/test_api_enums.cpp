@@ -37,10 +37,23 @@
 // Board-specific
 #include <api/board/board_types.pb.h>
 #include <api/board/board_commands.pb.h>
+#include <api/board/board_jobs.pb.h>
 #include <board_stackup_manager/board_stackup.h>
+#include <jobs/job_export_pcb_3d.h>
+#include <jobs/job_export_pcb_dxf.h>
+#include <jobs/job_export_pcb_drill.h>
+#include <jobs/job_export_pcb_ipc2581.h>
+#include <jobs/job_export_pcb_odb.h>
+#include <jobs/job_export_pcb_pdf.h>
+#include <jobs/job_export_pcb_pos.h>
+#include <jobs/job_export_pcb_ps.h>
+#include <jobs/job_export_pcb_stats.h>
+#include <jobs/job_export_pcb_svg.h>
+#include <jobs/job_pcb_render.h>
 #include <padstack.h>
 #include <pcb_dimension.h>
 #include <pcb_track.h>
+#include <plotprint_opts.h>
 #include <project/board_project_settings.h>
 #include <zones.h>
 #include <zone_settings.h>
@@ -204,5 +217,152 @@ BOOST_AUTO_TEST_CASE( DrcSeverity )
 {
     testEnums<SEVERITY, kiapi::board::commands::DrcSeverity>();
 }
+
+BOOST_AUTO_TEST_CASE( PlotDrillMarks )
+{
+    testEnums<DRILL_MARKS, kiapi::board::jobs::PlotDrillMarks>();
+}
+
+BOOST_AUTO_TEST_CASE( Board3DFormat )
+{
+    testEnums<JOB_EXPORT_PCB_3D::FORMAT, kiapi::board::jobs::Board3DFormat>( true );
+}
+
+BOOST_AUTO_TEST_CASE( Board3DVRMLUnits )
+{
+    testEnums<JOB_EXPORT_PCB_3D::VRML_UNITS, kiapi::common::types::Units>( true );
+}
+
+BOOST_AUTO_TEST_CASE( RenderFormat )
+{
+    testEnums<JOB_PCB_RENDER::FORMAT, kiapi::board::jobs::RenderFormat>();
+}
+
+BOOST_AUTO_TEST_CASE( RenderQuality )
+{
+    testEnums<JOB_PCB_RENDER::QUALITY, kiapi::board::jobs::RenderQuality>();
+}
+
+BOOST_AUTO_TEST_CASE( RenderBackgroundStyle )
+{
+    testEnums<JOB_PCB_RENDER::BG_STYLE, kiapi::board::jobs::RenderBackgroundStyle>();
+}
+
+BOOST_AUTO_TEST_CASE( RenderSide )
+{
+    testEnums<JOB_PCB_RENDER::SIDE, kiapi::board::jobs::RenderSide>();
+}
+
+BOOST_AUTO_TEST_CASE( SvgPaginationMode )
+{
+    using Mode = kiapi::board::jobs::BoardJobPaginationMode;
+
+    BOOST_CHECK( ( ToProtoEnum<JOB_EXPORT_PCB_SVG::GEN_MODE, Mode>( JOB_EXPORT_PCB_SVG::GEN_MODE::SINGLE )
+                   == Mode::BJPM_ALL_LAYERS_ONE_PAGE ) );
+    BOOST_CHECK( ( ToProtoEnum<JOB_EXPORT_PCB_SVG::GEN_MODE, Mode>( JOB_EXPORT_PCB_SVG::GEN_MODE::MULTI )
+                   == Mode::BJPM_EACH_LAYER_OWN_FILE ) );
+
+    BOOST_CHECK( ( FromProtoEnum<JOB_EXPORT_PCB_SVG::GEN_MODE, Mode>( Mode::BJPM_ALL_LAYERS_ONE_PAGE )
+                   == JOB_EXPORT_PCB_SVG::GEN_MODE::SINGLE ) );
+    BOOST_CHECK( ( FromProtoEnum<JOB_EXPORT_PCB_SVG::GEN_MODE, Mode>( Mode::BJPM_EACH_LAYER_OWN_FILE )
+                   == JOB_EXPORT_PCB_SVG::GEN_MODE::MULTI ) );
+    BOOST_CHECK( ( FromProtoEnum<JOB_EXPORT_PCB_SVG::GEN_MODE, Mode>( Mode::BJPM_EACH_LAYER_OWN_PAGE )
+                   == JOB_EXPORT_PCB_SVG::GEN_MODE::SINGLE ) );
+}
+
+BOOST_AUTO_TEST_CASE( DxfPaginationMode )
+{
+    using Mode = kiapi::board::jobs::BoardJobPaginationMode;
+
+    BOOST_CHECK( ( ToProtoEnum<JOB_EXPORT_PCB_DXF::GEN_MODE, Mode>( JOB_EXPORT_PCB_DXF::GEN_MODE::SINGLE )
+                   == Mode::BJPM_ALL_LAYERS_ONE_PAGE ) );
+    BOOST_CHECK( ( ToProtoEnum<JOB_EXPORT_PCB_DXF::GEN_MODE, Mode>( JOB_EXPORT_PCB_DXF::GEN_MODE::MULTI )
+                   == Mode::BJPM_EACH_LAYER_OWN_FILE ) );
+
+    BOOST_CHECK( ( FromProtoEnum<JOB_EXPORT_PCB_DXF::GEN_MODE, Mode>( Mode::BJPM_ALL_LAYERS_ONE_PAGE )
+                   == JOB_EXPORT_PCB_DXF::GEN_MODE::SINGLE ) );
+    BOOST_CHECK( ( FromProtoEnum<JOB_EXPORT_PCB_DXF::GEN_MODE, Mode>( Mode::BJPM_EACH_LAYER_OWN_FILE )
+                   == JOB_EXPORT_PCB_DXF::GEN_MODE::MULTI ) );
+    BOOST_CHECK( ( FromProtoEnum<JOB_EXPORT_PCB_DXF::GEN_MODE, Mode>( Mode::BJPM_EACH_LAYER_OWN_PAGE )
+                   == JOB_EXPORT_PCB_DXF::GEN_MODE::SINGLE ) );
+}
+
+BOOST_AUTO_TEST_CASE( DxfUnits )
+{
+    testEnums<JOB_EXPORT_PCB_DXF::DXF_UNITS, kiapi::common::types::Units>( true );
+}
+
+BOOST_AUTO_TEST_CASE( PdfPaginationMode )
+{
+    testEnums<JOB_EXPORT_PCB_PDF::GEN_MODE, kiapi::board::jobs::BoardJobPaginationMode>();
+}
+
+BOOST_AUTO_TEST_CASE( PsPaginationMode )
+{
+    using Mode = kiapi::board::jobs::BoardJobPaginationMode;
+
+    BOOST_CHECK( ( ToProtoEnum<JOB_EXPORT_PCB_PS::GEN_MODE, Mode>( JOB_EXPORT_PCB_PS::GEN_MODE::SINGLE )
+                   == Mode::BJPM_ALL_LAYERS_ONE_PAGE ) );
+    BOOST_CHECK( ( ToProtoEnum<JOB_EXPORT_PCB_PS::GEN_MODE, Mode>( JOB_EXPORT_PCB_PS::GEN_MODE::MULTI )
+                   == Mode::BJPM_EACH_LAYER_OWN_FILE ) );
+
+    BOOST_CHECK( ( FromProtoEnum<JOB_EXPORT_PCB_PS::GEN_MODE, Mode>( Mode::BJPM_ALL_LAYERS_ONE_PAGE )
+                   == JOB_EXPORT_PCB_PS::GEN_MODE::SINGLE ) );
+    BOOST_CHECK( ( FromProtoEnum<JOB_EXPORT_PCB_PS::GEN_MODE, Mode>( Mode::BJPM_EACH_LAYER_OWN_FILE )
+                   == JOB_EXPORT_PCB_PS::GEN_MODE::MULTI ) );
+    BOOST_CHECK( ( FromProtoEnum<JOB_EXPORT_PCB_PS::GEN_MODE, Mode>( Mode::BJPM_EACH_LAYER_OWN_PAGE )
+                   == JOB_EXPORT_PCB_PS::GEN_MODE::SINGLE ) );
+}
+
+BOOST_AUTO_TEST_CASE( DrillFormat )
+{
+    testEnums<JOB_EXPORT_PCB_DRILL::DRILL_FORMAT, kiapi::board::jobs::DrillFormat>();
+}
+
+BOOST_AUTO_TEST_CASE( PositionSide )
+{
+    testEnums<JOB_EXPORT_PCB_POS::SIDE, kiapi::board::jobs::PositionSide>();
+}
+
+BOOST_AUTO_TEST_CASE( PositionUnits )
+{
+    testEnums<JOB_EXPORT_PCB_POS::UNITS, kiapi::common::types::Units>( true );
+}
+
+BOOST_AUTO_TEST_CASE( PositionFormat )
+{
+    testEnums<JOB_EXPORT_PCB_POS::FORMAT, kiapi::board::jobs::PositionFormat>();
+}
+
+BOOST_AUTO_TEST_CASE( Ipc2581Units )
+{
+    testEnums<JOB_EXPORT_PCB_IPC2581::IPC2581_UNITS, kiapi::common::types::Units>( true );
+}
+
+BOOST_AUTO_TEST_CASE( Ipc2581Version )
+{
+    testEnums<JOB_EXPORT_PCB_IPC2581::IPC2581_VERSION, kiapi::board::jobs::Ipc2581Version>();
+}
+
+BOOST_AUTO_TEST_CASE( OdbUnits )
+{
+    testEnums<JOB_EXPORT_PCB_ODB::ODB_UNITS, kiapi::common::types::Units>( true );
+}
+
+BOOST_AUTO_TEST_CASE( OdbCompression )
+{
+    testEnums<JOB_EXPORT_PCB_ODB::ODB_COMPRESSION, kiapi::board::jobs::OdbCompression>();
+}
+
+BOOST_AUTO_TEST_CASE( StatsOutputFormat )
+{
+    testEnums<JOB_EXPORT_PCB_STATS::OUTPUT_FORMAT, kiapi::board::jobs::StatsOutputFormat>();
+}
+
+BOOST_AUTO_TEST_CASE( StatsUnits )
+{
+    testEnums<JOB_EXPORT_PCB_STATS::UNITS, kiapi::common::types::Units>( true );
+}
+
 
 BOOST_AUTO_TEST_SUITE_END()
