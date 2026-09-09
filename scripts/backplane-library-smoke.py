@@ -108,6 +108,10 @@ def main() -> None:
     if cli.name != "kicad-cli":
         raise RuntimeError(f"expected a kicad-cli entry point, got {cli}")
 
+    for link in runtime.rglob("*"):
+        if link.is_symlink() and not link.resolve(strict=True).is_relative_to(runtime):
+            raise RuntimeError(f"bundled symlink escapes the runtime: {link}")
+
     symbols = runtime / "share/kicad/symbols"
     footprints = runtime / "share/kicad/footprints"
     models = runtime / "share/kicad/3dmodels"
