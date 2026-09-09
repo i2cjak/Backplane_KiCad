@@ -235,7 +235,9 @@ jobs:
           python_version="$(/usr/bin/python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
           test "$python_version" = 3.12
           mkdir -p "release/${archive_root}/lib/python${python_version}" "release/${archive_root}/lib/python3/dist-packages"
-          cp -a "$python_stdlib/." "release/${archive_root}/lib/python${python_version}/"
+          # The distro stdlib links sitecustomize and build metadata outside its tree.
+          # Materialize those files so the runtime never refers back to the build host.
+          cp -aL "$python_stdlib/." "release/${archive_root}/lib/python${python_version}/"
           printf 'systemPython=%s\nstdlib=%s\n' "$python_version" "$python_stdlib" \
             > "release/${archive_root}/PYTHON_RUNTIME.txt"
           cp LICENSE* AUTHORS.txt README.md "release/${archive_root}/licenses/"
