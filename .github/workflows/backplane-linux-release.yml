@@ -296,7 +296,8 @@ jobs:
                   else
                     cp -L "$library" "$destination"
                   fi
-                  package_id="$(dpkg-query -S "$library" "$(realpath "$library")" 2>/dev/null | sed -n '1s/: .*//p' || true)"
+                  # usrmerge diversions precede the actual package owner in dpkg output.
+                  package_id="$(dpkg-query -S "$library" "$(realpath "$library")" 2>/dev/null | sed -n -E '/^[a-z0-9][a-z0-9+.-]*(:[a-z0-9-]+)?: / { s/: .*//; p; q; }' || true)"
                   if [ -n "$package_id" ]; then record_package_notice "$package_id"; fi
                   ;;
               esac
