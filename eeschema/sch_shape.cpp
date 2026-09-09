@@ -32,6 +32,8 @@
 #include <gr_basic.h>
 #include <geometry/geometry_utils.h>
 #include <schematic.h>
+#include <api/api_utils.h>
+#include <api/schematic/schematic_types.pb.h>
 #include <sch_shape.h>
 #include <properties/property.h>
 #include <properties/property_mgr.h>
@@ -49,6 +51,43 @@ SCH_SHAPE::SCH_SHAPE( SHAPE_T aShape, SCH_LAYER_ID aLayer, int aLineWidth, FILL_
 EDA_ITEM* SCH_SHAPE::Clone() const
 {
     return new SCH_SHAPE( *this );
+}
+
+
+void SCH_SHAPE::Serialize( google::protobuf::Any& aContainer ) const
+{
+    using namespace kiapi::common;
+
+    kiapi::schematic::types::SchematicGraphicShape msg;
+    google::protobuf::Any any;
+
+    msg.mutable_id()->set_value( m_Uuid.AsStdString() );
+    msg.set_locked( IsLocked() ? types::LockedState::LS_LOCKED : types::LockedState::LS_UNLOCKED );
+
+    EDA_SHAPE::Serialize( any, schIUScale );
+    any.UnpackTo( msg.mutable_shape() );
+
+    kiapi::common::PackCustomProperties( msg.mutable_custom_properties(), *this );
+    aContainer.PackFrom( msg );
+}
+
+
+bool SCH_SHAPE::Deserialize( const google::protobuf::Any& aContainer )
+{
+    using namespace kiapi::common;
+
+    kiapi::schematic::types::SchematicGraphicShape msg;
+
+    if( !aContainer.UnpackTo( &msg ) )
+        return false;
+
+    const_cast<KIID&>( m_Uuid ) = KIID( msg.id().value() );
+    SetLocked( msg.locked() == types::LockedState::LS_LOCKED );
+    kiapi::common::UnpackCustomProperties( msg.custom_properties(), *this );
+
+    google::protobuf::Any any;
+    any.PackFrom( msg.shape() );
+    return EDA_SHAPE::Deserialize( any, schIUScale );
 }
 
 
@@ -319,16 +358,69 @@ void SCH_SHAPE::Plot( PLOTTER* aPlotter, bool aBackground, const SCH_PLOT_OPTS& 
     VECTOR2I end = renderSettings->TransformCoordinate( m_end ) + aOffset;
     VECTOR2I mid, center;
 
+    auto transformBezierPoint = [&]( const VECTOR2D& aPoint )
+    {
+        return renderSettings->TransformCoordinate( VECTOR2I( aPoint ) ) + aOffset;
+    };
+
+    std::vector<VECTOR2I> lineEndingPlotPoints = ptList;
+
     switch( GetShape() )
     {
     case SHAPE_T::ARC:
+    {
         mid = renderSettings->TransformCoordinate( GetArcMid() ) + aOffset;
-        aPlotter->Arc( start, mid, end, fill, pen_size );
+
+        // Save original endpoints before shortening.
+        VECTOR2I origArcStart = start;
+        VECTOR2I origArcEnd = end;
+
+        if( GetStartEnding().GetStyle() != LINE_ENDING_STYLE::NONE
+            || GetEndEnding().GetStyle() != LINE_ENDING_STYLE::NONE )
+        {
+            SHAPE_ARC arc( start, mid, end, 0 );
+            VECTOR2I  c = arc.GetCenter();
+            EDA_ANGLE startAngle = arc.GetStartAngle();
+            EDA_ANGLE arcAngle = arc.GetCentralAngle();
+
+            // Determine arc direction from start/mid/end.
+            EDA_ANGLE origStart = startAngle;
+            if( ShortenArcForEndings( startAngle, arcAngle, arc.GetRadius(), pen_size ) )
+            {
+                RotatePoint( start, c, origStart - startAngle );
+
+                VECTOR2I newEnd = start;
+                RotatePoint( newEnd, c, -arcAngle );
+
+                VECTOR2I newMid = start;
+                RotatePoint( newMid, c, -arcAngle / 2 );
+
+                aPlotter->Arc( start, newMid, newEnd, fill, pen_size );
+            }
+        }
+        else
+        {
+            aPlotter->Arc( start, mid, end, fill, pen_size );
+        }
+
+        // Restore original endpoints for ending placement.
+        start = origArcStart;
+        end = origArcEnd;
+
         break;
+    }
 
     case SHAPE_T::CIRCLE:
         center = renderSettings->TransformCoordinate( getCenter() ) + aOffset;
         aPlotter->Circle( center, GetRadius() * 2, fill, pen_size );
+        break;
+
+    case SHAPE_T::SEGMENT:
+        if( ShortenSegmentForEndings( start, end, GetStartEnding(), GetEndEnding(), pen_size ) )
+        {
+            aPlotter->MoveTo( start );
+            aPlotter->FinishTo( end );
+        }
         break;
 
     case SHAPE_T::RECTANGLE:
@@ -336,15 +428,110 @@ void SCH_SHAPE::Plot( PLOTTER* aPlotter, bool aBackground, const SCH_PLOT_OPTS& 
         break;
 
     case SHAPE_T::POLY:
-    case SHAPE_T::BEZIER:
+    {
+        if( !ShortenBodyPolyPoints( ptList, IsClosed(), 0, pen_size ) )
+            break;
+
         aPlotter->PlotPoly( ptList, fill, pen_size, nullptr );
         break;
+    }
+
+    case SHAPE_T::BEZIER:
+    {
+        std::optional<BEZIER<double>> curve = ShortenedBezierCurve( pen_size );
+
+        if( curve && aPlotter->GetPlotterType() == PLOT_FORMAT::SVG )
+        {
+            aPlotter->BezierCurve( transformBezierPoint( curve->Start ), transformBezierPoint( curve->C1 ),
+                                   transformBezierPoint( curve->C2 ), transformBezierPoint( curve->End ), GetMaxError(),
+                                   pen_size );
+        }
+        else if( curve )
+        {
+            std::vector<VECTOR2D> pts = ShortenedBezierPolyline( pen_size );
+            std::vector<VECTOR2I> plotPts;
+
+            plotPts.reserve( pts.size() );
+
+            for( const VECTOR2D& pt : pts )
+                plotPts.push_back( transformBezierPoint( pt ) );
+
+            aPlotter->PlotPoly( plotPts, fill, pen_size, nullptr );
+        }
+        break;
+    }
 
     default:
         UNIMPLEMENTED_FOR( SHAPE_T_asString() );
     }
 
     aPlotter->SetDash( pen_size, LINE_STYLE::SOLID );
+
+    // Plot line endings for open shapes.
+    if( !IsClosed()
+        && ( GetStartEnding().GetStyle() != LINE_ENDING_STYLE::NONE
+             || GetEndEnding().GetStyle() != LINE_ENDING_STYLE::NONE ) )
+    {
+        VECTOR2I startPt, endPt;
+
+        if( !GetLineEndingEndpoints( startPt, endPt ) )
+            return;
+
+        startPt = renderSettings->TransformCoordinate( startPt ) + aOffset;
+        endPt = renderSettings->TransformCoordinate( endPt ) + aOffset;
+
+        EDA_SHAPE endingShape( *this );
+
+        switch( GetShape() )
+        {
+        case SHAPE_T::ARC:
+        {
+            endingShape.SetArcGeometry( startPt, mid, endPt );
+            break;
+        }
+
+        case SHAPE_T::POLY:
+            if( lineEndingPlotPoints.size() >= 2 )
+            {
+                SHAPE_POLY_SET plotPoly;
+                plotPoly.NewOutline();
+
+                for( const VECTOR2I& pt : lineEndingPlotPoints )
+                    plotPoly.Append( pt );
+
+                if( GetPolyShape().OutlineCount() > 0 )
+                    plotPoly.Outline( 0 ).SetClosed( GetPolyShape().COutline( 0 ).IsClosed() );
+
+                endingShape.SetPolyShape( plotPoly );
+            }
+
+            break;
+
+        case SHAPE_T::BEZIER:
+        {
+            endingShape.SetStart( startPt );
+            endingShape.SetBezierC1( transformBezierPoint( GetBezierC1() ) );
+            endingShape.SetBezierC2( transformBezierPoint( GetBezierC2() ) );
+            endingShape.SetEnd( endPt );
+            endingShape.RebuildBezierToSegmentsPointsList( getMaxError() );
+            break;
+        }
+
+        case SHAPE_T::SEGMENT:
+            endingShape.SetStart( startPt );
+            endingShape.SetEnd( endPt );
+            break;
+
+        default: break;
+        }
+
+        EDA_ANGLE startTangent;
+        EDA_ANGLE endTangent;
+
+        endingShape.GetEndingTangents( startTangent, endTangent, pen_size );
+        GetStartEnding().Plot( aPlotter, startPt, startTangent, pen_size );
+        GetEndEnding().Plot( aPlotter, endPt, endTangent, pen_size );
+    }
 }
 
 
@@ -368,7 +555,13 @@ int SCH_SHAPE::GetEffectiveWidth() const
 
 const BOX2I SCH_SHAPE::GetBoundingBox() const
 {
-    return getBoundingBox();
+    BOX2I bbox = getBoundingBox();
+    BOX2I endingsBBox;
+
+    if( !IsClosed() && GetLineEndingsBoundingBox( endingsBBox, GetEffectiveWidth() ) )
+        bbox.Merge( endingsBBox );
+
+    return bbox;
 }
 
 

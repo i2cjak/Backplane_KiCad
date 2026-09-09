@@ -174,89 +174,67 @@ EDA_TEXT& EDA_TEXT::operator=( const EDA_TEXT& aText )
 
 void EDA_TEXT::Serialize( google::protobuf::Any& aContainer ) const
 {
+    Serialize( aContainer, pcbIUScale );
+}
+
+
+void EDA_TEXT::Serialize( kiapi::common::types::Text& text, const EDA_IU_SCALE& aScale ) const
+{
     using namespace kiapi::common;
-    types::Text text;
 
     text.set_text( GetText().ToUTF8() );
     text.set_hyperlink( GetHyperlink().ToUTF8() );
-    PackVector2( *text.mutable_position(), GetTextPos() );
+    PackVector2( *text.mutable_position(), GetTextPos(), aScale );
 
     types::TextAttributes* attrs = text.mutable_attributes();
 
-    if( GetFont() )
-        attrs->set_font_name( GetFont()->GetName().ToUTF8() );
-
-    attrs->set_horizontal_alignment( ToProtoEnum<GR_TEXT_H_ALIGN_T, types::HorizontalAlignment>( GetHorizJustify() ) );
-
-    attrs->set_vertical_alignment( ToProtoEnum<GR_TEXT_V_ALIGN_T, types::VerticalAlignment>( GetVertJustify() ) );
-
-    attrs->mutable_angle()->set_value_degrees( GetTextAngleDegrees() );
-    attrs->set_line_spacing( GetLineSpacing() );
-    attrs->mutable_stroke_width()->set_value_nm( GetTextThickness() );
-    attrs->set_italic( IsItalic() );
-    attrs->set_bold( IsBold() );
-    attrs->set_underlined( GetAttributes().m_Underlined );
+    PackTextAttributes( *attrs, GetAttributes(), aScale );
     attrs->set_visible( true );
-    attrs->set_mirrored( IsMirrored() );
-    attrs->set_multiline( IsMultilineAllowed() );
-    attrs->set_keep_upright( IsKeepUpright() );
-    PackVector2( *attrs->mutable_size(), GetTextSize() );
 
-    if( GetTextColor() != COLOR4D::UNSPECIFIED )
-        PackColor( *attrs->mutable_color(), GetTextColor() );
+}
 
+
+void EDA_TEXT::Serialize( google::protobuf::Any& aContainer, const EDA_IU_SCALE& aScale ) const
+{
+    kiapi::common::types::Text text;
+    Serialize( text, aScale );
     aContainer.PackFrom( text );
 }
 
 
 bool EDA_TEXT::Deserialize( const google::protobuf::Any& aContainer )
 {
-    using namespace kiapi::common;
-    types::Text text;
+    return Deserialize( aContainer, pcbIUScale );
+}
 
-    if( !aContainer.UnpackTo( &text ) )
-        return false;
+
+bool EDA_TEXT::Deserialize( const kiapi::common::types::Text& text, const EDA_IU_SCALE& aScale )
+{
+    using namespace kiapi::common;
 
     SetText( wxString( text.text().c_str(), wxConvUTF8 ) );
     SetHyperlink( wxString( text.hyperlink().c_str(), wxConvUTF8 ) );
-    SetTextPos( UnpackVector2( text.position() ) );
+    SetTextPos( UnpackVector2( text.position(), aScale ) );
 
     if( text.has_attributes() )
     {
         TEXT_ATTRIBUTES attrs = GetAttributes();
-
-        attrs.m_Bold = text.attributes().bold();
-        attrs.m_Italic = text.attributes().italic();
-        attrs.m_Underlined = text.attributes().underlined();
-        attrs.m_Mirrored = text.attributes().mirrored();
-        attrs.m_Multiline = text.attributes().multiline();
-        attrs.m_KeepUpright = text.attributes().keep_upright();
-        attrs.m_Size = UnpackVector2( text.attributes().size() );
-
-        if( text.attributes().has_color() )
-            attrs.m_Color = UnpackColor( text.attributes().color() );
-        else
-            attrs.m_Color = COLOR4D::UNSPECIFIED;
-
-        if( !text.attributes().font_name().empty() )
-        {
-            attrs.m_Font = KIFONT::FONT::GetFont( wxString( text.attributes().font_name().c_str(), wxConvUTF8 ),
-                                                  attrs.m_Bold, attrs.m_Italic );
-        }
-
-        attrs.m_Angle = EDA_ANGLE( text.attributes().angle().value_degrees(), DEGREES_T );
-        attrs.m_LineSpacing = text.attributes().line_spacing();
-        attrs.m_StrokeWidth = text.attributes().stroke_width().value_nm();
-        attrs.m_Halign = FromProtoEnum<GR_TEXT_H_ALIGN_T, types::HorizontalAlignment>(
-                text.attributes().horizontal_alignment() );
-
-        attrs.m_Valign =
-                FromProtoEnum<GR_TEXT_V_ALIGN_T, types::VerticalAlignment>( text.attributes().vertical_alignment() );
-
+        UnpackTextAttributes( attrs, text.attributes(), aScale );
         SetAttributes( attrs );
     }
 
     return true;
+}
+
+
+bool EDA_TEXT::Deserialize( const google::protobuf::Any& aContainer, const EDA_IU_SCALE& aScale )
+{
+    kiapi::common::types::Text text;
+
+    if( !aContainer.UnpackTo( &text ) )
+        return false;
+
+    return Deserialize( text, aScale );
 }
 
 

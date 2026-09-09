@@ -29,6 +29,10 @@
 #include <sch_item.h>
 #include <marker_base.h>
 
+namespace kiapi::schematic
+{
+class ErcMarker;
+}
 
 class SCH_MARKER : public SCH_ITEM, public MARKER_BASE
 {
@@ -54,6 +58,12 @@ public:
     wxString SerializeToString() const;
     static SCH_MARKER* DeserializeFromString( const SCH_SHEET_LIST& aSheetList,
                                               const wxString& data );
+
+    void Serialize( google::protobuf::Any& aContainer ) const override;
+    bool Deserialize( const google::protobuf::Any& aContainer ) override;
+
+    static SCH_MARKER* FromProto( const kiapi::schematic::ErcMarker& aMsg,
+                                  const SCH_SHEET_LIST& aSheetList );
 
     std::vector<int> ViewGetLayers() const override;
 

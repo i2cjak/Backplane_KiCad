@@ -465,6 +465,11 @@ public:
     wxString GetCurrentVariant() const { return m_currentVariant; }
     void SetCurrentVariant( const wxString& aVariant );
 
+    // The active editing layer is an editor state with useful headless semantics.  It is
+    // intentionally kept separate from the persisted enabled/visible layer masks.
+    PCB_LAYER_ID GetActiveLayer() const { return m_activeLayer; }
+    void SetActiveLayer( PCB_LAYER_ID aLayer ) { m_activeLayer = aLayer; }
+
     const std::vector<wxString>& GetVariantNames() const { return m_variantNames; }
     void SetVariantNames( const std::vector<wxString>& aNames ) { m_variantNames = aNames; }
 
@@ -499,6 +504,8 @@ public:
 
     /// True if netclasses were loaded from the file
     bool m_LegacyNetclassesLoaded;
+
+    PCB_LAYER_ID m_activeLayer = F_Cu;
 
     BOARD();
     ~BOARD();

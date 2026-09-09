@@ -202,6 +202,7 @@ void PCB_BARCODE::Serialize( google::protobuf::Any& aContainer ) const
     barcode.set_locked( IsLocked() ? kiapi::common::types::LockedState::LS_LOCKED
                                    : kiapi::common::types::LockedState::LS_UNLOCKED );
 
+    kiapi::common::PackCustomProperties( barcode.mutable_custom_properties(), *this );
     aContainer.PackFrom( barcode );
 }
 
@@ -259,6 +260,8 @@ bool PCB_BARCODE::Deserialize( const google::protobuf::Any& aContainer )
     SetLocked( barcode.locked() == kiapi::common::types::LockedState::LS_LOCKED );
 
     AssembleBarcode();
+
+    kiapi::common::UnpackCustomProperties( barcode.custom_properties(), *this );
 
     return true;
 }

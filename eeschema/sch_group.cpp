@@ -20,6 +20,7 @@
  * or you may write to the Free Software Foundation, Inc.,
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
  */
+#include <api/api_utils.h>
 #include <bitmaps.h>
 #include <import_export.h>
 #include <api/schematic/schematic_types.pb.h>
@@ -72,6 +73,7 @@ void SCH_GROUP::Serialize( google::protobuf::Any& aContainer ) const
     for( EDA_ITEM* member : sortedItems )
         group.add_items()->set_value( member->m_Uuid.AsStdString() );
 
+    kiapi::common::PackCustomProperties( group.mutable_custom_properties(), *this );
     aContainer.PackFrom( group );
 }
 
@@ -84,6 +86,9 @@ bool SCH_GROUP::Deserialize( const google::protobuf::Any& aContainer )
 
     if( !aContainer.UnpackTo( &group ) )
         return false;
+
+    kiapi::common::UnpackCustomProperties( group.custom_properties(), *this );
+
 
     const_cast<KIID&>( m_Uuid ) = KIID( group.id().value() );
     SetName( wxString::FromUTF8( group.name() ) );

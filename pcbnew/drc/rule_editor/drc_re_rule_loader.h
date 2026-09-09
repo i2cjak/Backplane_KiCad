@@ -78,6 +78,10 @@ public:
      */
     std::vector<DRC_RE_LOADED_PANEL_ENTRY> LoadFromString( const wxString& aRulesText );
 
+    static wxString ExtractRuleText( const wxString& aContent, const wxString& aRuleName );
+    static wxString ExtractRuleBody( const wxString& aOriginalText );
+    static wxString ExtractRuleComment( const wxString& aOriginalText );
+
 private:
     /**
      * Create the appropriate constraint data object for a panel type.
@@ -105,33 +109,6 @@ private:
      * Convert internal units (nanometers) to millimeters.
      */
     double toMM( int aValue );
-
-    /**
-     * Extract the complete original text of a rule from file content.
-     *
-     * @param aContent The full file content.
-     * @param aRuleName The name of the rule to extract.
-     * @return The complete rule text including (rule ...) wrapper, or empty if not found.
-     */
-    wxString extractRuleText( const wxString& aContent, const wxString& aRuleName );
-
-    /**
-     * Extract the body of a rule from its original text, stripping the
-     * (rule "name" ...) wrapper. Handles both quoted and unquoted rule names.
-     *
-     * @param aOriginalText The full original text of a single rule.
-     * @return The inner body (constraints, conditions) without the rule wrapper.
-     */
-    wxString extractRuleBody( const wxString& aOriginalText );
-
-    /**
-     * Extract comment lines from a rule.
-     * Comments are lines starting with # inside the rule block.
-     *
-     * @param aOriginalText Rule text.
-     * @return Extracted comment text (empty if none).
-     */
-    wxString extractRuleComment( const wxString& aOriginalText );
 
     /**
      * Clean up a condition string after auto-generated tokens have been removed.

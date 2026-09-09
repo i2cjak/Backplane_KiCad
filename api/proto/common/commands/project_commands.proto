@@ -82,6 +82,8 @@ message SetTextVariables
 }
 
 
+// Opens a document. A project remains loaded while its PCB and schematic
+// documents are opened through the headless API server.
 message OpenDocument
 {
   kiapi.common.types.DocumentType type = 1;
@@ -99,6 +101,12 @@ message OpenDocumentResponse
 message CloseDocument
 {
   kiapi.common.types.DocumentSpecifier document = 1;
+}
+
+
+message CloseAllDocuments
+{
+  bool force = 1;
 }
 
 

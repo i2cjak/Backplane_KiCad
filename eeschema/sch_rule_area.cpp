@@ -38,6 +38,9 @@
 #include <sch_screen.h>
 #include <sch_sheet_path.h>
 #include <geometry/shape_rect.h>
+#include <api/api_utils.h>
+#include <api/schematic/schematic_types.pb.h>
+#include <base_units.h>
 #include <properties/property.h>
 #include <properties/property_mgr.h>
 
@@ -69,6 +72,52 @@ wxString SCH_RULE_AREA::GetFriendlyName() const
 EDA_ITEM* SCH_RULE_AREA::Clone() const
 {
     return new SCH_RULE_AREA( *this );
+}
+
+
+void SCH_RULE_AREA::Serialize( google::protobuf::Any& aContainer ) const
+{
+    kiapi::schematic::types::SchematicRuleArea ruleArea;
+
+    ruleArea.mutable_id()->set_value( m_Uuid.AsStdString() );
+    ruleArea.set_locked( IsLocked() ? kiapi::common::types::LockedState::LS_LOCKED
+                                    : kiapi::common::types::LockedState::LS_UNLOCKED );
+    ruleArea.set_exclude_from_sim( m_excludedFromSim );
+    ruleArea.set_exclude_from_bom( m_excludedFromBOM );
+    ruleArea.set_exclude_from_board( m_excludedFromBoard );
+    ruleArea.set_dnp( m_DNP );
+
+    EDA_SHAPE::Serialize( *ruleArea.mutable_shape(), schIUScale );
+
+    kiapi::common::PackCustomProperties( ruleArea.mutable_custom_properties(), *this );
+    aContainer.PackFrom( ruleArea );
+}
+
+
+bool SCH_RULE_AREA::Deserialize( const google::protobuf::Any& aContainer )
+{
+    kiapi::schematic::types::SchematicRuleArea ruleArea;
+
+    if( !aContainer.UnpackTo( &ruleArea ) )
+        return false;
+
+    kiapi::common::UnpackCustomProperties( ruleArea.custom_properties(), *this );
+
+
+    const_cast<KIID&>( m_Uuid ) = KIID( ruleArea.id().value() );
+    SetLocked( ruleArea.locked() == kiapi::common::types::LockedState::LS_LOCKED );
+    SetExcludedFromSim( ruleArea.exclude_from_sim() );
+    SetExcludedFromBOM( ruleArea.exclude_from_bom() );
+    SetExcludedFromBoard( ruleArea.exclude_from_board() );
+    SetDNP( ruleArea.dnp() );
+
+    if( !EDA_SHAPE::Deserialize( ruleArea.shape(), schIUScale ) )
+        return false;
+
+    if( GetShape() != SHAPE_T::POLY )
+        return false;
+
+    return true;
 }
 
 

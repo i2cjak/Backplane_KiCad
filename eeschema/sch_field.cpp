@@ -22,6 +22,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
  */
 
+#include <api/api_utils.h>
 #include <wx/log.h>
 #include <wx/menu.h>
 
@@ -206,9 +207,10 @@ void SCH_FIELD::Serialize( google::protobuf::Any& aContainer ) const
     field.set_allow_auto_place( CanAutoplace() );
 
     google::protobuf::Any any;
-    EDA_TEXT::Serialize( any );
+    EDA_TEXT::Serialize( any, schIUScale );
     any.UnpackTo( field.mutable_text() );
 
+    kiapi::common::PackCustomProperties( field.mutable_custom_properties(), *this );
     aContainer.PackFrom( field );
 }
 
@@ -220,6 +222,9 @@ bool SCH_FIELD::Deserialize( const google::protobuf::Any& aContainer )
     if( !aContainer.UnpackTo( &field ) )
         return false;
 
+    kiapi::common::UnpackCustomProperties( field.custom_properties(), *this );
+
+
     SetName( wxString::FromUTF8( field.name() ) );
     SetVisible( field.visible() );
     SetNameShown( field.show_name() );
@@ -227,7 +232,7 @@ bool SCH_FIELD::Deserialize( const google::protobuf::Any& aContainer )
 
     google::protobuf::Any any;
     any.PackFrom( field.text() );
-    return EDA_TEXT::Deserialize( any );
+    return EDA_TEXT::Deserialize( any, schIUScale );
 }
 
 

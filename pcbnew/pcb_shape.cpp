@@ -89,6 +89,7 @@ void PCB_SHAPE::Serialize( google::protobuf::Any &aContainer ) const
     PackNet( msg.mutable_net() );
     msg.mutable_id()->set_value( m_Uuid.AsStdString() );
     msg.set_locked( IsLocked() ? types::LockedState::LS_LOCKED : types::LockedState::LS_UNLOCKED );
+    kiapi::common::PackCustomProperties( msg.mutable_custom_properties(), *this );
 
     google::protobuf::Any any;
     EDA_SHAPE::Serialize( any );
@@ -129,6 +130,7 @@ bool PCB_SHAPE::Deserialize( const google::protobuf::Any &aContainer )
 
     SetUuidDirect( KIID( msg.id().value() ) );
     SetLocked( msg.locked() == types::LS_LOCKED );
+    kiapi::common::UnpackCustomProperties( msg.custom_properties(), *this );
     SetLayer( FromProtoEnum<PCB_LAYER_ID, BoardLayer>( msg.layer() ) );
     UnpackNet( msg.net() );
 
@@ -797,9 +799,22 @@ const BOX2I PCB_SHAPE::ViewBBox() const
 }
 
 
+const BOX2I PCB_SHAPE::GetBoundingBox() const
+{
+    BOX2I bbox = getBoundingBox();
+    BOX2I endingsBBox;
+
+    if( GetLineEndingsBoundingBox( endingsBBox, GetEffectiveWidth() ) )
+        bbox.Merge( endingsBBox );
+
+    bbox.Normalize();
+    return bbox;
+}
+
+
 std::shared_ptr<SHAPE> PCB_SHAPE::GetEffectiveShape( PCB_LAYER_ID aLayer, FLASHING aFlash ) const
 {
-    return std::make_shared<SHAPE_COMPOUND>( MakeEffectiveShapes() );
+    return std::make_shared<SHAPE_COMPOUND>( MakeEffectiveShapesWithLineEndings( GetEffectiveWidth() ) );
 }
 
 
@@ -826,6 +841,7 @@ void PCB_SHAPE::swapData( BOARD_ITEM* aImage )
     std::swap( m_netinfo, image->m_netinfo );
     std::swap( m_hasSolderMask, image->m_hasSolderMask );
     std::swap( m_solderMaskMargin, image->m_solderMaskMargin );
+    std::swap( m_customProperties, image->m_customProperties );
 }
 
 

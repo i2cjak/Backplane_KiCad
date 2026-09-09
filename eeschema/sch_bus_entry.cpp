@@ -39,6 +39,9 @@
 #include <trigo.h>
 #include <board_item.h>
 #include <connection_graph.h>
+#include <api/api_enums.h>
+#include <api/api_utils.h>
+#include <api/schematic/schematic_types.pb.h>
 #include "sch_painter.h"
 #include "plotters/plotter.h"
 #include <properties/property.h>
@@ -110,6 +113,65 @@ SCH_BUS_BUS_ENTRY::SCH_BUS_BUS_ENTRY( const VECTOR2I& pos, bool aFlipY ) :
     m_lastResolvedWidth = schIUScale.MilsToIU( DEFAULT_WIRE_WIDTH_MILS );
     m_lastResolvedLineStyle = LINE_STYLE::SOLID;
     m_lastResolvedColor = COLOR4D::UNSPECIFIED;
+}
+
+
+void SCH_BUS_ENTRY_BASE::Serialize( google::protobuf::Any& aContainer ) const
+{
+    using namespace kiapi::common;
+
+    kiapi::schematic::types::BusEntry entry;
+    types::StrokeAttributes* stroke = entry.mutable_stroke();
+
+    entry.mutable_id()->set_value( m_Uuid.AsStdString() );
+    PackVector2( *entry.mutable_position(), m_pos, schIUScale );
+    PackVector2( *entry.mutable_size(), m_size, schIUScale );
+    entry.set_locked( IsLocked() ? types::LockedState::LS_LOCKED : types::LockedState::LS_UNLOCKED );
+    entry.set_type( Type() == SCH_BUS_BUS_ENTRY_T ? kiapi::schematic::types::BET_BUS_TO_BUS
+                                                  : kiapi::schematic::types::BET_WIRE_TO_BUS );
+
+    PackDistance( *stroke->mutable_width(), m_stroke.GetWidth(), schIUScale );
+    stroke->set_style( ToProtoEnum<LINE_STYLE, types::StrokeLineStyle>( m_stroke.GetLineStyle() ) );
+
+    if( m_stroke.GetColor() != COLOR4D::UNSPECIFIED )
+        PackColor( *stroke->mutable_color(), m_stroke.GetColor() );
+
+    PackCustomProperties( entry.mutable_custom_properties(), *this );
+    aContainer.PackFrom( entry );
+}
+
+
+bool SCH_BUS_ENTRY_BASE::Deserialize( const google::protobuf::Any& aContainer )
+{
+    using namespace kiapi::common;
+
+    kiapi::schematic::types::BusEntry entry;
+
+    if( !aContainer.UnpackTo( &entry ) )
+        return false;
+
+    if( ( Type() == SCH_BUS_WIRE_ENTRY_T && entry.type() != kiapi::schematic::types::BET_WIRE_TO_BUS )
+        || ( Type() == SCH_BUS_BUS_ENTRY_T && entry.type() != kiapi::schematic::types::BET_BUS_TO_BUS ) )
+    {
+        return false;
+    }
+
+    const_cast<KIID&>( m_Uuid ) = KIID( entry.id().value() );
+    m_pos = UnpackVector2( entry.position(), schIUScale );
+    m_size = UnpackVector2( entry.size(), schIUScale );
+    SetLocked( entry.locked() == types::LockedState::LS_LOCKED );
+
+    m_stroke.SetWidth( UnpackDistance( entry.stroke().width(), schIUScale ) );
+    m_stroke.SetLineStyle( FromProtoEnum<LINE_STYLE, types::StrokeLineStyle>( entry.stroke().style() ) );
+
+    if( entry.stroke().has_color() )
+        m_stroke.SetColor( UnpackColor( entry.stroke().color() ) );
+    else
+        m_stroke.SetColor( COLOR4D::UNSPECIFIED );
+
+    UnpackCustomProperties( entry.custom_properties(), *this );
+    SetLayer( entry.type() == kiapi::schematic::types::BET_BUS_TO_BUS ? LAYER_BUS : LAYER_WIRE );
+    return true;
 }
 
 

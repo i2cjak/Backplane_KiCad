@@ -39,6 +39,7 @@ class NETINFO_ITEM;
 class PAD;
 class PCB_EDIT_FRAME;
 class PCB_GROUP;
+class TOOL_MANAGER;
 
 #include <board_commit.h>
 
@@ -70,6 +71,7 @@ class BOARD_NETLIST_UPDATER
 {
 public:
     BOARD_NETLIST_UPDATER( PCB_EDIT_FRAME* aFrame, BOARD* aBoard );
+    BOARD_NETLIST_UPDATER( TOOL_MANAGER* aToolManager, BOARD* aBoard );
     ~BOARD_NETLIST_UPDATER();
 
     /**
@@ -115,6 +117,12 @@ public:
     std::vector<FOOTPRINT*> GetAddedFootprints() const { return m_addedFootprints; }
 
     std::vector<PCB_GROUP*> GetAddedGroups() const { return m_addedGroups; }
+
+    int GetErrorCount() const { return m_errorCount; }
+
+    int GetWarningCount() const { return m_warningCount; }
+
+    int GetNewFootprintCount() const { return m_newFootprintsCount; }
 
 private:
     void cacheNetname( PAD* aPad, const wxString& aNetname );

@@ -14,8 +14,8 @@
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License along
- * with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
 syntax = "proto3";
@@ -35,6 +35,8 @@ message SchematicField
   bool show_name = 5;
   bool allow_auto_place = 6;
   bool is_private = 7;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 8;
 }
 
 enum SchematicLineType
@@ -54,6 +56,10 @@ message SchematicLine
   SchematicLineType type = 4;
   kiapi.common.types.StrokeAttributes stroke = 5;
   kiapi.common.types.LockedState locked = 6;
+  kiapi.common.types.LineEnding start_ending = 7;
+  kiapi.common.types.LineEnding end_ending   = 8;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 9;
 }
 
 message Junction
@@ -63,6 +69,8 @@ message Junction
   kiapi.common.types.Distance diameter = 3;
   kiapi.common.types.Color color = 4;
   kiapi.common.types.LockedState locked = 5;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 6;
 }
 
 message NoConnectMarker
@@ -71,6 +79,8 @@ message NoConnectMarker
   kiapi.common.types.Vector2 position = 2;
   kiapi.common.types.Distance size = 3;
   kiapi.common.types.LockedState locked = 4;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 5;
 }
 
 enum BusEntryType
@@ -88,6 +98,8 @@ message BusEntry
   kiapi.common.types.StrokeAttributes stroke = 4;
   kiapi.common.types.LockedState locked = 5;
   BusEntryType type = 6;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 7;
 }
 
 message SchematicText
@@ -96,6 +108,8 @@ message SchematicText
   kiapi.common.types.Text text = 2;
   kiapi.common.types.LockedState locked = 3;
   bool exclude_from_sim = 4;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 5;
 }
 
 message SchematicTextBox
@@ -109,6 +123,8 @@ message SchematicTextBox
   kiapi.common.types.Distance margin_top = 7;
   kiapi.common.types.Distance margin_right = 8;
   kiapi.common.types.Distance margin_bottom = 9;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 10;
 }
 
 message SchematicGraphicShape
@@ -116,6 +132,8 @@ message SchematicGraphicShape
   kiapi.common.types.GraphicShape shape = 1;
   kiapi.common.types.KIID id = 2;
   kiapi.common.types.LockedState locked = 3;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 4;
 }
 
 message SchematicImage
@@ -126,6 +144,8 @@ message SchematicImage
   kiapi.common.types.Ratio image_scale = 4;
   bytes image_data = 5;
   kiapi.common.types.LockedState locked = 6;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 7;
 }
 
 enum SchematicLabelShape
@@ -159,6 +179,9 @@ message LocalLabel
   SchematicLabelSpinStyle spin_style = 4;
   repeated SchematicField fields = 5;
   kiapi.common.types.LockedState locked = 6;
+  bool fields_autoplaced = 7;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 8;
 }
 
 message GlobalLabel
@@ -171,6 +194,9 @@ message GlobalLabel
   repeated SchematicField fields = 6;
   kiapi.common.types.LockedState locked = 7;
   SchematicField intersheet_refs_field = 8;
+  bool fields_autoplaced = 9;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 10;
 }
 
 message HierarchicalLabel
@@ -182,6 +208,9 @@ message HierarchicalLabel
   SchematicLabelShape shape = 5;
   repeated SchematicField fields = 6;
   kiapi.common.types.LockedState locked = 7;
+  bool fields_autoplaced = 8;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 9;
 }
 
 message DirectiveLabel
@@ -195,6 +224,9 @@ message DirectiveLabel
   kiapi.common.types.LockedState locked = 7;
   kiapi.common.types.Distance pin_length = 8;
   kiapi.common.types.Distance symbol_size = 9;
+  bool fields_autoplaced = 10;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 11;
 }
 
 message Group
@@ -203,6 +235,22 @@ message Group
   string name = 2;
   repeated kiapi.common.types.KIID items = 3;
   kiapi.common.types.LockedState locked = 4;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 5;
+}
+
+message SchematicRuleArea
+{
+  kiapi.common.types.KIID id = 1;
+  kiapi.common.types.GraphicShape shape = 2;
+  kiapi.common.types.LockedState locked = 3;
+
+  bool exclude_from_sim = 4;
+  bool exclude_from_bom = 5;
+  bool exclude_from_board = 6;
+  bool dnp = 7;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 8;
 }
 
 enum SheetSide
@@ -247,6 +295,10 @@ message SheetSymbol
 
   // Page numbers in KiCad are arbitrary user data and don't have to be numeric
   string page_number = 16;
+  bool fields_autoplaced = 17;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 18;
+  repeated SheetVariant variants = 19;
 }
 
 enum SchematicSymbolType
@@ -316,6 +368,8 @@ message SchematicPin
 
   repeated SchematicPinAlternate alternates = 12;
   optional string active_alternate = 13;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 14;
 }
 
 message SchematicSymbolUnit
@@ -361,6 +415,97 @@ message SchematicSymbolVariant
   SchematicSymbolAttributes attributes = 3;
 
   map<string, string> fields = 4;
+
+  optional kiapi.common.types.LibraryIdentifier symbol_override = 5;
+  optional PinMapInstanceOverride pin_map_override = 6;
+}
+
+// What one design variant changes about a placed sheet.
+message SheetVariant
+{
+  string name = 1;
+  optional string description = 2;
+  optional bool exclude_from_sim = 3;
+  optional bool exclude_from_bom = 4;
+  optional bool dnp = 5;
+  map<string, string> fields = 6;
+}
+
+message PinMapEntry
+{
+  string pin_number = 1;
+  string pad_number = 2;   // bracketed stacked list allowed, e.g. "[4,9]"
+}
+
+// A named, footprint-agnostic pin map.
+message PinMap
+{
+  string name                  = 1;
+  repeated PinMapEntry entries = 2;
+}
+
+// A footprint choice on a symbol, tied to a named pin map.
+message AssociatedFootprint
+{
+  kiapi.common.types.LibraryIdentifier footprint = 1;
+  string map_name = 2;
+}
+
+// The pin-map bundle owned by a library symbol.
+message SymbolPinMaps
+{
+  repeated AssociatedFootprint associated_footprints = 1;
+  repeated PinMap pin_maps                           = 2;
+}
+
+enum PinMapOverrideMode
+{
+  PMOM_UNKNOWN             = 0;
+  PMOM_USE_LIBRARY_DEFAULT = 1;
+  PMOM_USE_NAMED_MAP       = 2;
+  PMOM_FORCE_IDENTITY      = 3;
+  PMOM_DELEGATE_TO_UNIT_1  = 4;
+}
+
+// A per-instance override of the active pin map
+message PinMapInstanceOverride
+{
+  PinMapOverrideMode mode      = 1;
+  string active_map_name       = 2;
+  repeated PinMapEntry edits   = 3;
+}
+
+enum SchematicPassthroughMode
+{
+  SPM_UNKNOWN = 0;
+  SPM_DEFAULT = 1;
+  SPM_BLOCK   = 2;
+  SPM_FORCE   = 3;
+}
+
+// A group of pin numbers that should be treated as internally connected
+message JumperGroup
+{
+  repeated string pin_numbers = 1;
+}
+
+message JumperSettings
+{
+  /// If true, duplicate pin numbers in this symbol are jumpered together
+  bool duplicate_names_are_jumpered = 1;
+
+  repeated JumperGroup groups = 2;
+}
+
+message SchematicUnitDisplayName
+{
+  int32  unit = 1;
+  string name = 2;
+}
+
+message SchematicBodyStyle
+{
+  string name = 1;
 }
 
 message SchematicSymbol
@@ -380,10 +525,23 @@ message SchematicSymbol
   repeated SchematicSymbolChild items = 9;
 
   uint32 unit_count = 10;
-  uint32 body_style_count = 11;
+  repeated SchematicBodyStyle body_style = 11;
 
   string keywords = 12;
   repeated string footprint_filters = 13;
+
+  SymbolPinMaps pin_maps = 14;
+
+  JumperSettings jumpers = 15;
+
+  bool units_locked = 16;
+  repeated SchematicUnitDisplayName unit_display_names = 17;
+  bool embedded_fonts = 18;
+  bool show_pin_numbers = 19;
+  bool show_pin_names = 20;
+  kiapi.common.types.Distance pin_name_offset = 21;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 22;
 }
 
 message SchematicSymbolTransform
@@ -424,6 +582,17 @@ message SchematicSymbolInstance
   kiapi.common.types.Distance pin_name_offset = 17;
 
   repeated SchematicSymbolVariant variants = 18;
+
+  repeated SchematicField user_fields = 19;
+  PinMapInstanceOverride pin_map_override = 20;
+  bool fields_autoplaced = 21;
+
+  // Symbol library name override; empty means use the definition lib id
+  string lib_name = 22;
+
+  SchematicPassthroughMode passthrough = 23;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 24;
 }
 
 message SheetInstance
@@ -448,4 +617,43 @@ message SchematicNet
   string name = 1;
 
   repeated SchematicNetSheetContents sheets = 2;
+}
+
+message SchematicTableCell
+{
+  SchematicTextBox text_box = 1;
+  int32 column_span = 2;
+  int32 row_span = 3;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 4;
+}
+
+enum TableStrokeMode
+{
+  TSM_UNKNOWN = 0;
+  TSM_DISABLED = 1;
+  TSM_ENABLED = 2;
+}
+
+message SchematicTable
+{
+  kiapi.common.types.KIID id = 1;
+
+  int32 column_count = 2;
+  repeated kiapi.common.types.Distance column_widths = 3;
+  repeated kiapi.common.types.Distance row_heights = 4;
+
+  kiapi.common.types.LockedState locked = 5;
+
+  repeated SchematicTableCell cells = 6;
+
+  TableStrokeMode external_border = 7;
+  TableStrokeMode header_separator = 8;
+  kiapi.common.types.StrokeAttributes border_stroke = 9;
+
+  TableStrokeMode row_separators = 10;
+  TableStrokeMode column_separators = 11;
+  kiapi.common.types.StrokeAttributes separators_stroke = 12;
+
+  repeated kiapi.common.types.CustomProperty custom_properties = 13;
 }

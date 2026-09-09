@@ -359,6 +359,7 @@ set( PCBNEW_DRC_SRCS
 set( PCBNEW_NETLIST_SRCS
     netlist_reader/board_netlist_updater.cpp
     netlist_reader/netlist.cpp
+    netlist_reader/pcb_netlist_utils.cpp
     )
 
 set( ZONE_MANAGER_SRCS
@@ -533,7 +534,14 @@ set( PCBNEW_SCRIPTING_PYTHON_HELPERS
 
 if( KICAD_IPC_API )
     set( PCBNEW_SRCS ${PCBNEW_SRCS}
+        api/api_handler_board.cpp
+        api/api_handler_footprint.cpp
         api/api_handler_pcb.cpp
+        api/api_pcb_variants.cpp
+        api/api_pcb_connectivity.cpp
+        api/api_pcb_embedded.cpp
+        api/footprint_context.cpp
+        api/headless_footprint_context.cpp
         api/headless_board_context.cpp
         api/board_context.cpp
         )

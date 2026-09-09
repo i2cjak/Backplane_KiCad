@@ -32,6 +32,8 @@
 #include <footprint.h>
 #include <properties/property.h>
 #include <properties/property_mgr.h>
+#include <api/api_utils.h>
+#include <api/board/board_types.pb.h>
 
 
 PCB_TABLECELL::PCB_TABLECELL( BOARD_ITEM* aParent ) :
@@ -46,6 +48,51 @@ PCB_TABLECELL::PCB_TABLECELL( BOARD_ITEM* aParent ) :
 
     SetRectangleHeight( std::numeric_limits<int>::max() / 2 );
     SetRectangleWidth( std::numeric_limits<int>::max() / 2 );
+}
+
+
+void PCB_TABLECELL::CopyFrom( const BOARD_ITEM* aOther )
+{
+    wxCHECK( aOther && aOther->Type() == PCB_TABLECELL_T, /* void */ );
+
+    const PCB_TABLECELL* other = static_cast<const PCB_TABLECELL*>( aOther );
+    PCB_TEXTBOX::operator=( *other );
+    m_colSpan = other->m_colSpan;
+    m_rowSpan = other->m_rowSpan;
+}
+
+
+void PCB_TABLECELL::Serialize( google::protobuf::Any& aContainer ) const
+{
+    kiapi::board::types::TableCell cell;
+    google::protobuf::Any textbox;
+
+    PCB_TEXTBOX::Serialize( textbox );
+    textbox.UnpackTo( cell.mutable_text_box() );
+    cell.set_column_span( m_colSpan );
+    cell.set_row_span( m_rowSpan );
+    kiapi::common::PackCustomProperties( cell.mutable_custom_properties(), *this );
+    aContainer.PackFrom( cell );
+}
+
+
+bool PCB_TABLECELL::Deserialize( const google::protobuf::Any& aContainer )
+{
+    kiapi::board::types::TableCell cell;
+
+    if( !aContainer.UnpackTo( &cell ) )
+        return false;
+
+    google::protobuf::Any textbox;
+    textbox.PackFrom( cell.text_box() );
+
+    if( !PCB_TEXTBOX::Deserialize( textbox ) )
+        return false;
+
+    m_colSpan = cell.column_span();
+    m_rowSpan = cell.row_span();
+    kiapi::common::UnpackCustomProperties( cell.custom_properties(), *this );
+    return true;
 }
 
 

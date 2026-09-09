@@ -23,14 +23,17 @@
  */
 
 #include <base_units.h>
+#include <eda_shape.h>
 #include <import_export.h>
 #include <bitmaps.h>
 #include <string_utils.h>
 #include <core/mirror.h>
 #include <sch_painter.h>
 #include <sch_plotter.h>
+#include <geometry/shape_compound.h>
 #include <geometry/shape_segment.h>
 #include <geometry/geometry_utils.h>
+#include <geometry/shape_utils.h>
 #include <sch_line.h>
 #include <sch_edit_frame.h>
 #include <settings/color_settings.h>
@@ -46,6 +49,28 @@
 #include <properties/property_mgr.h>
 #include <origin_transforms.h>
 #include <math/util.h>
+
+namespace
+{
+
+bool hasLineEnding( const SCH_LINE& aLine )
+{
+    return aLine.GetStartEnding().GetStyle() != LINE_ENDING_STYLE::NONE
+           || aLine.GetEndEnding().GetStyle() != LINE_ENDING_STYLE::NONE;
+}
+
+
+EDA_SHAPE makeLineEndingShape( const SCH_LINE& aLine )
+{
+    EDA_SHAPE shape( SHAPE_T::SEGMENT, aLine.GetPenWidth(), FILL_T::NO_FILL );
+    shape.SetStart( aLine.GetStartPoint() );
+    shape.SetEnd( aLine.GetEndPoint() );
+    shape.SetStartEnding( aLine.GetStartEnding() );
+    shape.SetEndEnding( aLine.GetEndEnding() );
+    return shape;
+}
+
+} // namespace
 
 
 SCH_LINE::SCH_LINE( const VECTOR2I& pos, int layer ) :
@@ -86,6 +111,8 @@ SCH_LINE::SCH_LINE( const SCH_LINE& aLine ) :
 {
     m_start = aLine.m_start;
     m_end = aLine.m_end;
+    m_startEnding = aLine.m_startEnding;
+    m_endEnding = aLine.m_endEnding;
     m_stroke = aLine.m_stroke;
     m_startIsDangling = aLine.m_startIsDangling;
     m_endIsDangling = aLine.m_endIsDangling;
@@ -112,15 +139,18 @@ void SCH_LINE::Serialize( google::protobuf::Any &aContainer ) const
     types::StrokeAttributes* stroke = line.mutable_stroke();
 
     line.mutable_id()->set_value( m_Uuid.AsStdString() );
-    PackVector2( *line.mutable_start(), GetStartPoint() );
-    PackVector2( *line.mutable_end(), GetEndPoint() );
+    PackVector2( *line.mutable_start(), GetStartPoint(), schIUScale );
+    PackVector2( *line.mutable_end(), GetEndPoint(), schIUScale );
     line.set_locked( IsLocked() ? types::LockedState::LS_LOCKED : types::LockedState::LS_UNLOCKED );
 
-    stroke->mutable_width()->set_value_nm( m_stroke.GetWidth() );
+    PackDistance( *stroke->mutable_width(), m_stroke.GetWidth(), schIUScale );
     stroke->set_style( ToProtoEnum<LINE_STYLE, types::StrokeLineStyle>( m_stroke.GetLineStyle() ) );
 
     if( m_stroke.GetColor() != COLOR4D::UNSPECIFIED )
         PackColor( *stroke->mutable_color(), m_stroke.GetColor() );
+
+    PackLineEnding( *line.mutable_start_ending(), m_startEnding, schIUScale );
+    PackLineEnding( *line.mutable_end_ending(), m_endEnding, schIUScale );
 
     switch( GetLayer() )
     {
@@ -141,6 +171,7 @@ void SCH_LINE::Serialize( google::protobuf::Any &aContainer ) const
         break;
     }
 
+    kiapi::common::PackCustomProperties( line.mutable_custom_properties(), *this );
     aContainer.PackFrom( line );
 }
 
@@ -154,18 +185,31 @@ bool SCH_LINE::Deserialize( const google::protobuf::Any &aContainer )
     if( !aContainer.UnpackTo( &line ) )
         return false;
 
+    kiapi::common::UnpackCustomProperties( line.custom_properties(), *this );
+
+
     const_cast<KIID&>( m_Uuid ) = KIID( line.id().value() );
-    SetStartPoint( UnpackVector2( line.start() ) );
-    SetEndPoint( UnpackVector2( line.end() ) );
+    SetStartPoint( UnpackVector2( line.start(), schIUScale ) );
+    SetEndPoint( UnpackVector2( line.end(), schIUScale ) );
     SetLocked( line.locked() == types::LockedState::LS_LOCKED );
 
-    m_stroke.SetWidth( line.stroke().width().value_nm() );
+    m_stroke.SetWidth( UnpackDistance( line.stroke().width(), schIUScale ) );
     m_stroke.SetLineStyle( FromProtoEnum<LINE_STYLE, types::StrokeLineStyle>( line.stroke().style() ) );
 
     if( line.stroke().has_color() )
         m_stroke.SetColor( UnpackColor( line.stroke().color() ) );
     else
         m_stroke.SetColor( COLOR4D::UNSPECIFIED );
+
+    if( line.has_start_ending() )
+        m_startEnding = UnpackLineEnding( line.start_ending(), schIUScale );
+    else
+        m_startEnding = LINE_ENDING();
+
+    if( line.has_end_ending() )
+        m_endEnding = UnpackLineEnding( line.end_ending(), schIUScale );
+    else
+        m_endEnding = LINE_ENDING();
 
     switch( line.type() )
     {
@@ -283,6 +327,15 @@ const BOX2I SCH_LINE::GetBoundingBox() const
     int   ymax = std::max( m_start.y, m_end.y ) + width + 1;
 
     BOX2I ret( VECTOR2I( xmin, ymin ), VECTOR2I( xmax - xmin, ymax - ymin ) );
+
+    if( IsGraphicLine() && hasLineEnding( *this ) )
+    {
+        EDA_SHAPE tempShape = makeLineEndingShape( *this );
+        BOX2I     endingsBBox;
+
+        if( tempShape.GetLineEndingsBoundingBox( endingsBBox, GetPenWidth() ) )
+            ret.Merge( endingsBBox );
+    }
 
     return ret;
 }
@@ -861,6 +914,16 @@ bool SCH_LINE::HitTest( const VECTOR2I& aPosition, int aAccuracy ) const
     if( aPosition == m_start || aPosition == m_end )
         return true;
 
+    if( IsGraphicLine() && hasLineEnding( *this ) )
+    {
+        EDA_SHAPE      tempShape = makeLineEndingShape( *this );
+        SHAPE_COMPOUND shape( tempShape.MakeEffectiveShapesWithLineEndings( GetPenWidth() ) );
+        const SHAPE&   hitShape = shape;
+        int            accuracy = aAccuracy >= 0 ? aAccuracy : abs( aAccuracy );
+
+        return hitShape.Collide( aPosition, accuracy );
+    }
+
     if( aAccuracy >= 0 )
         aAccuracy += GetPenWidth() / 2;
     else
@@ -880,6 +943,15 @@ bool SCH_LINE::HitTest( const BOX2I& aRect, bool aContained, int aAccuracy ) con
     if ( aAccuracy )
         rect.Inflate( aAccuracy );
 
+    if( IsGraphicLine() && hasLineEnding( *this ) )
+    {
+        EDA_SHAPE        tempShape = makeLineEndingShape( *this );
+        SHAPE_COMPOUND   shape( tempShape.MakeEffectiveShapesWithLineEndings( GetPenWidth() ) );
+        SHAPE_LINE_CHAIN selection = KIGEOM::BoxToLineChain( rect );
+
+        return KIGEOM::ShapeHitTest( selection, shape, aContained );
+    }
+
     if( aContained )
         return rect.Contains( m_start ) && rect.Contains( m_end );
 
@@ -891,6 +963,14 @@ bool SCH_LINE::HitTest( const SHAPE_LINE_CHAIN& aPoly, bool aContained ) const
 {
     if( m_flags & (STRUCT_DELETED | SKIP_STRUCT ) )
         return false;
+
+    if( IsGraphicLine() && hasLineEnding( *this ) )
+    {
+        EDA_SHAPE      tempShape = makeLineEndingShape( *this );
+        SHAPE_COMPOUND shape( tempShape.MakeEffectiveShapesWithLineEndings( GetPenWidth() ) );
+
+        return KIGEOM::ShapeHitTest( aPoly, shape, aContained );
+    }
 
     SHAPE_SEGMENT line( m_start, m_end, GetPenWidth() );
     return KIGEOM::ShapeHitTest( aPoly, line, aContained );
@@ -906,6 +986,8 @@ void SCH_LINE::swapData( SCH_ITEM* aItem )
     std::swap( m_startIsDangling, item->m_startIsDangling );
     std::swap( m_endIsDangling, item->m_endIsDangling );
     std::swap( m_stroke, item->m_stroke );
+    std::swap( m_startEnding, item->m_startEnding );
+    std::swap( m_endEnding, item->m_endEnding );
 }
 
 
@@ -939,10 +1021,28 @@ void SCH_LINE::Plot( PLOTTER* aPlotter, bool aBackground, const SCH_PLOT_OPTS& a
     aPlotter->SetCurrentLineWidth( penWidth );
     aPlotter->SetDash( penWidth, GetEffectiveLineStyle() );
 
-    aPlotter->MoveTo( m_start );
-    aPlotter->FinishTo( m_end );
+    VECTOR2I plotStart = m_start;
+    VECTOR2I plotEnd = m_end;
+    bool     drawLineBody = true;
+
+    if( IsGraphicLine() )
+        drawLineBody = EDA_SHAPE::ShortenSegmentForEndings( plotStart, plotEnd, GetStartEnding(), GetEndEnding(),
+                                                            penWidth );
+
+    if( drawLineBody )
+    {
+        aPlotter->MoveTo( plotStart );
+        aPlotter->FinishTo( plotEnd );
+    }
 
     aPlotter->SetDash( penWidth, LINE_STYLE::SOLID );
+
+    if( IsGraphicLine() )
+    {
+        EDA_ANGLE lineAngle( m_end - m_start );
+        GetStartEnding().Plot( aPlotter, m_start, lineAngle + ANGLE_180, penWidth );
+        GetEndEnding().Plot( aPlotter, m_end, lineAngle, penWidth );
+    }
 
     // Plot attributes to a hypertext menu
     std::vector<wxString> properties;
@@ -1067,6 +1167,9 @@ bool SCH_LINE::operator==( const SCH_ITEM& aOther ) const
     if( m_stroke.GetLineStyle() != other.m_stroke.GetLineStyle() )
         return false;
 
+    if( m_startEnding != other.m_startEnding || m_endEnding != other.m_endEnding )
+        return false;
+
     return true;
 }
 
@@ -1099,6 +1202,12 @@ double SCH_LINE::Similarity( const SCH_ITEM& aOther ) const
         similarity *= 0.9;
 
     if( m_stroke.GetLineStyle() != other.m_stroke.GetLineStyle() )
+        similarity *= 0.9;
+
+    if( m_startEnding != other.m_startEnding )
+        similarity *= 0.9;
+
+    if( m_endEnding != other.m_endEnding )
         similarity *= 0.9;
 
     return similarity;

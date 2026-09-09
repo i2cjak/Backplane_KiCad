@@ -23,6 +23,10 @@
  */
 
 #include <sch_draw_panel.h>
+#include <google/protobuf/any.pb.h>
+#include <api/api_enums.h>
+#include <api/api_utils.h>
+#include <api/schematic/schematic_rules.pb.h>
 #include <trigo.h>
 #include <widgets/msgpanel.h>
 #include <bitmaps.h>
@@ -59,6 +63,165 @@ SCH_MARKER::~SCH_MARKER()
 {
     if( m_rcItem )
         m_rcItem->SetParent( nullptr );
+}
+
+
+static void PackMarker( kiapi::schematic::ErcMarker& aOutput, const SCH_MARKER& aMarker )
+{
+    const std::shared_ptr<ERC_ITEM> erc = std::static_pointer_cast<ERC_ITEM>( aMarker.GetRCItem() );
+
+    if( !erc )
+        return;
+
+    aOutput.set_error_type( ToProtoEnum<ERCE_T, kiapi::schematic::ErcErrorType>(
+            static_cast<ERCE_T>( erc->GetErrorCode() ) ) );
+    kiapi::common::PackVector2( *aOutput.mutable_position(), aMarker.GetPos(), schIUScale );
+
+    if( erc->IsSheetSpecific() )
+        kiapi::common::PackSheetPath( *aOutput.mutable_sheet_specific_path(), erc->GetSpecificSheetPath().Path() );
+
+    if( erc->MainItemHasSheetPath() )
+        kiapi::common::PackSheetPath( *aOutput.mutable_main_item_sheet_path(), erc->GetMainItemSheetPath().Path() );
+
+    if( erc->AuxItemHasSheetPath() )
+        kiapi::common::PackSheetPath( *aOutput.mutable_aux_item_sheet_path(), erc->GetAuxItemSheetPath().Path() );
+
+    if( erc->GetErrorCode() == ERCE_GENERIC_WARNING
+            || erc->GetErrorCode() == ERCE_GENERIC_ERROR
+            || erc->GetErrorCode() == ERCE_UNRESOLVED_VARIABLE )
+    {
+        SCH_ITEM* item = aMarker.Schematic() ? aMarker.Schematic()->ResolveItem( erc->GetMainItemID(), nullptr, true ) : nullptr;
+        SCH_ITEM* parent = item ? static_cast<SCH_ITEM*>( item->GetParent() ) : nullptr;
+        EDA_TEXT* text = dynamic_cast<EDA_TEXT*>( item );
+
+        if( parent && text && parent->IsType( { SCH_SYMBOL_T, SCH_LABEL_T, SCH_SHEET_T } ) )
+        {
+            aOutput.add_items()->set_value( parent->m_Uuid.AsStdString() );
+            aOutput.mutable_child()->set_text_value( text->GetText().ToUTF8() );
+        }
+    }
+
+    for( const KIID& id : erc->GetIDs() )
+    {
+        if( id != niluuid )
+            aOutput.add_items()->set_value( id.AsStdString() );
+    }
+
+    kiapi::common::PackCustomProperties( aOutput.mutable_custom_properties(), aMarker );
+}
+
+
+SCH_MARKER* SCH_MARKER::FromProto( const kiapi::schematic::ErcMarker& aMsg,
+                                   const SCH_SHEET_LIST& aSheetList )
+{
+    const ERCE_T code = FromProtoEnum<ERCE_T, kiapi::schematic::ErcErrorType>( aMsg.error_type() );
+    std::shared_ptr<ERC_ITEM> erc = ERC_ITEM::Create( code );
+
+    if( !erc )
+        return nullptr;
+
+    if( aMsg.has_sheet_specific_path() )
+    {
+        KIID_PATH path = kiapi::common::UnpackSheetPath( aMsg.sheet_specific_path() );
+        if( std::optional<SCH_SHEET_PATH> sheet = aSheetList.GetSheetPathByKIIDPath( path, true ) )
+            erc->SetSheetSpecificPath( *sheet );
+    }
+
+    if( aMsg.has_main_item_sheet_path() )
+    {
+        KIID_PATH path = kiapi::common::UnpackSheetPath( aMsg.main_item_sheet_path() );
+        if( std::optional<SCH_SHEET_PATH> main = aSheetList.GetSheetPathByKIIDPath( path, true ) )
+        {
+            if( aMsg.has_aux_item_sheet_path() )
+            {
+                KIID_PATH auxPath = kiapi::common::UnpackSheetPath( aMsg.aux_item_sheet_path() );
+                if( std::optional<SCH_SHEET_PATH> aux = aSheetList.GetSheetPathByKIIDPath( auxPath, true ) )
+                    erc->SetItemsSheetPaths( *main, *aux );
+            }
+            else
+            {
+                erc->SetItemsSheetPaths( *main );
+            }
+        }
+    }
+
+    if( aMsg.has_child() && aMsg.items_size() > 0 )
+    {
+        SCH_ITEM* parent = aSheetList.ResolveItem( KIID( aMsg.items( 0 ).value() ), nullptr, true );
+        if( !parent )
+            return nullptr;
+
+        const wxString wanted = wxString::FromUTF8( aMsg.child().text_value() );
+        KIID childId = niluuid;
+
+        parent->RunOnChildren( [&]( SCH_ITEM* child )
+        {
+            if( EDA_TEXT* text = dynamic_cast<EDA_TEXT*>( child ) )
+            {
+                if( text->GetText() == wanted )
+                    childId = child->m_Uuid;
+            }
+        }, RECURSE_MODE::NO_RECURSE );
+
+        if( childId == niluuid && parent->Type() == SCH_SYMBOL_T )
+        {
+            static_cast<SCH_SYMBOL*>( parent )->GetLibSymbolRef()->RunOnChildren( [&]( SCH_ITEM* child )
+            {
+                if( child->Type() != SCH_FIELD_T )
+                {
+                    if( EDA_TEXT* text = dynamic_cast<EDA_TEXT*>( child ) )
+                    {
+                        if( text->GetText() == wanted )
+                            childId = child->m_Uuid;
+                    }
+                }
+            }, RECURSE_MODE::NO_RECURSE );
+        }
+
+        if( childId == niluuid )
+            return nullptr;
+
+        erc->SetItems( childId );
+    }
+    else
+    {
+        const KIID mainId = aMsg.items_size() > 0 ? KIID( aMsg.items( 0 ).value() ) : niluuid;
+        const KIID auxId = aMsg.items_size() > 1 ? KIID( aMsg.items( 1 ).value() ) : niluuid;
+        erc->SetItems( mainId, auxId );
+    }
+
+    return new SCH_MARKER( std::move( erc ), kiapi::common::UnpackVector2( aMsg.position(), schIUScale ) );
+}
+
+
+void SCH_MARKER::Serialize( google::protobuf::Any& aContainer ) const
+{
+    kiapi::schematic::ErcMarker marker;
+    PackMarker( marker, *this );
+    aContainer.PackFrom( marker );
+}
+
+
+bool SCH_MARKER::Deserialize( const google::protobuf::Any& aContainer )
+{
+    kiapi::schematic::ErcMarker marker;
+
+    if( !aContainer.UnpackTo( &marker ) || !Schematic() )
+        return false;
+
+    std::unique_ptr<SCH_MARKER> replacement( FromProto( marker, Schematic()->Hierarchy() ) );
+
+    if( !replacement )
+        return false;
+
+    kiapi::common::UnpackCustomProperties( marker.custom_properties(), *replacement );
+
+    swapData( replacement.get() );
+
+    if( m_rcItem )
+        m_rcItem->SetParent( this );
+
+    return true;
 }
 
 

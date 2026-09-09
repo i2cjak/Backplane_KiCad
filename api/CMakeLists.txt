@@ -22,13 +22,17 @@ set( KIAPI_PROTO_SRCS
     common/envelope.proto
 
     common/types/base_types.proto
+    common/types/embedded_files.proto
     common/types/enums.proto
     common/types/jobs.proto
     common/types/project_settings.proto
+    common/types/variants.proto
 
     common/commands/base_commands.proto
+    common/commands/cross_probe_commands.proto
     common/commands/editor_commands.proto
     common/commands/project_commands.proto
+    common/commands/variant_commands.proto
 
     board/board.proto
     board/board_commands.proto
@@ -38,6 +42,7 @@ set( KIAPI_PROTO_SRCS
     schematic/schematic_types.proto
     schematic/schematic_commands.proto
     schematic/schematic_jobs.proto
+    schematic/schematic_rules.proto
     )
 
 # Generated C++ code must be in the build dir; it is dependent on the version of protoc installed

@@ -40,6 +40,8 @@ API_HANDLER_EDITOR::API_HANDLER_EDITOR( EDA_BASE_FRAME* aFrame ) :
     registerHandler<UpdateItems, UpdateItemsResponse>( &API_HANDLER_EDITOR::handleUpdateItems );
     registerHandler<DeleteItems, DeleteItemsResponse>( &API_HANDLER_EDITOR::handleDeleteItems );
     registerHandler<HitTest, HitTestResponse>( &API_HANDLER_EDITOR::handleHitTest );
+    registerHandler<GetDocumentModifiedState, GetDocumentModifiedStateResponse>(
+            &API_HANDLER_EDITOR::handleGetDocumentModifiedState );
     registerHandler<GetTitleBlockInfo, types::TitleBlockInfo>( &API_HANDLER_EDITOR::handleGetTitleBlockInfo );
     registerHandler<SetTitleBlockInfo, google::protobuf::Empty>( &API_HANDLER_EDITOR::handleSetTitleBlockInfo );
 }
@@ -177,12 +179,18 @@ void API_HANDLER_EDITOR::pushCurrentCommit( const std::string& aClientName,
 
 HANDLER_RESULT<bool> API_HANDLER_EDITOR::validateDocument( const DocumentSpecifier& aDocument )
 {
-    if( !validateDocumentInternal( aDocument ) )
+    tl::expected<bool, ApiResponseStatus> validation = validateDocumentInternal( aDocument );
+
+    if( !validation )
+        return tl::unexpected( validation.error() );
+
+    // A handler may be registered for a document type while another open
+    // document of that type is the actual target.  Preserve this distinction
+    // so API_SERVER can continue searching the remaining handlers.
+    if( !*validation )
     {
         ApiResponseStatus e;
-        e.set_status( ApiStatusCode::AS_BAD_REQUEST );
-        e.set_error_message( fmt::format( "the requested document {} is not open",
-                                          aDocument.board_filename() ) );
+        e.set_status( ApiStatusCode::AS_UNHANDLED );
         return tl::unexpected( e );
     }
 
@@ -205,9 +213,6 @@ HANDLER_RESULT<std::optional<KIID>> API_HANDLER_EDITOR::validateItemHeaderDocume
 
     if( !documentValidation )
         return tl::unexpected( documentValidation.error() );
-
-    if( tl::expected<bool, ApiResponseStatus> result = validateDocumentInternal( aHeader.document() ); !result )
-        return tl::unexpected( result.error() );
 
     if( aHeader.has_container() )
     {
@@ -329,9 +334,9 @@ HANDLER_RESULT<DeleteItemsResponse> API_HANDLER_EDITOR::handleDeleteItems(
 
     for( const auto& [id, status] : itemsToDelete )
     {
-        ItemDeletionResult result;
-        result.mutable_id()->set_value( id.AsStdString() );
-        result.set_status( status );
+        ItemDeletionResult* result = response.add_deleted_items();
+        result->mutable_id()->set_value( id.AsStdString() );
+        result->set_status( status );
     }
 
     response.set_status( kiapi::common::types::ItemRequestStatus::IRS_OK );
@@ -372,6 +377,55 @@ HANDLER_RESULT<HitTestResponse> API_HANDLER_EDITOR::handleHitTest(
         response.set_result( HitTestResult::HTR_NO_HIT );
 
     return response;
+}
+
+
+HANDLER_RESULT<GetDocumentModifiedStateResponse>
+API_HANDLER_EDITOR::handleGetDocumentModifiedState(
+        const HANDLER_CONTEXT<GetDocumentModifiedState>& aCtx )
+{
+    if( HANDLER_RESULT<bool> documentValidation = validateDocument( aCtx.Request.document() );
+        !documentValidation )
+    {
+        return tl::unexpected( documentValidation.error() );
+    }
+
+    GetDocumentModifiedStateResponse response;
+
+    std::optional<bool> modified = documentIsModified();
+
+    if( !modified )
+    {
+        ApiResponseStatus e;
+        e.set_status( ApiStatusCode::AS_UNIMPLEMENTED );
+        e.set_error_message( "document modified state is unavailable without an editor context" );
+        return tl::unexpected( e );
+    }
+
+    response.set_state( *modified ? DocumentModifiedState::DMS_MODIFIED
+                                   : DocumentModifiedState::DMS_UNMODIFIED );
+    return response;
+}
+
+
+std::optional<bool> API_HANDLER_EDITOR::documentIsModified() const
+{
+    if( !m_frame )
+        return std::nullopt;
+
+    return m_frame->IsContentModified() || hasPendingChanges();
+}
+
+
+bool API_HANDLER_EDITOR::hasPendingChanges() const
+{
+    for( const auto& entry : m_commits )
+    {
+        if( entry.second.second && !entry.second.second->Empty() )
+            return true;
+    }
+
+    return false;
 }
 
 

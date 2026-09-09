@@ -27,10 +27,13 @@
 
 #include <api/api_handler_editor.h>
 #include <api/board_context.h>
+#include <api/common/commands/cross_probe_commands.pb.h>
 #include <api/board/board_commands.pb.h>
 #include <api/board/board_jobs.pb.h>
 #include <api/board/board_types.pb.h>
+#include <api/common/types/embedded_files.pb.h>
 #include <api/common/commands/editor_commands.pb.h>
+#include <api/common/commands/variant_commands.pb.h>
 #include <api/common/commands/project_commands.pb.h>
 #include <kiid.h>
 #include <properties/property_mgr.h>
@@ -66,6 +69,19 @@ private:
 
     HANDLER_RESULT<commands::RunActionResponse> handleRunAction( const HANDLER_CONTEXT<commands::RunAction>& aCtx );
 
+    HANDLER_RESULT<commands::VariantsResponse> handleGetVariants(
+            const HANDLER_CONTEXT<commands::GetVariants>& aCtx );
+    HANDLER_RESULT<Empty> handleAddVariant( const HANDLER_CONTEXT<commands::AddVariant>& aCtx );
+    HANDLER_RESULT<Empty> handleDeleteVariant( const HANDLER_CONTEXT<commands::DeleteVariant>& aCtx );
+    HANDLER_RESULT<Empty> handleRenameVariant( const HANDLER_CONTEXT<commands::RenameVariant>& aCtx );
+    HANDLER_RESULT<Empty> handleCopyVariant( const HANDLER_CONTEXT<commands::CopyVariant>& aCtx );
+    HANDLER_RESULT<Empty> handleSetVariantDescription(
+            const HANDLER_CONTEXT<commands::SetVariantDescription>& aCtx );
+    HANDLER_RESULT<Empty> handleSetCurrentVariant(
+            const HANDLER_CONTEXT<commands::SetCurrentVariant>& aCtx );
+    HANDLER_RESULT<commands::CurrentVariantResponse> handleGetCurrentVariant(
+            const HANDLER_CONTEXT<commands::GetCurrentVariant>& aCtx );
+
     HANDLER_RESULT<commands::GetOpenDocumentsResponse> handleGetOpenDocuments(
             const HANDLER_CONTEXT<commands::GetOpenDocuments>& aCtx );
 
@@ -82,6 +98,36 @@ private:
 
     HANDLER_RESULT<commands::GetItemsResponse> handleGetItemsById(
             const HANDLER_CONTEXT<commands::GetItemsById>& aCtx );
+
+    HANDLER_RESULT<commands::GetItemsResponse> handleGetItemsByNet(
+            const HANDLER_CONTEXT<kiapi::board::commands::GetItemsByNet>& aCtx );
+
+    HANDLER_RESULT<commands::GetItemsResponse> handleGetItemsByNetClass(
+            const HANDLER_CONTEXT<kiapi::board::commands::GetItemsByNetClass>& aCtx );
+
+    HANDLER_RESULT<commands::GetItemsResponse> handleGetConnectedItems(
+            const HANDLER_CONTEXT<kiapi::board::commands::GetConnectedItems>& aCtx );
+
+    HANDLER_RESULT<commands::CrossProbeAnnounceResponse> handleCrossProbeAnnounce(
+            const HANDLER_CONTEXT<commands::CrossProbeAnnounce>& aCtx );
+
+    HANDLER_RESULT<commands::SyncSelectionResponse> handleSyncSelection(
+            const HANDLER_CONTEXT<commands::SyncSelection>& aCtx );
+
+    HANDLER_RESULT<commands::HighlightNetsResponse> handleHighlightNets(
+            const HANDLER_CONTEXT<commands::HighlightNets>& aCtx );
+
+    HANDLER_RESULT<commands::FocusOnItemResponse> handleFocusOnItem(
+            const HANDLER_CONTEXT<commands::FocusOnItem>& aCtx );
+
+    HANDLER_RESULT<common::types::EmbeddedFiles> handleGetEmbeddedFiles(
+            const HANDLER_CONTEXT<GetEmbeddedFiles>& aCtx );
+
+    HANDLER_RESULT<Empty> handleAddEmbeddedFiles(
+            const HANDLER_CONTEXT<AddEmbeddedFiles>& aCtx );
+
+    HANDLER_RESULT<Empty> handleSetEmbeddedFiles(
+            const HANDLER_CONTEXT<SetEmbeddedFiles>& aCtx );
 
     HANDLER_RESULT<commands::SelectionResponse> handleGetSelection(
             const HANDLER_CONTEXT<commands::GetSelection>& aCtx );
@@ -107,6 +153,18 @@ private:
     HANDLER_RESULT<GraphicsDefaultsResponse> handleGetGraphicsDefaults(
             const HANDLER_CONTEXT<GetGraphicsDefaults>& aCtx );
 
+    HANDLER_RESULT<BoardDesignRulesResponse> handleGetBoardDesignRules(
+            const HANDLER_CONTEXT<GetBoardDesignRules>& aCtx );
+
+    HANDLER_RESULT<BoardDesignRulesResponse> handleSetBoardDesignRules(
+            const HANDLER_CONTEXT<SetBoardDesignRules>& aCtx );
+
+    HANDLER_RESULT<CustomRulesResponse> handleGetCustomDesignRules(
+            const HANDLER_CONTEXT<GetCustomDesignRules>& aCtx );
+
+    HANDLER_RESULT<CustomRulesResponse> handleSetCustomDesignRules(
+            const HANDLER_CONTEXT<SetCustomDesignRules>& aCtx );
+
     HANDLER_RESULT<types::Vector2> handleGetBoardOrigin(
             const HANDLER_CONTEXT<GetBoardOrigin>& aCtx );
 
@@ -114,6 +172,9 @@ private:
 
     HANDLER_RESULT<BoardLayerNameResponse> handleGetBoardLayerName(
             const HANDLER_CONTEXT<GetBoardLayerName>& aCtx );
+
+    HANDLER_RESULT<BoardLayerResponse> handleGetBoardLayerByName(
+            const HANDLER_CONTEXT<GetBoardLayerByName>& aCtx );
 
     HANDLER_RESULT<commands::GetBoundingBoxResponse> handleGetBoundingBox(
             const HANDLER_CONTEXT<commands::GetBoundingBox>& aCtx );
@@ -139,6 +200,9 @@ private:
 
     HANDLER_RESULT<Empty> handleRefillZones( const HANDLER_CONTEXT<RefillZones>& aCtx );
 
+    HANDLER_RESULT<ImportNetlistResponse> handleImportNetlist(
+            const HANDLER_CONTEXT<ImportNetlist>& aCtx );
+
     HANDLER_RESULT<commands::SavedDocumentResponse> handleSaveDocumentToString(
                 const HANDLER_CONTEXT<commands::SaveDocumentToString>& aCtx );
 
@@ -159,6 +223,12 @@ private:
 
     HANDLER_RESULT<Empty> handleSetBoardEditorAppearanceSettings(
             const HANDLER_CONTEXT<SetBoardEditorAppearanceSettings>& aCtx );
+
+    HANDLER_RESULT<BoardPlotSettingsResponse> handleGetBoardPlotSettings(
+            const HANDLER_CONTEXT<GetBoardPlotSettings>& aCtx );
+
+    HANDLER_RESULT<Empty> handleSetBoardPlotSettings(
+            const HANDLER_CONTEXT<SetBoardPlotSettings>& aCtx );
 
     HANDLER_RESULT<InjectDrcErrorResponse> handleInjectDrcError(
             const HANDLER_CONTEXT<InjectDrcError>& aCtx );
@@ -207,6 +277,12 @@ private:
 
 protected:
     std::unique_ptr<COMMIT> createCommit() override;
+
+    // Keep the PCB handler's modified-state contract explicit.  The common
+    // board implementation reads BOARD::IS_CHANGED for both GUI and headless
+    // contexts; declaring it here prevents future PCB-specific handlers from
+    // falling back to the frame-only editor implementation.
+    std::optional<bool> documentIsModified() const override;
 
     std::optional<TITLE_BLOCK*> getTitleBlock() override;
     std::optional<PAGE_INFO> getPageSettings() override;

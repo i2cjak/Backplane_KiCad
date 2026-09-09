@@ -13,10 +13,51 @@ kicad-cli api-server [PROJECT_OR_FILE] [--socket SOCKET_PATH]
 ```
 
 The optional path may be a `.kicad_pro`, `.kicad_pcb`, or `.kicad_sch` file.
+Use `OpenDocument` with `DOCTYPE_FOOTPRINT` to open a library ID or native
+`.kicad_mod` file.
 The server listens on the default KiCad IPC socket unless `--socket` is
 provided. The `OpenDocument`, `CloseDocument`, and `SaveDocument` commands are
 available to the headless server; PCB and schematic handlers use the same
 protobuf API as the desktop editors.
+
+A server can keep a project's schematic and PCB open together. `CloseAllDocuments`
+closes the project documents; dirty documents require saving first or an explicit
+`force` request. As in upstream KiCad, each server owns one project and one document
+of each editor type. Headless PCB and footprint documents share one editor context.
+Use separate server processes and socket paths for separate projects.
+
+Headless selection and active/visible PCB layers retain editor state without
+marking the design modified. Cross-probe selection targets the receiving editor.
+Commands that require an interactive canvas, including movement tools and net
+highlighting, return `AS_UNIMPLEMENTED` in headless mode. Use `kicad-cli sch erc`
+and `kicad-cli pcb drc` for rule checking; ERC/DRC execution is not an IPC command.
+Schematic ERC markers are read-only diagnostics. PCB table cells support content
+updates; change a table's structure by updating its parent table rather than
+creating or deleting individual cells.
+
+The board proto retains `UpdateBoardStackup` for protocol compatibility, but
+the stable backport currently registers only `GetBoardStackup`; clients must
+treat stackup updates as unavailable until a handler is added. The headless
+board APIs expose enabled-layer, origin, plot-setting, design-rule, custom-rule,
+netlist, connectivity, and embedded-file updates separately.
+
+## File compatibility
+
+Native `.kicad_pcb`, `.kicad_sch`, `.kicad_mod`, and `.kicad_sym` files target
+unmodified KiCad 10.0.6. IPC backports must not increase the native format version
+or write tokens that the stable parser cannot read.
+
+Fork-only custom properties and line endings use an adjacent companion named
+`<native-filename>.backplane.json`. Keep it beside the design when copying or
+sharing files. Stock KiCad reads and edits the native design; the fork restores
+the additional metadata when the companion is present. Native geometry remains
+authoritative. Stock KiCad does not display these added line endings or edit
+the companion metadata.
+
+Release verification includes native save/reopen tests. The mutation, variant,
+and schematic fidelity regressions accept `--stock-cli /path/to/kicad-cli` to
+resave disposable fixtures through an unmodified 10.0.6 installation before
+reopening them in the fork.
 
 ## Source and licensing
 
@@ -48,6 +89,15 @@ The board-job enum conversion specializations and their round-trip QA coverage
 are restored from upstream KiCad commit `46da153141` (`ADDED: IPC API support
 for jobs`) for the stable 10.0.6 IPC backport.
 
+The expanded IPC backports are adapted from upstream revision
+`2f18d95be746a6504d36b0bc8320f66b5ebd8524`, including `5051a0398c`/`da800cc8c2`
+(connectivity), `6fd26c3126`/`10f8e99502` (netlist import), `8fef07daf4`/`c4b5505e0b`
+(design rules), `c3570f4925` (plot settings), `5d319ad408` (footprint documents),
+`796ae13ba9` (embedded files), `82729df8a4` (cross-probe), `be90a7e200` (modified
+state), `144ca549c2` (schematic command names), `4bc59513c3`/`6a91fed912`
+(symbol fidelity), `59e7182ce2` (schematic tables), and `a3aafd8499` (rule areas).
+Newer native metadata is adapted to the companion format described above.
+
 ## Linux release build
 
 The GitHub Actions workflow `backplane-linux-release.yml` builds `kicad-cli`
@@ -59,6 +109,14 @@ symbols, hierarchy, and nets, and exports a BOM, schematic SVG, and board GLB.
 The release includes the matching source archive
 and license files. It builds the selected fork commit, or the fork tag that
 triggered the release.
+
+The focused rule-check regression copies `demos/ecc83` into a temporary
+workspace, performs a schematic value update and a rolled-back PCB edit through
+IPC, then compares ERC/DRC violation type, severity, and item identity before
+and after save/reopen. Run it with the built CLI; pass `--stock-cli` with an
+unmodified 10.0.6 CLI to repeat the comparison independently. A developer CLI
+that omits GUI KIFACEs can use `--rulecheck-cli` for a complete sibling CLI to
+produce the ERC/DRC reports.
 
 On Ubuntu 24.04, the local equivalent starts with the following dependency
 installation (the workflow is the reproducible path):

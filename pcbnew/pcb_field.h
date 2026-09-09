@@ -37,6 +37,8 @@ public:
 
     PCB_FIELD( const PCB_TEXT& aText, FIELD_T aFieldId, const wxString& aName = wxEmptyString );
 
+    void CopyFrom( const BOARD_ITEM* aOther ) override;
+
     void Serialize( google::protobuf::Any &aContainer ) const override;
     bool Deserialize( const google::protobuf::Any &aContainer ) override;
 

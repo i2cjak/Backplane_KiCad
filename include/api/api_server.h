@@ -74,6 +74,10 @@ public:
 
     std::string SocketPath() const;
 
+    static wxFileName StandardSocketPath();
+
+    static std::string StandardSocketUrl();
+
     const std::string& Token() const { return m_token; }
 
 private:

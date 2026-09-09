@@ -89,11 +89,12 @@ void SCH_TEXT::Serialize( google::protobuf::Any& aContainer ) const
     text.set_exclude_from_sim( GetExcludedFromSim() );
 
     google::protobuf::Any any;
-    EDA_TEXT::Serialize( any );
+    EDA_TEXT::Serialize( any, schIUScale );
     any.UnpackTo( text.mutable_text() );
 
-    PackVector2( *text.mutable_text()->mutable_position(), GetPosition() );
+    PackVector2( *text.mutable_text()->mutable_position(), GetPosition(), schIUScale );
 
+    kiapi::common::PackCustomProperties( text.mutable_custom_properties(), *this );
     aContainer.PackFrom( text );
 }
 
@@ -107,6 +108,9 @@ bool SCH_TEXT::Deserialize( const google::protobuf::Any& aContainer )
     if( !aContainer.UnpackTo( &text ) )
         return false;
 
+    kiapi::common::UnpackCustomProperties( text.custom_properties(), *this );
+
+
     const_cast<KIID&>( m_Uuid ) = KIID( text.id().value() );
     SetLocked( text.locked() == types::LockedState::LS_LOCKED );
     SetExcludedFromSim( text.exclude_from_sim() );
@@ -114,10 +118,10 @@ bool SCH_TEXT::Deserialize( const google::protobuf::Any& aContainer )
     google::protobuf::Any any;
     any.PackFrom( text.text() );
 
-    if( !EDA_TEXT::Deserialize( any ) )
+    if( !EDA_TEXT::Deserialize( any, schIUScale ) )
         return false;
 
-    SetPosition( UnpackVector2( text.text().position() ) );
+    SetPosition( UnpackVector2( text.text().position(), schIUScale ) );
     return true;
 }
 

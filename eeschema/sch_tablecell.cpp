@@ -21,8 +21,10 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
  */
 
+#include <api/api_utils.h>
 #include <advanced_config.h>
 #include <common.h>
+#include <google/protobuf/any.pb.h>
 #include <sch_edit_frame.h>
 #include <widgets/msgpanel.h>
 #include <string_utils.h>
@@ -31,6 +33,8 @@
 #include <properties/property.h>
 #include <properties/property_mgr.h>
 
+#include <api/schematic/schematic_types.pb.h>
+
 
 SCH_TABLECELL::SCH_TABLECELL( int aLineWidth, FILL_T aFillType ) :
         SCH_TEXTBOX( LAYER_NOTES, aLineWidth, aFillType, wxEmptyString, SCH_TABLECELL_T ),
@@ -38,6 +42,57 @@ SCH_TABLECELL::SCH_TABLECELL( int aLineWidth, FILL_T aFillType ) :
         m_rowSpan( 1 )
 {
 }
+
+void SCH_TABLECELL::Serialize( kiapi::schematic::types::SchematicTableCell& aCell ) const
+{
+    aCell.set_column_span( m_colSpan );
+    aCell.set_row_span( m_rowSpan );
+    kiapi::common::PackCustomProperties( aCell.mutable_custom_properties(), *this );
+
+    google::protobuf::Any any;
+    SCH_TEXTBOX::Serialize( any );
+    any.UnpackTo( aCell.mutable_text_box() );
+}
+
+
+void SCH_TABLECELL::Serialize( google::protobuf::Any& aContainer ) const
+{
+    kiapi::schematic::types::SchematicTableCell cell;
+    Serialize( cell );
+    aContainer.PackFrom( cell );
+}
+
+
+bool SCH_TABLECELL::Deserialize( const kiapi::schematic::types::SchematicTableCell& aCell )
+{
+    if( !aCell.has_text_box() )
+        return false;
+
+    google::protobuf::Any any;
+    any.PackFrom( aCell.text_box() );
+
+    if( !SCH_TEXTBOX::Deserialize( any ) )
+        return false;
+
+    SetColSpan( aCell.column_span() );
+    SetRowSpan( aCell.row_span() );
+    kiapi::common::UnpackCustomProperties( aCell.custom_properties(), *this );
+
+    return true;
+}
+
+
+bool SCH_TABLECELL::Deserialize( const google::protobuf::Any& aContainer )
+{
+    kiapi::schematic::types::SchematicTableCell cell;
+
+    if( !aContainer.UnpackTo( &cell ) )
+        return false;
+
+    return Deserialize( cell );
+}
+
+
 
 
 void SCH_TABLECELL::swapData( SCH_ITEM* aItem )

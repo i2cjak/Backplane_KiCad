@@ -52,6 +52,9 @@ public:
 
     virtual ~SCH_RULE_AREA();
 
+    void Serialize( google::protobuf::Any& aContainer ) const override;
+    bool Deserialize( const google::protobuf::Any& aContainer ) override;
+
     wxString GetClass() const override;
 
     wxString GetFriendlyName() const override;

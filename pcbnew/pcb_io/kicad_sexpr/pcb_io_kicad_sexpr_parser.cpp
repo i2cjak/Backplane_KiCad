@@ -37,6 +37,7 @@
 #include <trigo.h>
 
 #include <board.h>
+#include <eda_item.h>
 #include <board_design_settings.h>
 #include <component_classes/component_class_manager.h>
 #include <project/net_settings.h>
@@ -504,6 +505,80 @@ std::pair<wxString, wxString> PCB_IO_KICAD_SEXPR_PARSER::parseBoardProperty()
     NeedRIGHT();
 
     return { pName, pValue };
+}
+
+
+void PCB_IO_KICAD_SEXPR_PARSER::parseLineEnding( LINE_ENDING& aEnding )
+{
+    // Current token is T_start_shape or T_end_shape.  The next token is the style.
+    T token = NextTok();
+
+    switch( token )
+    {
+    case T_arrow:      aEnding.SetStyle( LINE_ENDING_STYLE::ARROW ); break;
+    case T_circle:     aEnding.SetStyle( LINE_ENDING_STYLE::CIRCLE ); break;
+    case T_square:     aEnding.SetStyle( LINE_ENDING_STYLE::SQUARE ); break;
+    case T_arrow_open: aEnding.SetStyle( LINE_ENDING_STYLE::ARROW_OPEN ); break;
+    case T_none:       aEnding.SetStyle( LINE_ENDING_STYLE::NONE ); break;
+    default:           Expecting( "arrow, circle, square, arrow_open, or none" );
+    }
+
+    for( token = NextTok(); token != T_RIGHT; token = NextTok() )
+    {
+        if( token != T_LEFT )
+            Expecting( T_LEFT );
+
+        token = NextTok();
+
+        switch( token )
+        {
+        case T_length:
+            aEnding.SetLength( parseBoardUnits( "length" ) );
+            NeedRIGHT();
+            break;
+
+        case T_width:
+            aEnding.SetWidth( parseBoardUnits( "width" ) );
+            NeedRIGHT();
+            break;
+
+        case T_stroke:
+        {
+            STROKE_PARAMS        stroke;
+            STROKE_PARAMS_PARSER strokeParser( reader, pcbIUScale.IU_PER_MM );
+            strokeParser.SyncLineReaderWith( *this );
+            strokeParser.ParseStroke( stroke );
+            SyncLineReaderWith( strokeParser );
+            aEnding.SetStroke( stroke );
+            break;
+        }
+
+        default:
+            Expecting( "length, width, or stroke" );
+        }
+    }
+}
+
+
+void PCB_IO_KICAD_SEXPR_PARSER::parseCustomProperty( EDA_ITEM* aItem )
+{
+    NeedSYMBOL();
+    wxString key = FromUTF8();
+    NeedSYMBOL();
+    wxString value = FromUTF8();
+    aItem->SetCustomProperty( key, value );
+    NeedRIGHT();
+}
+
+
+void PCB_IO_KICAD_SEXPR_PARSER::parseCustomProperty( std::map<wxString, wxString>& aProps )
+{
+    NeedSYMBOL();
+    wxString key = FromUTF8();
+    NeedSYMBOL();
+    wxString value = FromUTF8();
+    aProps[key] = value;
+    NeedRIGHT();
 }
 
 
@@ -1598,6 +1673,7 @@ void PCB_IO_KICAD_SEXPR_PARSER::resolveGroups( BOARD_ITEM* aParent )
         }
 
         group->SetUuidDirect( groupInfo->uuid );
+        group->SetCustomProperties( groupInfo->customProperties );
 
         if( groupInfo->libId.IsValid() )
             group->SetDesignBlockLibId( groupInfo->libId );
@@ -3546,6 +3622,22 @@ PCB_SHAPE* PCB_IO_KICAD_SEXPR_PARSER::parsePCB_SHAPE( BOARD_ITEM* aParent )
             NeedRIGHT();
             break;
 
+        case T_start_shape:
+        {
+            LINE_ENDING ending;
+            parseLineEnding( ending );
+            shape->SetStartEnding( ending );
+            break;
+        }
+
+        case T_end_shape:
+        {
+            LINE_ENDING ending;
+            parseLineEnding( ending );
+            shape->SetEndEnding( ending );
+            break;
+        }
+
         case T_width:       // legacy token
             stroke.SetWidth( parseBoardUnits( T_width ) );
             NeedRIGHT();
@@ -3571,6 +3663,10 @@ PCB_SHAPE* PCB_IO_KICAD_SEXPR_PARSER::parsePCB_SHAPE( BOARD_ITEM* aParent )
             NextTok();
             shape->SetUuidDirect( CurStrToKIID() );
             NeedRIGHT();
+            break;
+
+        case T_custom_property:
+            parseCustomProperty( shape.get() );
             break;
 
         case T_fill:
@@ -3617,7 +3713,7 @@ PCB_SHAPE* PCB_IO_KICAD_SEXPR_PARSER::parsePCB_SHAPE( BOARD_ITEM* aParent )
 
         default:
             Expecting( "layer, width, fill, tstamp, uuid, locked, net, status, "
-                       "or solder_mask_margin" );
+                       "solder_mask_margin, start_shape, or end_shape" );
         }
     }
 
@@ -3744,6 +3840,10 @@ PCB_REFERENCE_IMAGE* PCB_IO_KICAD_SEXPR_PARSER::parsePCB_REFERENCE_IMAGE( BOARD_
             NeedRIGHT();
             break;
         }
+
+        case T_custom_property:
+            parseCustomProperty( bitmap.get() );
+            break;
 
         default:
             Expecting( "at, layer, scale, data, locked or uuid" );
@@ -3904,6 +4004,10 @@ void PCB_IO_KICAD_SEXPR_PARSER::parsePCB_TEXT_effects( PCB_TEXT* aText, PCB_TEXT
             NextTok();
             aText->SetUuidDirect( CurStrToKIID() );
             NeedRIGHT();
+            break;
+
+        case T_custom_property:
+            parseCustomProperty( aText );
             break;
 
         case T_hide:
@@ -4087,6 +4191,10 @@ PCB_BARCODE* PCB_IO_KICAD_SEXPR_PARSER::parsePCB_BARCODE( BOARD_ITEM* aParent )
             NextTok();
             barcode->SetUuidDirect( CurStrToKIID() );
             NeedRIGHT();
+            break;
+
+        case T_custom_property:
+            parseCustomProperty( barcode.get() );
             break;
 
         case T_hide:
@@ -4286,6 +4394,10 @@ void PCB_IO_KICAD_SEXPR_PARSER::parseTextBoxContent( PCB_TEXTBOX* aTextBox )
             NeedRIGHT();
             break;
 
+        case T_custom_property:
+            parseCustomProperty( aTextBox );
+            break;
+
         case T_effects:
             parseEDA_TEXT( static_cast<EDA_TEXT*>( aTextBox ) );
             break;
@@ -4358,6 +4470,10 @@ PCB_TABLE* PCB_IO_KICAD_SEXPR_PARSER::parsePCB_TABLE( BOARD_ITEM* aParent )
             NextTok();
             table->SetUuidDirect( CurStrToKIID() );
             NeedRIGHT();
+            break;
+
+        case T_custom_property:
+            parseCustomProperty( table.get() );
             break;
 
         case T_locked:
@@ -4577,6 +4693,10 @@ PCB_DIMENSION_BASE* PCB_IO_KICAD_SEXPR_PARSER::parseDIMENSION( BOARD_ITEM* aPare
             NextTok();
             dim->SetUuidDirect( CurStrToKIID() );
             NeedRIGHT();
+            break;
+
+        case T_custom_property:
+            parseCustomProperty( dim.get() );
             break;
 
         case T_gr_text:
@@ -5105,6 +5225,10 @@ FOOTPRINT* PCB_IO_KICAD_SEXPR_PARSER::parseFOOTPRINT_unchecked( wxArrayString* a
             NextTok();
             footprint->SetUuidDirect( CurStrToKIID() );
             NeedRIGHT();
+            break;
+
+        case T_custom_property:
+            parseCustomProperty( footprint.get() );
             break;
 
         case T_at:
@@ -6416,6 +6540,10 @@ PAD* PCB_IO_KICAD_SEXPR_PARSER::parsePAD( FOOTPRINT* aParent )
             NeedRIGHT();
             break;
 
+        case T_custom_property:
+            parseCustomProperty( pad.get() );
+            break;
+
         case T_front_post_machining:
             parsePostMachining( pad->Padstack().FrontPostMachining() );
             break;
@@ -7010,6 +7138,10 @@ void PCB_IO_KICAD_SEXPR_PARSER::parseGROUP( BOARD_ITEM* aParent )
             NeedRIGHT();
             break;
 
+        case T_custom_property:
+            parseCustomProperty( groupInfo.customProperties );
+            break;
+
         case T_lib_id:
         {
             token = NextTok();
@@ -7118,6 +7250,10 @@ void PCB_IO_KICAD_SEXPR_PARSER::parseGENERATOR( BOARD_ITEM* aParent )
 
         case T_members:
             parseGROUP_members( genInfo );
+            break;
+
+        case T_custom_property:
+            parseCustomProperty( genInfo.customProperties );
             break;
 
         default:
@@ -7377,6 +7513,10 @@ PCB_TRACK* PCB_IO_KICAD_SEXPR_PARSER::parsePCB_TRACK()
             NextTok();
             track->SetUuidDirect( CurStrToKIID() );
             NeedRIGHT();
+            break;
+
+        case T_custom_property:
+            parseCustomProperty( track.get() );
             break;
 
         // We continue to parse the status field but it is no longer written
@@ -7931,6 +8071,10 @@ ZONE* PCB_IO_KICAD_SEXPR_PARSER::parseZONE( BOARD_ITEM_CONTAINER* aParent )
             NextTok();
             zone->SetUuidDirect( CurStrToKIID() );
             NeedRIGHT();
+            break;
+
+        case T_custom_property:
+            parseCustomProperty( zone.get() );
             break;
 
         case T_hatch:
@@ -8621,6 +8765,9 @@ PCB_POINT* PCB_IO_KICAD_SEXPR_PARSER::parsePCB_POINT()
             NeedRIGHT();
             break;
         }
+        case T_custom_property:
+            parseCustomProperty( point.get() );
+            break;
         default: Expecting( "at, size, layer or uuid" );
         }
     }
@@ -8681,6 +8828,10 @@ PCB_TARGET* PCB_IO_KICAD_SEXPR_PARSER::parsePCB_TARGET()
             NextTok();
             target->SetUuidDirect( CurStrToKIID() );
             NeedRIGHT();
+            break;
+
+        case T_custom_property:
+            parseCustomProperty( target.get() );
             break;
 
         default:

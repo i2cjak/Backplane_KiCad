@@ -1,0 +1,38 @@
+/*
+ * This program source code file is part of KiCad, a free EDA CAD application.
+ *
+ * Copyright The KiCad Developers, see AUTHORS.txt for contributors.
+ *
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or (at your
+ * option) any later version.
+ */
+
+syntax = "proto3";
+
+package kiapi.common.types;
+
+// Corresponds to EMBEDDED_FILE::FILE_TYPE.
+enum EmbeddedFileType
+{
+  EFT_UNKNOWN   = 0;
+  EFT_OTHER     = 1;
+  EFT_FONT      = 2;
+  EFT_MODEL     = 3;
+  EFT_WORKSHEET = 4;
+  EFT_DATASHEET = 5;
+}
+
+message EmbeddedFile
+{
+  string name = 1;
+  EmbeddedFileType type = 2;
+  bytes data = 3;
+  string data_hash = 4;
+}
+
+message EmbeddedFiles
+{
+  repeated EmbeddedFile files = 1;
+}

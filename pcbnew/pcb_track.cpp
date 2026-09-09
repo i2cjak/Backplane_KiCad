@@ -420,6 +420,7 @@ void PCB_TRACK::Serialize( google::protobuf::Any &aContainer ) const
 
     // TODO m_hasSolderMask and m_solderMaskMargin
 
+    kiapi::common::PackCustomProperties( track.mutable_custom_properties(), *this );
     aContainer.PackFrom( track );
 }
 
@@ -439,6 +440,8 @@ bool PCB_TRACK::Deserialize( const google::protobuf::Any &aContainer )
     UnpackNet( track.net() );
     SetLocked( track.locked() == kiapi::common::types::LockedState::LS_LOCKED );
     // TODO m_hasSolderMask and m_solderMaskMargin
+
+    kiapi::common::UnpackCustomProperties( track.custom_properties(), *this );
 
     return true;
 }
@@ -466,6 +469,7 @@ void PCB_ARC::Serialize( google::protobuf::Any &aContainer ) const
 
     // TODO m_hasSolderMask and m_solderMaskMargin
 
+    kiapi::common::PackCustomProperties( arc.mutable_custom_properties(), *this );
     aContainer.PackFrom( arc );
 }
 
@@ -486,6 +490,8 @@ bool PCB_ARC::Deserialize( const google::protobuf::Any &aContainer )
     UnpackNet( arc.net() );
     SetLocked( arc.locked() == kiapi::common::types::LockedState::LS_LOCKED );
     // TODO m_hasSolderMask and m_solderMaskMargin
+
+    kiapi::common::UnpackCustomProperties( arc.custom_properties(), *this );
 
     return true;
 }
@@ -517,6 +523,7 @@ void PCB_VIA::Serialize( google::protobuf::Any &aContainer ) const
     if( const BOARD* board = GetBoard() )
         via.mutable_parent()->set_value( board->m_Uuid.AsStdString() );
 
+    kiapi::common::PackCustomProperties( via.mutable_custom_properties(), *this );
     aContainer.PackFrom( via );
 }
 
@@ -544,6 +551,8 @@ bool PCB_VIA::Deserialize( const google::protobuf::Any &aContainer )
     SetViaType( FromProtoEnum<VIATYPE>( via.type() ) );
     UnpackNet( via.net() );
     SetLocked( via.locked() == kiapi::common::types::LockedState::LS_LOCKED );
+
+    kiapi::common::UnpackCustomProperties( via.custom_properties(), *this );
 
     return true;
 }

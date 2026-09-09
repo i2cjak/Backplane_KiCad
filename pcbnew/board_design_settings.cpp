@@ -1130,6 +1130,7 @@ void BOARD_DESIGN_SETTINGS::initFromOther( const BOARD_DESIGN_SETTINGS& aOther )
     m_SolderPasteMargin           = aOther.m_SolderPasteMargin;
     m_SolderPasteMarginRatio      = aOther.m_SolderPasteMarginRatio;
     m_AllowSoldermaskBridgesInFPs = aOther.m_AllowSoldermaskBridgesInFPs;
+    m_TeardropParamsList          = aOther.m_TeardropParamsList;
     m_TentViasFront               = aOther.m_TentViasFront;
     m_TentViasBack                = aOther.m_TentViasBack;
     m_CoverViasFront              = aOther.m_CoverViasFront;

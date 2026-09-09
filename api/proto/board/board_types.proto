@@ -23,6 +23,7 @@ package kiapi.board.types;
 
 import "google/protobuf/any.proto";
 import "common/types/base_types.proto";
+import "common/types/embedded_files.proto";
 
 enum BoardLayer
 {
@@ -158,6 +159,9 @@ message Track
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 8;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 10;
 }
 
 // Represents an arc track (not a PCB_SHAPE in arc shape)
@@ -178,6 +182,9 @@ message Arc
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 9;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 11;
 }
 
 // What copper layer shape mode the padstack uses
@@ -497,6 +504,9 @@ message Via
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 7;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 11;
 }
 
 message BoardGraphicShape
@@ -511,6 +521,9 @@ message BoardGraphicShape
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 6;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 8;
 }
 
 enum BarcodeKind
@@ -558,6 +571,9 @@ message Barcode
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 15;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 16;
 }
 
 // A board-specific text object, existing on a board layer
@@ -573,6 +589,9 @@ message BoardText
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 6;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 7;
 }
 
 // A board-specific textbox, existing on a board layer
@@ -587,6 +606,9 @@ message BoardTextBox
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 5;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 7;
 }
 
 // NOTE: There has been some discussion about what to do with pad attributes and properties.
@@ -660,6 +682,9 @@ message Pad
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 13;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 17;
 }
 
 enum ZoneType
@@ -833,6 +858,9 @@ message Zone
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 14;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 15;
 }
 
 // An aligned dimension is drawn parallel to the line segment between the start and end points
@@ -986,6 +1014,9 @@ message Dimension
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 24;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 25;
 }
 
 message ReferenceImage
@@ -1005,6 +1036,9 @@ message ReferenceImage
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 8;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 9;
 }
 
 message Group
@@ -1017,6 +1051,9 @@ message Group
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 4;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 7;
 }
 
 message FieldId
@@ -1032,6 +1069,9 @@ message Field
 
   // Since 9.0.1
   bool visible = 4;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 5;
 }
 
 enum FootprintMountingStyle
@@ -1055,6 +1095,22 @@ message FootprintAttributes
 
   // Since: 9.0.7
   bool allow_soldermask_bridges = 9;
+  bool exclude_from_simulation = 10;
+}
+
+message FootprintVariant
+{
+  // Variant name that these overrides apply to.
+  string name = 1;
+
+  bool do_not_populate = 2;
+  bool exclude_from_bill_of_materials = 3;
+  bool exclude_from_position_files = 4;
+
+  bool exclude_from_simulation = 5;
+
+  // Map of field name to override value in this variant
+  map<string, string> fields = 6;
 }
 
 message NetTieDefinition
@@ -1162,4 +1218,52 @@ message FootprintInstance
   // it will not change the object's parent
   // Since: 10.0.6
   kiapi.common.types.KIID parent = 17;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 19;
+  kiapi.common.types.EmbeddedFiles embedded_files = 18;
+  repeated FootprintVariant variants = 20;
+}
+
+// Since: 10.0.7
+message TableCell
+{
+  BoardTextBox text_box = 1;
+  int32 column_span = 2;
+  int32 row_span = 3;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 4;
+}
+
+// Since: 10.0.7
+enum TableStrokeMode
+{
+  TSM_UNKNOWN = 0;
+  TSM_DISABLED = 1;
+  TSM_ENABLED = 2;
+}
+
+// Since: 10.0.7
+message Table
+{
+  kiapi.common.types.KIID id = 1;
+  int32 column_count = 2;
+  repeated int32 column_widths = 3;
+  repeated int32 row_heights = 4;
+  BoardLayer layer = 5;
+  kiapi.common.types.LockedState locked = 6;
+  repeated TableCell cells = 7;
+  TableStrokeMode external_border = 8;
+  TableStrokeMode header_separator = 9;
+  kiapi.common.types.StrokeAttributes border_stroke = 10;
+  TableStrokeMode row_separators = 11;
+  TableStrokeMode column_separators = 12;
+  kiapi.common.types.StrokeAttributes separators_stroke = 13;
+
+  // The ID of the parent container for this item (if any).  This is read-only.
+  kiapi.common.types.KIID parent = 14;
+
+  // Since: 11.0 (backported for Backplane)
+  repeated kiapi.common.types.CustomProperty custom_properties = 15;
 }

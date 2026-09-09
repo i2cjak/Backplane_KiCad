@@ -79,6 +79,7 @@
 #include <toolbars_symbol_editor.h>
 
 #if defined( KICAD_IPC_API )
+#include <api/cross_probe_client.h>
 #include <api/api_handler_sch.h>
 #include <api/api_server.h>
 #include <api/api_utils.h>
@@ -207,6 +208,11 @@ static struct IFACE : public KIFACE_BASE, public UNITS_PROVIDER
             {
                 // only run this under single_top, not under a project manager.
                 frame->CreateServer( KICAD_SCH_PORT_SERVICE_NUMBER );
+
+#if defined( KICAD_IPC_API )
+                if( !CROSS_PROBE_CLIENT::IsOnStandardSocketPath() )
+                    CROSS_PROBE_CLIENT::AnnounceToPrimary( FRAME_SCH );
+#endif
             }
 
             return frame;
@@ -436,6 +442,15 @@ static struct IFACE : public KIFACE_BASE, public UNITS_PROVIDER
     bool HandleApiCloseDocument( const wxString& aSchFileName,
                                  KICAD_API_SERVER* aServer,
                                  wxString* aError ) override;
+
+    bool HandleApiCloseDocument( const wxString& aSchFileName,
+                                 KICAD_API_SERVER* aServer,
+                                 bool aForce,
+                                 wxString* aError ) override;
+
+    bool HandleApiDocumentIsModified( const wxString& aFileName,
+                                      bool* aModified,
+                                      wxString* aError ) override;
 #endif
 
     void PreloadLibraries( KIWAY* aKiway ) override;
@@ -920,6 +935,13 @@ bool IFACE::HandleApiOpenDocument( const wxString& aPath, KICAD_API_SERVER* aSer
 bool IFACE::HandleApiCloseDocument( const wxString& aSchFileName, KICAD_API_SERVER* aServer,
                                     wxString* aError )
 {
+    return HandleApiCloseDocument( aSchFileName, aServer, false, aError );
+}
+
+
+bool IFACE::HandleApiCloseDocument( const wxString& aSchFileName, KICAD_API_SERVER* aServer,
+                                    bool aForce, wxString* aError )
+{
     wxCHECK( aServer, false );
 
     if( !m_openContext )
@@ -943,7 +965,80 @@ bool IFACE::HandleApiCloseDocument( const wxString& aSchFileName, KICAD_API_SERV
         }
     }
 
+    if( !aForce && m_openSchematic )
+    {
+        SCH_SCREENS screens( m_openSchematic->Root() );
+
+        if( m_openHandler && m_openHandler->hasPendingChanges() )
+        {
+            if( aError )
+                *aError = wxS( "Document has unsaved changes; save it or close with force=true" );
+
+            return false;
+        }
+
+        for( SCH_SCREEN* screen = screens.GetFirst(); screen; screen = screens.GetNext() )
+        {
+            if( screen->IsContentModified() )
+            {
+                if( aError )
+                    *aError = wxS( "Document has unsaved changes; save it or close with force=true" );
+
+                return false;
+            }
+        }
+    }
+
     closeCurrentDocument( aServer );
+    return true;
+}
+
+
+bool IFACE::HandleApiDocumentIsModified( const wxString& aFileName, bool* aModified,
+                                          wxString* aError )
+{
+    if( !aModified )
+    {
+        if( aError )
+            *aError = wxS( "Modified state output is required" );
+
+        return false;
+    }
+
+    if( !m_openSchematic )
+    {
+        if( aError )
+            *aError = wxS( "No document is currently open" );
+
+        return false;
+    }
+
+    if( !aFileName.IsEmpty() )
+    {
+        wxFileName currentSchematic( m_openContext ? m_openContext->GetCurrentFileName()
+                                                    : m_openSchematic->GetFileName() );
+
+        if( currentSchematic.GetFullName() != aFileName )
+        {
+            if( aError )
+                *aError = wxS( "Requested document does not match the open document" );
+
+            return false;
+        }
+    }
+
+    *aModified = m_openHandler && m_openHandler->hasPendingChanges();
+    SCH_SCREENS screens( m_openSchematic->Root() );
+
+    for( SCH_SCREEN* screen = screens.GetFirst(); screen; screen = screens.GetNext() )
+    {
+        if( screen->IsContentModified() )
+        {
+            *aModified = true;
+            break;
+        }
+    }
+
     return true;
 }
 #endif

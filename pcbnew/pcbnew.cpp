@@ -87,10 +87,13 @@
 #include <wx/crt.h>
 
 #if defined( KICAD_IPC_API )
+#include <api/cross_probe_client.h>
 #include <api/api_handler_pcb.h>
+#include <api/api_handler_footprint.h>
 #include <api/api_server.h>
 #include <api/api_utils.h>
 #include <api/headless_board_context.h>
+#include <api/headless_footprint_context.h>
 #include <board.h>
 #include <pcb_io/pcb_io_mgr.h>
 #endif
@@ -231,7 +234,7 @@ static wxString filterFootprints( const wxString& aFilterJson )
 
         return wxString::FromUTF8( output.dump() );
     }
-    catch( const std::exception& )
+    catch( ... )
     {
         return wxS( "[]" );
     }
@@ -270,6 +273,11 @@ static struct IFACE : public KIFACE_BASE, public UNITS_PROVIDER
             {
                 // only run this under single_top, not under a project manager.
                 frame->CreateServer( KICAD_PCB_PORT_SERVICE_NUMBER );
+
+#if defined( KICAD_IPC_API )
+                if( !CROSS_PROBE_CLIENT::IsOnStandardSocketPath() )
+                    CROSS_PROBE_CLIENT::AnnounceToPrimary( FRAME_PCB_EDITOR );
+#endif
             }
 
             return frame;
@@ -580,9 +588,23 @@ static struct IFACE : public KIFACE_BASE, public UNITS_PROVIDER
                                 KICAD_API_SERVER* aServer,
                                 wxString* aError ) override;
 
+    bool HandleApiOpenFootprint( const wxString& aProjectPath,
+                                 const wxString& aLibId,
+                                 KICAD_API_SERVER* aServer,
+                                 wxString* aError ) override;
+
     bool HandleApiCloseDocument( const wxString& aBoardFileName,
                                  KICAD_API_SERVER* aServer,
                                  wxString* aError ) override;
+
+    bool HandleApiCloseDocument( const wxString& aBoardFileName,
+                                 KICAD_API_SERVER* aServer,
+                                 bool aForce,
+                                 wxString* aError ) override;
+
+    bool HandleApiDocumentIsModified( const wxString& aFileName,
+                                      bool* aModified,
+                                      wxString* aError ) override;
 #endif
 
     void PreloadLibraries( KIWAY* aKiway ) override;
@@ -602,6 +624,8 @@ private:
     KIWAY* m_kiway = nullptr;
     std::shared_ptr<HEADLESS_BOARD_CONTEXT> m_openContext;
     std::unique_ptr<API_HANDLER_PCB>        m_openHandler;
+    std::shared_ptr<HEADLESS_FOOTPRINT_CONTEXT> m_openFpContext;
+    std::unique_ptr<API_HANDLER_FOOTPRINT>      m_openFpHandler;
 #endif
 
 } kiface( "pcbnew", KIWAY::FACE_PCB );
@@ -812,6 +836,16 @@ void IFACE::closeCurrentDocument( KICAD_API_SERVER* aServer )
     }
 
     m_openContext.reset();
+
+    if( m_openFpHandler )
+    {
+        if( aServer )
+            aServer->DeregisterHandler( m_openFpHandler.get() );
+
+        m_openFpHandler.reset();
+    }
+
+    m_openFpContext.reset();
 }
 
 
@@ -912,11 +946,164 @@ bool IFACE::HandleApiOpenDocument( const wxString& aPath, KICAD_API_SERVER* aSer
 }
 
 
-bool IFACE::HandleApiCloseDocument( const wxString& aFileName, KICAD_API_SERVER* aServer, wxString* aError )
+bool IFACE::HandleApiOpenFootprint( const wxString& aProjectPath, const wxString& aLibIdStr,
+                                    KICAD_API_SERVER* aServer, wxString* aError )
 {
     wxCHECK( aServer, false );
 
-    if( !m_openContext )
+    wxFileName requestedPath( aLibIdStr );
+    const bool  nativeFile = requestedPath.GetExt().CmpNoCase(
+                                      FILEEXT::KiCadFootprintFileExtension ) == 0;
+
+    LIB_ID fpid;
+    wxString sourceFile;
+
+    if( nativeFile )
+    {
+        requestedPath.MakeAbsolute();
+
+        if( !requestedPath.IsFileReadable() )
+        {
+            if( aError )
+                *aError = wxString::Format( wxS( "Footprint file is not readable: %s" ),
+                                            requestedPath.GetFullPath() );
+
+            return false;
+        }
+
+        sourceFile = requestedPath.GetFullPath();
+    }
+    else if( fpid.Parse( aLibIdStr ) >= 0 )
+    {
+        if( aError )
+            *aError = wxString::Format( wxS( "Invalid footprint LIB_ID: %s" ), aLibIdStr );
+
+        return false;
+    }
+
+    SETTINGS_MANAGER& settingsManager = Pgm().GetSettingsManager();
+    PROJECT*          project = nullptr;
+
+    if( !aProjectPath.IsEmpty() )
+    {
+        wxFileName projectPath( aProjectPath );
+        projectPath.SetExt( FILEEXT::ProjectFileExtension );
+        projectPath.MakeAbsolute();
+
+        if( !settingsManager.LoadProject( projectPath.GetFullPath(), true ) )
+            wxLogTrace( traceApi, "Warning: no project file found for %s", aProjectPath );
+
+        project = settingsManager.GetProject( projectPath.GetFullPath() );
+    }
+    else
+    {
+        // A footprint can be opened from the current/null project when the
+        // caller has not selected a project document.
+        project = &settingsManager.Prj();
+    }
+
+    if( !project )
+    {
+        if( aError )
+            *aError = wxString::Format( wxS( "Error loading project for %s" ), aProjectPath );
+
+        return false;
+    }
+
+    std::shared_ptr<HEADLESS_FOOTPRINT_CONTEXT> newContext;
+
+    try
+    {
+        std::unique_ptr<FOOTPRINT> footprint;
+
+        if( nativeFile )
+        {
+            IO_RELEASER<PCB_IO> io( PCB_IO_MGR::FindPlugin( PCB_IO_MGR::KICAD_SEXP ) );
+
+            if( !io )
+            {
+                if( aError )
+                    *aError = wxS( "The KiCad footprint file plugin is unavailable" );
+
+                return false;
+            }
+
+            wxString footprintName;
+            footprint.reset( io->ImportFootprint( sourceFile, footprintName ) );
+
+            if( !footprint )
+            {
+                if( aError )
+                    *aError = wxString::Format( wxS( "Failed to parse footprint file: %s" ),
+                                                sourceFile );
+
+                return false;
+            }
+
+            // Native footprint files do not carry a library nickname.  Keep the
+            // parsed item name as the stable DocumentSpecifier identity while the
+            // context's filename remains the save/reload target.
+            fpid = LIB_ID( wxEmptyString, footprintName );
+        }
+        else
+        {
+            FOOTPRINT_LIBRARY_ADAPTER* adapter = PROJECT_PCB::FootprintLibAdapter( project );
+
+            if( !adapter )
+            {
+                if( aError )
+                    *aError = wxString::Format( wxS( "No footprint library adapter is available for %s" ),
+                                                aLibIdStr );
+
+                return false;
+            }
+
+            adapter->AsyncLoad();
+            adapter->BlockUntilLoaded();
+            footprint.reset( adapter->LoadFootprintWithOptionalNickname( fpid, true ) );
+        }
+
+        if( !footprint )
+        {
+            if( aError )
+                *aError = wxString::Format( wxS( "Footprint not found: %s" ), aLibIdStr );
+
+            return false;
+        }
+
+        newContext = std::make_shared<HEADLESS_FOOTPRINT_CONTEXT>(
+                std::move( footprint ), fpid, project,
+                GetAppSettings<FOOTPRINT_EDITOR_SETTINGS>( "fpedit" ), m_kiway, sourceFile );
+    }
+    catch( const std::exception& )
+    {
+        if( aError )
+            *aError = wxString::Format( wxS( "Failed to load footprint: %s" ), aLibIdStr );
+
+        return false;
+    }
+
+    closeCurrentDocument( aServer );
+    m_openFpContext = std::move( newContext );
+    m_openFpHandler = std::make_unique<API_HANDLER_FOOTPRINT>( m_openFpContext, nullptr );
+    aServer->RegisterHandler( m_openFpHandler.get() );
+    return true;
+}
+
+
+bool IFACE::HandleApiCloseDocument( const wxString& aFileName, KICAD_API_SERVER* aServer,
+                                    wxString* aError )
+{
+    return HandleApiCloseDocument( aFileName, aServer, false, aError );
+}
+
+
+bool IFACE::HandleApiCloseDocument( const wxString& aFileName, KICAD_API_SERVER* aServer,
+                                    bool aForce, wxString* aError )
+{
+    wxCHECK( aServer, false );
+
+    if( !m_openContext && !m_openFpContext )
     {
         if( aError )
             *aError = wxS( "No document is currently open" );
@@ -924,7 +1111,7 @@ bool IFACE::HandleApiCloseDocument( const wxString& aFileName, KICAD_API_SERVER*
         return false;
     }
 
-    if( !aFileName.IsEmpty() )
+    if( m_openContext && !aFileName.IsEmpty() )
     {
         wxFileName currentBoard( m_openContext->GetCurrentFileName() );
 
@@ -937,7 +1124,134 @@ bool IFACE::HandleApiCloseDocument( const wxString& aFileName, KICAD_API_SERVER*
         }
     }
 
+    if( m_openContext && !aForce
+        && ( m_openContext->GetBoard()->IsModified()
+             || ( m_openHandler && m_openHandler->hasPendingChanges() ) ) )
+    {
+        if( aError )
+            *aError = wxS( "Document has unsaved changes; save it or close with force=true" );
+
+        return false;
+    }
+
+    if( m_openFpContext && !aFileName.IsEmpty() )
+    {
+        wxString currentIdentity = m_openFpContext->GetCurrentFileName();
+
+        if( currentIdentity.IsEmpty() )
+            currentIdentity = m_openFpContext->GetLoadedFPID().GetUniStringLibId();
+
+        bool matches = currentIdentity == aFileName;
+
+        if( !matches && !m_openFpContext->GetCurrentFileName().IsEmpty() )
+        {
+            wxFileName currentPath( currentIdentity );
+            wxFileName requestedPath( aFileName );
+            currentPath.MakeAbsolute();
+            requestedPath.MakeAbsolute();
+            matches = currentPath.GetFullPath() == requestedPath.GetFullPath()
+                      || currentPath.SameAs( requestedPath );
+        }
+
+        if( !matches )
+        {
+            if( aError )
+                *aError = wxS( "Requested footprint does not match the open document" );
+
+            return false;
+        }
+    }
+
+    if( m_openFpContext && !aForce && m_openFpContext->GetBoard()
+        && ( m_openFpContext->GetBoard()->IsModified()
+             || ( m_openFpHandler && m_openFpHandler->hasPendingChanges() ) ) )
+    {
+        if( aError )
+            *aError = wxS( "Document has unsaved changes; save it or close with force=true" );
+
+        return false;
+    }
+
     closeCurrentDocument( aServer );
+    return true;
+}
+
+
+bool IFACE::HandleApiDocumentIsModified( const wxString& aFileName, bool* aModified,
+                                          wxString* aError )
+{
+    if( !aModified )
+    {
+        if( aError )
+            *aError = wxS( "Modified state output is required" );
+
+        return false;
+    }
+
+    if( !m_openContext && !m_openFpContext )
+    {
+        if( aError )
+            *aError = wxS( "No document is currently open" );
+
+        return false;
+    }
+
+    if( m_openContext && !aFileName.IsEmpty() )
+    {
+        wxFileName currentBoard( m_openContext->GetCurrentFileName() );
+
+        if( currentBoard.GetFullName() != aFileName )
+        {
+            if( aError )
+                *aError = wxS( "Requested document does not match the open document" );
+
+            return false;
+        }
+    }
+
+    if( m_openContext )
+    {
+        if( !m_openContext->GetBoard() )
+            return false;
+
+        *aModified = m_openContext->GetBoard()->IsModified()
+                     || ( m_openHandler && m_openHandler->hasPendingChanges() );
+    }
+    else
+    {
+        if( !aFileName.IsEmpty() )
+        {
+            wxString currentIdentity = m_openFpContext->GetCurrentFileName();
+
+            if( currentIdentity.IsEmpty() )
+                currentIdentity = m_openFpContext->GetLoadedFPID().GetUniStringLibId();
+
+            bool matches = currentIdentity == aFileName;
+
+            if( !matches && !m_openFpContext->GetCurrentFileName().IsEmpty() )
+            {
+                wxFileName currentPath( currentIdentity );
+                wxFileName requestedPath( aFileName );
+                currentPath.MakeAbsolute();
+                requestedPath.MakeAbsolute();
+                matches = currentPath.GetFullPath() == requestedPath.GetFullPath()
+                          || currentPath.SameAs( requestedPath );
+            }
+
+            if( !matches )
+            {
+                if( aError )
+                    *aError = wxS( "Requested footprint does not match the open document" );
+
+                return false;
+            }
+        }
+
+        *aModified = m_openFpContext->GetBoard()
+                     && ( m_openFpContext->GetBoard()->IsModified()
+                          || ( m_openFpHandler && m_openFpHandler->hasPendingChanges() ) );
+    }
+
     return true;
 }
 #endif

@@ -1,0 +1,70 @@
+/*
+ * This program source code file is part of KiCad, a free EDA application.
+ *
+ * Copyright The KiCad Developers, see AUTHORS.txt for contributors.
+ */
+
+#include <api/api_utils.h>
+#include <api/api_enums.h>
+#include <api/common/types/base_types.pb.h>
+
+#include <font/font.h>
+#include <font/text_attributes.h>
+
+namespace kiapi::common
+{
+
+void PackTextAttributes( types::TextAttributes& aOutput, const TEXT_ATTRIBUTES& aInput,
+                         const EDA_IU_SCALE& aScale )
+{
+    if( aInput.m_Font )
+        aOutput.set_font_name( aInput.m_Font->GetName().ToStdString() );
+
+    aOutput.set_horizontal_alignment( ToProtoEnum<GR_TEXT_H_ALIGN_T, types::HorizontalAlignment>( aInput.m_Halign ) );
+    aOutput.set_vertical_alignment( ToProtoEnum<GR_TEXT_V_ALIGN_T, types::VerticalAlignment>( aInput.m_Valign ) );
+    aOutput.mutable_angle()->set_value_degrees( aInput.m_Angle.AsDegrees() );
+    aOutput.set_line_spacing( aInput.m_LineSpacing );
+    PackDistance( *aOutput.mutable_stroke_width(), aInput.m_StrokeWidth, aScale );
+    aOutput.set_italic( aInput.m_Italic );
+    aOutput.set_bold( aInput.m_Bold );
+    aOutput.set_underlined( aInput.m_Underlined );
+    aOutput.set_mirrored( aInput.m_Mirrored );
+    aOutput.set_multiline( aInput.m_Multiline );
+    aOutput.set_keep_upright( aInput.m_KeepUpright );
+    PackVector2( *aOutput.mutable_size(), aInput.m_Size, aScale );
+
+    if( aInput.m_Color != KIGFX::COLOR4D::UNSPECIFIED )
+        PackColor( *aOutput.mutable_color(), aInput.m_Color );
+}
+
+
+void UnpackTextAttributes( TEXT_ATTRIBUTES& aOutput, const types::TextAttributes& aInput,
+                           const EDA_IU_SCALE& aScale )
+{
+    aOutput.m_Bold = aInput.bold();
+    aOutput.m_Italic = aInput.italic();
+    aOutput.m_Underlined = aInput.underlined();
+    aOutput.m_Mirrored = aInput.mirrored();
+    aOutput.m_Multiline = aInput.multiline();
+    aOutput.m_KeepUpright = aInput.keep_upright();
+    aOutput.m_Size = UnpackVector2( aInput.size(), aScale );
+
+    if( !aInput.font_name().empty() )
+    {
+        aOutput.m_Font = KIFONT::FONT::GetFont( wxString::FromUTF8( aInput.font_name() ),
+                                                aOutput.m_Bold, aOutput.m_Italic );
+    }
+
+    aOutput.m_Angle = EDA_ANGLE( aInput.angle().value_degrees(), DEGREES_T );
+    aOutput.m_LineSpacing = aInput.line_spacing();
+    aOutput.m_StrokeWidth = UnpackDistance( aInput.stroke_width(), aScale );
+    aOutput.m_Halign = FromProtoEnum<GR_TEXT_H_ALIGN_T, types::HorizontalAlignment>( aInput.horizontal_alignment() );
+    aOutput.m_Valign = FromProtoEnum<GR_TEXT_V_ALIGN_T, types::VerticalAlignment>( aInput.vertical_alignment() );
+
+    if( aInput.has_color() )
+        aOutput.m_Color = UnpackColor( aInput.color() );
+    else
+        aOutput.m_Color = KIGFX::COLOR4D::UNSPECIFIED;
+}
+
+} // namespace kiapi::common

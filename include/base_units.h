@@ -26,6 +26,8 @@
 #ifndef _BASE_UNITS_H_
 #define _BASE_UNITS_H_
 
+#include <cstdint>
+
 /*  Note about internal units and max size for boards and items
 
     The largest distance that we (and Kicad) can support is INT_MAX, since it represents
@@ -105,6 +107,17 @@ struct EDA_IU_SCALE
         double mils = iu / IU_PER_MILS;
 
         return static_cast<int>( mils < 0 ? mils - 0.5 : mils + 0.5 );
+    }
+
+    constexpr inline int64_t IUToNm( int iu ) const
+    {
+        return static_cast<int64_t>( iu ) * static_cast<int64_t>( 1000000.0 / IU_PER_MM );
+    }
+
+    constexpr inline int NmToIU( int64_t nm ) const
+    {
+        double iu = static_cast<double>( nm ) * IU_PER_MM / 1000000.0;
+        return static_cast<int>( iu < 0 ? iu - 0.5 : iu + 0.5 );
     }
 };
 

@@ -42,6 +42,11 @@
 #include <footprint.h>
 #include <confirm.h>
 #include <footprint_edit_frame.h>
+
+#ifdef KICAD_IPC_API
+#include <api/api_handler_footprint.h>
+#include <api/api_server.h>
+#endif
 #include <footprint_editor_settings.h>
 #include <footprint_library_adapter.h>
 #include <gal/graphics_abstraction_layer.h>
@@ -303,6 +308,14 @@ FOOTPRINT_EDIT_FRAME::FOOTPRINT_EDIT_FRAME( KIWAY* aKiway, wxWindow* aParent ) :
     setupUnits( GetSettings() );
 
     resolveCanvasType();
+
+#ifdef KICAD_IPC_API
+    // The Footprint Editor is a separate API document owner from pcbnew's
+    // board handler.  Register it while this frame exists so GUI and headless
+    // footprint documents share the same command semantics and routing rules.
+    m_apiHandler = std::make_unique<API_HANDLER_FOOTPRINT>( this );
+    Pgm().GetApiServer().RegisterHandler( m_apiHandler.get() );
+#endif
 
     // Default shutdown reason until a file is loaded
     KIPLATFORM::APP::SetShutdownBlockReason( this, _( "Footprint changes are unsaved" ) );
@@ -1000,6 +1013,11 @@ bool FOOTPRINT_EDIT_FRAME::canCloseWindow( wxCloseEvent& aEvent )
 
 void FOOTPRINT_EDIT_FRAME::doCloseWindow()
 {
+#ifdef KICAD_IPC_API
+    if( m_apiHandler )
+        Pgm().GetApiServer().DeregisterHandler( m_apiHandler.get() );
+#endif
+
     // No more vetos
     GetCanvas()->SetEventDispatcher( nullptr );
     GetCanvas()->StopDrawing();

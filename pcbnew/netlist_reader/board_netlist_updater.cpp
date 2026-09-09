@@ -43,7 +43,9 @@
 #include <string_utils.h>
 #include <pcbnew_settings.h>
 #include <pcb_edit_frame.h>
+#include <tool/tool_manager.h>
 #include <netlist_reader/pcb_netlist.h>
+#include <netlist_reader/pcb_netlist_utils.h>
 #include <connectivity/connectivity_data.h>
 #include <reporter.h>
 #include <wx/log.h>
@@ -68,6 +70,27 @@ BOARD_NETLIST_UPDATER::BOARD_NETLIST_UPDATER( PCB_EDIT_FRAME* aFrame, BOARD* aBo
     m_updateFields = false;
     m_removeExtraFields = false;
 
+    m_warningCount = 0;
+    m_errorCount = 0;
+    m_newFootprintsCount = 0;
+}
+
+
+BOARD_NETLIST_UPDATER::BOARD_NETLIST_UPDATER( TOOL_MANAGER* aToolManager, BOARD* aBoard ) :
+    m_frame( nullptr ),
+    m_commit( aToolManager ),
+    m_board( aBoard )
+{
+    m_reporter = &NULL_REPORTER::GetInstance();
+    m_deleteUnusedFootprints = false;
+    m_isDryRun = false;
+    m_replaceFootprints = true;
+    m_lookupByTimestamp = false;
+    m_transferGroups = false;
+    m_applyDesignBlockLayouts = false;
+    m_overrideLocks = false;
+    m_updateFields = false;
+    m_removeExtraFields = false;
     m_warningCount = 0;
     m_errorCount = 0;
     m_newFootprintsCount = 0;
@@ -159,7 +182,8 @@ FOOTPRINT* BOARD_NETLIST_UPDATER::addNewFootprint( COMPONENT* aComponent, const 
         return nullptr;
     }
 
-    FOOTPRINT* footprint = m_frame->LoadFootprint( aFootprintId );
+    FOOTPRINT* footprint = m_frame ? m_frame->LoadFootprint( aFootprintId )
+                                    : LoadFootprintFromProject( m_board, aFootprintId );
 
     if( footprint == nullptr )
     {
@@ -188,7 +212,10 @@ FOOTPRINT* BOARD_NETLIST_UPDATER::addNewFootprint( COMPONENT* aComponent, const 
         for( PAD* pad : footprint->Pads() )
         {
             // Set the pads ratsnest settings to the global settings
-            pad->SetLocalRatsnestVisible( m_frame->GetPcbNewSettings()->m_Display.m_ShowGlobalRatsnest );
+            const bool showRatsnest = m_frame && m_frame->GetPcbNewSettings()
+                                              ? m_frame->GetPcbNewSettings()->m_Display.m_ShowGlobalRatsnest
+                                              : true;
+            pad->SetLocalRatsnestVisible( showRatsnest );
 
             // Pads in the library all have orphaned nets.  Replace with Default.
             pad->SetNetCode( 0 );
@@ -324,7 +351,9 @@ FOOTPRINT* BOARD_NETLIST_UPDATER::replaceFootprint( NETLIST& aNetlist, FOOTPRINT
         return nullptr;
     }
 
-    FOOTPRINT* newFootprint = m_frame->LoadFootprint( aNewComponent->GetFPID() );
+    FOOTPRINT* newFootprint = m_frame
+                                      ? m_frame->LoadFootprint( aNewComponent->GetFPID() )
+                                      : LoadFootprintFromProject( m_board, aNewComponent->GetFPID() );
 
     if( newFootprint == nullptr )
     {
@@ -379,7 +408,38 @@ FOOTPRINT* BOARD_NETLIST_UPDATER::replaceFootprint( NETLIST& aNetlist, FOOTPRINT
              // Expand the footprint pad layers
              newFootprint->FixUpPadsForBoard( m_board );
 
-             m_frame->ExchangeFootprint( aFootprint, newFootprint, m_commit );
+             if( m_frame )
+             {
+                 m_frame->ExchangeFootprint( aFootprint, newFootprint, m_commit );
+             }
+             else
+             {
+                 // The board-only API context has no editor exchange helper.  Preserve the
+                 // placement and identity fields before replacing the item in the commit.
+                 newFootprint->SetPosition( aFootprint->GetPosition() );
+                 newFootprint->SetOrientation( aFootprint->GetOrientation() );
+                 newFootprint->SetLayerAndFlip( aFootprint->GetLayer() );
+                 newFootprint->SetLocked( aFootprint->IsLocked() );
+                 newFootprint->SetUuid( aFootprint->m_Uuid );
+                 newFootprint->SetPath( aFootprint->GetPath() );
+                 newFootprint->SetSheetfile( aFootprint->GetSheetfile() );
+                 newFootprint->SetSheetname( aFootprint->GetSheetname() );
+                 newFootprint->SetFilters( aFootprint->GetFilters() );
+                 newFootprint->SetReference( aFootprint->GetReference() );
+                 newFootprint->SetValue( aFootprint->GetValue() );
+
+                 if( EDA_GROUP* parentGroup = aFootprint->GetParentGroup() )
+                 {
+                     m_commit.Modify( parentGroup->AsEdaItem(), nullptr,
+                                      RECURSE_MODE::NO_RECURSE );
+                     parentGroup->RemoveItem( aFootprint );
+                     parentGroup->AddItem( newFootprint );
+                 }
+
+                 newFootprint->SetParent( m_board );
+                 m_commit.Remove( aFootprint );
+                 m_commit.Add( newFootprint );
+             }
 
              msg.Printf( _( "Changed %s footprint from '%s' to '%s'."),
                          aFootprint->GetReference(),
@@ -618,7 +678,7 @@ bool BOARD_NETLIST_UPDATER::updateFootprintParameters( FOOTPRINT* aFootprint, CO
                         newField->Rotate( aFootprint->GetPosition(), aFootprint->GetOrientation() );
 
                         if( m_frame )
-                            newField->StyleFromSettings( m_frame->GetDesignSettings(), true );
+                            newField->StyleFromSettings( m_board->GetDesignSettings(), true );
                     }
                 }
             }

@@ -428,3 +428,12 @@ zone_type
 zone_defaults
 zones
 depth
+
+arrow
+arrow_open
+background
+end_shape
+length
+square
+start_shape
+custom_property

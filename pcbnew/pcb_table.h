@@ -280,6 +280,9 @@ public:
         return new PCB_TABLE( *this );
     }
 
+    void Serialize( google::protobuf::Any& aContainer ) const override;
+    bool Deserialize( const google::protobuf::Any& aContainer ) override;
+
     void GetMsgPanelInfo( EDA_DRAW_FRAME* aFrame, std::vector<MSG_PANEL_ITEM>& aList ) override;
 
     double Similarity( const BOARD_ITEM& aOther ) const override;

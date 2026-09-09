@@ -22,6 +22,7 @@ syntax = "proto3";
 package kiapi.common.commands;
 
 import "common/types/base_types.proto";
+import "common/types/enums.proto";
 
 message GetVersion
 {
@@ -100,4 +101,19 @@ message GetPluginSettingsPath
 message StringResponse
 {
   string response = 1;
+}
+
+message GetPaths
+{
+}
+
+message PathEntry
+{
+  kiapi.common.types.PathType type = 1;
+  string path = 2;
+}
+
+message GetPathsResponse
+{
+  repeated PathEntry paths = 1;
 }

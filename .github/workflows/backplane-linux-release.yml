@@ -154,6 +154,7 @@ jobs:
           ccache --max-size=2G
           cmake -S . -B build/backplane-linux -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_MODULE_LINKER_FLAGS="-Wl,--no-undefined" \
             -DCMAKE_INSTALL_PREFIX="$PWD/stage" \
             -DKICAD_BUILD_QA_TESTS=OFF \
             -DKICAD_BUILD_I18N=OFF \
@@ -171,14 +172,16 @@ jobs:
           cmake --build build/backplane-linux --parallel 4 --target kiapi
           ninja -C build/backplane-linux common/pcb_lexer.h
           ninja -C build/backplane-linux -j4 \
-            common/CMakeFiles/common.dir/api/api_enums.cpp.o \
+            common/CMakeFiles/kicommon.dir/api/api_enums.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_handler_sch.cpp.o \
+            eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_sch_variants.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_sch_enums.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/api_sch_utils.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/api/sch_api_save.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface_objects.dir/sch_symbol.cpp.o \
             eeschema/CMakeFiles/eeschema_kiface.dir/eeschema.cpp.o \
             pcbnew/CMakeFiles/pcbnew_kiface_objects.dir/api/api_handler_pcb.cpp.o \
+            pcbnew/CMakeFiles/pcbnew_kiface_objects.dir/api/api_pcb_variants.cpp.o \
             common/CMakeFiles/pcbcommon.dir/__/pcbnew/api/api_pcb_enums.cpp.o \
             pcbnew/CMakeFiles/pcbnew_kiface.dir/pcbnew.cpp.o
 
@@ -371,6 +374,10 @@ jobs:
           "release/${archive_root}/bin/kicad-cli" --version
           "release/${archive_root}/bin/kicad-cli" api-server --help
           "$RUNNER_TEMP/ipc-smoke-venv/bin/python" scripts/backplane-ipc-smoke.py "release/${archive_root}/bin/kicad-cli"
+          for regression in document-ipc footprint-ipc schematic-ipc schematic-units pcb-ipc crossprobe-ipc ipc-mutation ipc-variant ipc-embedded ipc-export ipc-rulecheck; do
+            "$RUNNER_TEMP/ipc-smoke-venv/bin/python" "scripts/backplane-${regression}-regression.py" \
+              "release/${archive_root}/bin/kicad-cli"
+          done
           /usr/bin/python3 scripts/backplane-library-smoke.py "release/${archive_root}"
           du -sh "release/${archive_root}/share/kicad/3dmodels" "release/${archive_root}"
           (cd release && tar -czf "${archive_root}.tar.gz" "${archive_root}")

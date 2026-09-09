@@ -88,6 +88,8 @@ install( FILES
 # Functions and data all need to use the #include <import_export.h> and be declared
 # as APIEXPORT
 set( KICOMMON_SRCS
+    api/api_client.cpp
+    api/api_enums.cpp
     # Fonts
     newstroke_font.cpp
     font/fontconfig.cpp
@@ -344,6 +346,7 @@ if( KICAD_IPC_API )
         api/api_plugin.cpp
         api/api_plugin_manager.cpp
         api/api_server.cpp
+        api/cross_probe_client.cpp
 
         ../scripting/python_manager.cpp
     )
@@ -607,6 +610,7 @@ set( COMMON_WIDGET_SRCS
     widgets/filter_combobox.cpp
     widgets/font_choice.cpp
     widgets/footprint_choice.cpp
+    widgets/line_ending_bitmap.cpp
     widgets/footprint_diff_widget.cpp
     widgets/footprint_preview_widget.cpp
     widgets/footprint_select_widget.cpp
@@ -739,6 +743,7 @@ set( COMMON_IMPORT_GFX_SRCS
 
 
 set( COMMON_SRCS
+    api/api_text_attributes.cpp
     ${LIB_KICAD_SRCS}
     ${COMMON_ABOUT_DLG_SRCS}
     ${COMMON_DLG_SRCS}
@@ -794,6 +799,8 @@ set( COMMON_SRCS
     reference_image.cpp
     render_settings.cpp
     status_popup.cpp
+    line_ending.cpp
+    backplane_document_metadata.cpp
     stroke_params.cpp
     template_fieldnames.cpp
     textentry_tricks.cpp
@@ -857,7 +864,6 @@ set( COMMON_SRCS
     http_lib/http_lib_connection.cpp
     http_lib/http_lib_settings.cpp
 
-    api/api_enums.cpp
     )
 
 # This needs to be in the common library until draw_panel_gal is moved to kicommon
@@ -1072,6 +1078,7 @@ set( PCB_COMMON_SRCS
     ${PCB_COMMON_SRCS}
     ${CMAKE_SOURCE_DIR}/pcbnew/api/api_pcb_enums.cpp
     ${CMAKE_SOURCE_DIR}/pcbnew/api/api_pcb_utils.cpp
+    ${CMAKE_SOURCE_DIR}/pcbnew/api/api_pcb_embedded_utils.cpp
 )
 
 add_library( pcbcommon STATIC ${PCB_COMMON_SRCS} )

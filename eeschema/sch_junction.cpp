@@ -38,6 +38,8 @@
 #include <settings/color_settings.h>
 #include <connection_graph.h>
 #include <string_utils.h>
+#include <api/api_utils.h>
+#include <api/schematic/schematic_types.pb.h>
 #include <properties/property.h>
 #include <properties/property_mgr.h>
 
@@ -58,6 +60,51 @@ SCH_JUNCTION::SCH_JUNCTION( const VECTOR2I& aPosition, int aDiameter, SCH_LAYER_
 EDA_ITEM* SCH_JUNCTION::Clone() const
 {
     return new SCH_JUNCTION( *this );
+}
+
+
+void SCH_JUNCTION::Serialize( google::protobuf::Any& aContainer ) const
+{
+    using namespace kiapi::common;
+
+    kiapi::schematic::types::Junction junction;
+
+    junction.mutable_id()->set_value( m_Uuid.AsStdString() );
+    PackVector2( *junction.mutable_position(), m_pos, schIUScale );
+    PackDistance( *junction.mutable_diameter(), m_diameter, schIUScale );
+
+    if( m_color != COLOR4D::UNSPECIFIED )
+        PackColor( *junction.mutable_color(), m_color );
+
+    junction.set_locked( IsLocked() ? types::LockedState::LS_LOCKED
+                                    : types::LockedState::LS_UNLOCKED );
+
+    PackCustomProperties( junction.mutable_custom_properties(), *this );
+    aContainer.PackFrom( junction );
+}
+
+
+bool SCH_JUNCTION::Deserialize( const google::protobuf::Any& aContainer )
+{
+    using namespace kiapi::common;
+
+    kiapi::schematic::types::Junction junction;
+
+    if( !aContainer.UnpackTo( &junction ) )
+        return false;
+
+    const_cast<KIID&>( m_Uuid ) = KIID( junction.id().value() );
+    m_pos = UnpackVector2( junction.position(), schIUScale );
+    m_diameter = UnpackDistance( junction.diameter(), schIUScale );
+
+    if( junction.has_color() )
+        m_color = UnpackColor( junction.color() );
+    else
+        m_color = COLOR4D::UNSPECIFIED;
+
+    UnpackCustomProperties( junction.custom_properties(), *this );
+    SetLocked( junction.locked() == types::LockedState::LS_LOCKED );
+    return true;
 }
 
 

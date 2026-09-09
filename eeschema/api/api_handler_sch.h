@@ -24,7 +24,9 @@
 #include <api/api_handler_editor.h>
 #include <api/sch_context.h>
 #include <api/common/commands/editor_commands.pb.h>
+#include <api/common/commands/cross_probe_commands.pb.h>
 #include <api/common/commands/project_commands.pb.h>
+#include <api/common/commands/variant_commands.pb.h>
 #include <google/protobuf/empty.pb.h>
 #include <api/schematic/schematic_commands.pb.h>
 #include <api/schematic/schematic_jobs.pb.h>
@@ -32,6 +34,8 @@
 
 using namespace kiapi;
 using namespace kiapi::common;
+
+using google::protobuf::Empty;
 
 class SCH_EDIT_FRAME;
 class SCH_ITEM;
@@ -84,6 +88,8 @@ protected:
 
     void onModified() override;
 
+    std::optional<bool> documentIsModified() const override;
+
     SCH_CONTEXT* context() const { return m_context.get(); }
 
     TOOL_MANAGER* toolManager() const { return context()->GetToolManager(); }
@@ -104,6 +110,30 @@ private:
     HANDLER_RESULT<commands::GetItemsResponse>
     handleGetItemsById( const HANDLER_CONTEXT<commands::GetItemsById>& aCtx );
 
+    HANDLER_RESULT<commands::SelectionResponse> handleGetSelection(
+            const HANDLER_CONTEXT<commands::GetSelection>& aCtx );
+
+    HANDLER_RESULT<Empty> handleClearSelection(
+            const HANDLER_CONTEXT<commands::ClearSelection>& aCtx );
+
+    HANDLER_RESULT<commands::SelectionResponse> handleAddToSelection(
+            const HANDLER_CONTEXT<commands::AddToSelection>& aCtx );
+
+    HANDLER_RESULT<commands::SelectionResponse> handleRemoveFromSelection(
+            const HANDLER_CONTEXT<commands::RemoveFromSelection>& aCtx );
+
+    HANDLER_RESULT<commands::CrossProbeAnnounceResponse> handleCrossProbeAnnounce(
+            const HANDLER_CONTEXT<commands::CrossProbeAnnounce>& aCtx );
+
+    HANDLER_RESULT<commands::SyncSelectionResponse> handleSyncSelection(
+            const HANDLER_CONTEXT<commands::SyncSelection>& aCtx );
+
+    HANDLER_RESULT<commands::HighlightNetsResponse> handleHighlightNets(
+            const HANDLER_CONTEXT<commands::HighlightNets>& aCtx );
+
+    HANDLER_RESULT<commands::FocusOnItemResponse> handleFocusOnItem(
+            const HANDLER_CONTEXT<commands::FocusOnItem>& aCtx );
+
     HANDLER_RESULT<types::RunJobResponse>
     handleRunSchematicJobExportSvg( const HANDLER_CONTEXT<kiapi::schematic::jobs::RunSchematicJobExportSvg>& aCtx );
 
@@ -122,14 +152,27 @@ private:
     HANDLER_RESULT<types::RunJobResponse>
     handleRunSchematicJobExportBOM( const HANDLER_CONTEXT<kiapi::schematic::jobs::RunSchematicJobExportBOM>& aCtx );
 
-    HANDLER_RESULT<kiapi::schematic::types::SchematicHierarchyResponse>
-    handleGetSchematicHierarchy( const HANDLER_CONTEXT<kiapi::schematic::types::GetSchematicHierarchy>& aCtx );
+    HANDLER_RESULT<kiapi::schematic::commands::SchematicHierarchyResponse>
+    handleGetSchematicHierarchy( const HANDLER_CONTEXT<kiapi::schematic::commands::GetSchematicHierarchy>& aCtx );
 
     void packSheetInstance( kiapi::schematic::types::SheetInstance* aInstance, SCH_SHEET_PATH& aPath,
                             SCH_SHEET* aSheet );
 
-    HANDLER_RESULT<kiapi::schematic::types::SchematicNetlistResponse>
-    handleGetSchematicNetlist( const HANDLER_CONTEXT<kiapi::schematic::types::GetSchematicNetlist>& aCtx );
+    HANDLER_RESULT<kiapi::schematic::commands::SchematicNetlistResponse>
+    handleGetSchematicNetlist( const HANDLER_CONTEXT<kiapi::schematic::commands::GetSchematicNetlist>& aCtx );
+
+    HANDLER_RESULT<commands::VariantsResponse> handleGetVariants(
+            const HANDLER_CONTEXT<commands::GetVariants>& aCtx );
+    HANDLER_RESULT<Empty> handleAddVariant( const HANDLER_CONTEXT<commands::AddVariant>& aCtx );
+    HANDLER_RESULT<Empty> handleDeleteVariant( const HANDLER_CONTEXT<commands::DeleteVariant>& aCtx );
+    HANDLER_RESULT<Empty> handleRenameVariant( const HANDLER_CONTEXT<commands::RenameVariant>& aCtx );
+    HANDLER_RESULT<Empty> handleCopyVariant( const HANDLER_CONTEXT<commands::CopyVariant>& aCtx );
+    HANDLER_RESULT<Empty> handleSetVariantDescription(
+            const HANDLER_CONTEXT<commands::SetVariantDescription>& aCtx );
+    HANDLER_RESULT<Empty> handleSetCurrentVariant(
+            const HANDLER_CONTEXT<commands::SetCurrentVariant>& aCtx );
+    HANDLER_RESULT<commands::CurrentVariantResponse>
+    handleGetCurrentVariant( const HANDLER_CONTEXT<commands::GetCurrentVariant>& aCtx );
 
     SCHEMATIC* schematic() const;
 

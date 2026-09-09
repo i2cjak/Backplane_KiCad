@@ -48,6 +48,7 @@ API_HANDLER_COMMON::API_HANDLER_COMMON() :
     registerHandler<commands::GetVersion, GetVersionResponse>( &API_HANDLER_COMMON::handleGetVersion );
     registerHandler<GetKiCadBinaryPath, PathResponse>(
             &API_HANDLER_COMMON::handleGetKiCadBinaryPath );
+    registerHandler<GetPaths, GetPathsResponse>( &API_HANDLER_COMMON::handleGetPaths );
     registerHandler<GetNetClasses, NetClassesResponse>( &API_HANDLER_COMMON::handleGetNetClasses );
     registerHandler<SetNetClasses, Empty>( &API_HANDLER_COMMON::handleSetNetClasses );
     registerHandler<Ping, Empty>( &API_HANDLER_COMMON::handlePing );
@@ -66,6 +67,8 @@ API_HANDLER_COMMON::API_HANDLER_COMMON() :
             &API_HANDLER_COMMON::handleOpenDocument );
     registerHandler<CloseDocument, Empty>(
             &API_HANDLER_COMMON::handleCloseDocument );
+    registerHandler<CloseAllDocuments, Empty>(
+            &API_HANDLER_COMMON::handleCloseAllDocuments );
 
 }
 
@@ -97,6 +100,30 @@ HANDLER_RESULT<PathResponse> API_HANDLER_COMMON::handleGetKiCadBinaryPath(
     wxString path = FindKicadFile( fn.GetFullName() );
     PathResponse reply;
     reply.set_path( path.ToUTF8() );
+    return reply;
+}
+
+
+HANDLER_RESULT<GetPathsResponse> API_HANDLER_COMMON::handleGetPaths(
+        const HANDLER_CONTEXT<GetPaths>& )
+{
+    GetPathsResponse reply;
+
+    auto addPath = [&]( types::PathType aType, const wxString& aPath )
+    {
+        PathEntry* entry = reply.add_paths();
+        entry->set_type( aType );
+        entry->set_path( aPath.ToUTF8() );
+    };
+
+    addPath( types::PATH_USER_PLUGINS, PATHS::GetUserPluginsPath() );
+    addPath( types::PATH_USER_TEMPLATES, PATHS::GetUserTemplatesPath() );
+    addPath( types::PATH_USER_SETTINGS, PATHS::GetUserSettingsPath() );
+    addPath( types::PATH_STOCK_SYMBOLS, PATHS::GetStockSymbolsPath() );
+    addPath( types::PATH_STOCK_FOOTPRINTS, PATHS::GetStockFootprintsPath() );
+    addPath( types::PATH_STOCK_DESIGN_BLOCKS, PATHS::GetStockDesignBlocksPath() );
+    addPath( types::PATH_STOCK_3DMODELS, PATHS::GetStock3dmodelsPath() );
+    addPath( types::PATH_STOCK_TEMPLATES, PATHS::GetStockTemplatesPath() );
     return reply;
 }
 
@@ -431,4 +458,19 @@ HANDLER_RESULT<Empty> API_HANDLER_COMMON::handleCloseDocument(
     }
 
     return m_closeDocumentHandler( aCtx.Request );
+}
+
+
+HANDLER_RESULT<Empty> API_HANDLER_COMMON::handleCloseAllDocuments(
+        const HANDLER_CONTEXT<CloseAllDocuments>& aCtx )
+{
+    if( !m_closeAllDocumentsHandler )
+    {
+        ApiResponseStatus e;
+        e.set_status( ApiStatusCode::AS_UNIMPLEMENTED );
+        e.set_error_message( "CloseAllDocuments is not available in this KiCad mode" );
+        return tl::unexpected( e );
+    }
+
+    return m_closeAllDocumentsHandler( aCtx.Request );
 }

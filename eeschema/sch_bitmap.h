@@ -45,6 +45,9 @@ public:
 
     SCH_BITMAP& operator=( const SCH_ITEM& aItem );
 
+    void Serialize( google::protobuf::Any& aContainer ) const override;
+    bool Deserialize( const google::protobuf::Any& aContainer ) override;
+
     /**
      * @return the underlying reference image object.
      */

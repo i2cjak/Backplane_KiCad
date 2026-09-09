@@ -798,7 +798,8 @@ bool KIWAY::ProcessApiOpenDocument( KIWAY::FACE_T aFace, const wxString& aPath, 
 }
 
 
-bool KIWAY::ProcessApiCloseDocument( KIWAY::FACE_T aFace, const wxString& aPath, KICAD_API_SERVER* aServer,
+bool KIWAY::ProcessApiOpenFootprint( KIWAY::FACE_T aFace, const wxString& aProjectPath,
+                                     const wxString& aLibId, KICAD_API_SERVER* aServer,
                                      wxString* aError )
 {
     KIFACE* kiface = KiFACE( aFace );
@@ -811,7 +812,48 @@ bool KIWAY::ProcessApiCloseDocument( KIWAY::FACE_T aFace, const wxString& aPath,
         return false;
     }
 
-    return kiface->HandleApiCloseDocument( aPath, aServer, aError );
+    return kiface->HandleApiOpenFootprint( aProjectPath, aLibId, aServer, aError );
+}
+
+
+bool KIWAY::ProcessApiCloseDocument( KIWAY::FACE_T aFace, const wxString& aPath, KICAD_API_SERVER* aServer,
+                                     wxString* aError )
+{
+    return ProcessApiCloseDocument( aFace, aPath, aServer, false, aError );
+}
+
+
+bool KIWAY::ProcessApiCloseDocument( KIWAY::FACE_T aFace, const wxString& aPath,
+                                     KICAD_API_SERVER* aServer, bool aForce, wxString* aError )
+{
+    KIFACE* kiface = KiFACE( aFace );
+
+    if( !kiface )
+    {
+        if( aError )
+            *aError = wxS( "Failed to load requested face" );
+
+        return false;
+    }
+
+    return kiface->HandleApiCloseDocument( aPath, aServer, aForce, aError );
+}
+
+
+bool KIWAY::ProcessApiDocumentIsModified( KIWAY::FACE_T aFace, const wxString& aPath,
+                                           bool* aModified, wxString* aError )
+{
+    KIFACE* kiface = KiFACE( aFace );
+
+    if( !kiface )
+    {
+        if( aError )
+            *aError = wxS( "Failed to load requested face" );
+
+        return false;
+    }
+
+    return kiface->HandleApiDocumentIsModified( aPath, aModified, aError );
 }
 
 

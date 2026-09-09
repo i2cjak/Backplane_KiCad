@@ -195,6 +195,28 @@ std::string KICAD_API_SERVER::SocketPath() const
 }
 
 
+wxFileName KICAD_API_SERVER::StandardSocketPath()
+{
+    wxFileName socket;
+
+#ifdef __WXMAC__
+    socket.AssignDir( wxS( "/tmp" ) );
+#else
+    socket.AssignDir( wxStandardPaths::Get().GetTempDir() );
+#endif
+
+    socket.AppendDir( wxS( "kicad" ) );
+    socket.SetFullName( wxS( "api.sock" ) );
+    return socket;
+}
+
+
+std::string KICAD_API_SERVER::StandardSocketUrl()
+{
+    return "ipc://" + StandardSocketPath().GetFullPath().ToStdString();
+}
+
+
 void KICAD_API_SERVER::onApiRequest( std::string* aRequest )
 {
     if( !m_readyToReply )

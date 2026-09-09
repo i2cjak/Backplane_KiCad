@@ -29,6 +29,7 @@
 #include <wx/mstream.h>
 
 #include <base_units.h>
+#include <backplane_document_metadata.h>
 #include <bitmap_base.h>
 #include <common.h> // ExpandTextVars
 #include <wildcards_and_files_ext.h>
@@ -37,6 +38,7 @@
 #include <font/fontconfig.h>
 #include <io/kicad/kicad_io_utils.h>
 #include <libraries/symbol_library_adapter.h>
+#include <lib_symbol.h>
 #include <progress_reporter.h>
 #include <schematic.h>
 #include <schematic_lexer.h>
@@ -72,6 +74,146 @@ using namespace TSCHEMATIC_T;
 #define SCH_PARSE_ERROR( text, reader, pos )                         \
     THROW_PARSE_ERROR( text, reader.GetSource(), reader.Line(),      \
                        reader.LineNumber(), pos - reader.Line() )
+
+
+static wxString BackplaneMetadataKey( const SCH_ITEM& aItem )
+{
+    if( aItem.Type() == SCH_FIELD_T )
+    {
+        const SCH_FIELD& field = static_cast<const SCH_FIELD&>( aItem );
+        const EDA_ITEM* parent = field.GetParent();
+
+        if( parent )
+            return wxString::Format( wxS( "%s/field/%s" ),
+                                     static_cast<const SCH_ITEM*>( parent )->m_Uuid.AsString(),
+                                     field.GetName( false ) );
+    }
+
+    return aItem.m_Uuid.AsString();
+}
+
+
+// Library draw items do not have persistent UUIDs in the stock 10.0.6
+// schematic format.  A UUID-only companion key would therefore either miss
+// metadata after reopen or apply it to a different graphic.  Include the
+// owning symbol, stable draw-item ordinal, and a geometry signature.  The
+// signature intentionally changes when stock KiCad edits the graphic, making
+// the native edit authoritative instead of applying stale companion data.
+static wxString BackplaneLibraryMetadataKey( const SCH_SYMBOL& aSymbol,
+                                             const SCH_ITEM& aItem, size_t aOrdinal )
+{
+    const BOX2I box = aItem.GetBoundingBox();
+
+    return wxString::Format(
+            wxS( "%s/library/%s/%zu/%d/%d/%d/%d/%d/%d/%d" ),
+            aSymbol.m_Uuid.AsString(), aSymbol.GetSchSymbolLibraryName(), aOrdinal,
+            static_cast<int>( aItem.Type() ), aItem.GetUnit(), aItem.GetBodyStyle(), box.GetLeft(),
+            box.GetTop(), box.GetRight(), box.GetBottom() );
+}
+
+
+static void ApplyBackplaneMetadata( SCH_SCREEN& aScreen, BACKPLANE_DOCUMENT_METADATA& aMetadata )
+{
+    auto apply = [&]( SCH_ITEM* item )
+    {
+        if( item->Type() == SCH_MARKER_T )
+            return;
+
+        const wxString key = BackplaneMetadataKey( *item );
+        aMetadata.Apply( key, *item );
+
+        if( SCH_LINE* line = dynamic_cast<SCH_LINE*>( item ) )
+        {
+            LINE_ENDING start, end;
+
+            if( aMetadata.ReadLineEndings( key, start, end ) )
+            {
+                line->SetStartEnding( start );
+                line->SetEndEnding( end );
+            }
+        }
+
+        item->RunOnChildren( [&]( SCH_ITEM* child )
+        {
+            const wxString childKey = BackplaneMetadataKey( *child );
+            aMetadata.Apply( childKey, *child );
+
+            if( SCH_LINE* line = dynamic_cast<SCH_LINE*>( child ) )
+            {
+                LINE_ENDING start, end;
+
+                if( aMetadata.ReadLineEndings( childKey, start, end ) )
+                {
+                    line->SetStartEnding( start );
+                    line->SetEndEnding( end );
+                }
+            }
+        }, RECURSE_MODE::RECURSE );
+
+        if( SCH_SYMBOL* symbol = dynamic_cast<SCH_SYMBOL*>( item ) )
+        {
+            if( symbol->GetLibSymbolRef() )
+            {
+                size_t ordinal = 0;
+
+                for( SCH_ITEM& drawItem : symbol->GetLibSymbolRef()->GetDrawItems() )
+                {
+                    aMetadata.Apply( BackplaneLibraryMetadataKey( *symbol, drawItem, ordinal ), drawItem );
+                    ++ordinal;
+                }
+            }
+        }
+    };
+
+    for( SCH_ITEM* item : aScreen.Items() )
+    {
+        apply( item );
+    }
+}
+
+
+static void CaptureBackplaneMetadata( const SCH_SCREEN& aScreen, BACKPLANE_DOCUMENT_METADATA& aMetadata )
+{
+    auto capture = [&]( SCH_ITEM* item )
+    {
+        if( item->Type() == SCH_MARKER_T )
+            return;
+
+        const wxString key = BackplaneMetadataKey( *item );
+        aMetadata.Capture( key, *item );
+
+        if( SCH_LINE* line = dynamic_cast<SCH_LINE*>( item ) )
+            aMetadata.CaptureLineEndings( key, line->GetStartEnding(), line->GetEndEnding() );
+
+        item->RunOnChildren( [&]( SCH_ITEM* child )
+        {
+            const wxString childKey = BackplaneMetadataKey( *child );
+            aMetadata.Capture( childKey, *child );
+
+            if( SCH_LINE* line = dynamic_cast<SCH_LINE*>( child ) )
+                aMetadata.CaptureLineEndings( childKey, line->GetStartEnding(), line->GetEndEnding() );
+        }, RECURSE_MODE::RECURSE );
+
+        if( const SCH_SYMBOL* symbol = dynamic_cast<const SCH_SYMBOL*>( item ) )
+        {
+            if( symbol->GetLibSymbolRef() )
+            {
+                size_t ordinal = 0;
+
+                for( const SCH_ITEM& drawItem : symbol->GetLibSymbolRef()->GetDrawItems() )
+                {
+                    aMetadata.Capture( BackplaneLibraryMetadataKey( *symbol, drawItem, ordinal ), drawItem );
+                    ++ordinal;
+                }
+            }
+        }
+    };
+
+    for( SCH_ITEM* item : aScreen.Items() )
+    {
+        capture( item );
+    }
+}
 
 
 SCH_IO_KICAD_SEXPR::SCH_IO_KICAD_SEXPR() : SCH_IO( wxS( "Eeschema s-expression" ) )
@@ -336,6 +478,10 @@ void SCH_IO_KICAD_SEXPR::loadFile( const wxString& aFileName, SCH_SHEET* aSheet 
                                       m_appending );
 
     parser.ParseSchematic( aSheet );
+
+    BACKPLANE_DOCUMENT_METADATA metadata;
+    metadata.Load( aFileName );
+    ApplyBackplaneMetadata( *aSheet->GetScreen(), metadata );
 }
 
 
@@ -378,6 +524,10 @@ void SCH_IO_KICAD_SEXPR::SaveSchematicFile( const wxString& aFileName, SCH_SHEET
 
     PRETTIFIED_FILE_OUTPUTFORMATTER formatter( fn.GetFullPath() );
     FormatSchematicToFormatter( &formatter, aSheet, aSchematic, aProperties );
+
+    BACKPLANE_DOCUMENT_METADATA metadata;
+    CaptureBackplaneMetadata( *aSheet->GetScreen(), metadata );
+    metadata.Save( fn.GetFullPath() );
 
     if( aSheet->GetScreen() )
         aSheet->GetScreen()->SetFileExists( true );
@@ -1305,6 +1455,11 @@ void SCH_IO_KICAD_SEXPR::saveBusEntry( SCH_BUS_ENTRY_BASE* aBusEntry )
         SCH_LINE busEntryLine( aBusEntry->GetPosition(), LAYER_BUS );
 
         busEntryLine.SetEndPoint( aBusEntry->GetEnd() );
+        // Stock 10.0.6 has no native bus-to-bus entry token and writes this
+        // item as a bus line.  Retain the source identity so the companion
+        // metadata sidecar can restore custom properties after reopen (and
+        // after a stock resave) instead of silently orphaning them.
+        const_cast<KIID&>( busEntryLine.m_Uuid ) = aBusEntry->m_Uuid;
         saveLine( &busEntryLine );
         return;
     }
@@ -1872,6 +2027,14 @@ bool SCH_IO_KICAD_SEXPR::DeleteLibrary( const wxString& aLibraryPath,
         {
             THROW_IO_ERROR( wxString::Format( _( "Symbol library file '%s' cannot be deleted." ),
                                               aLibraryPath.GetData() ) );
+        }
+
+        const wxString companion = BACKPLANE_DOCUMENT_METADATA::CompanionPath( aLibraryPath );
+
+        if( wxFileExists( companion ) && !wxRemoveFile( companion ) )
+        {
+            THROW_IO_ERROR( wxString::Format( _( "Symbol library metadata '%s' cannot be deleted." ),
+                                              companion ) );
         }
     }
     else

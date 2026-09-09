@@ -26,6 +26,7 @@
 #include <wx/dir.h>
 
 #include <base_units.h>
+#include <backplane_document_metadata.h>
 #include <build_version.h>
 #include <common.h>
 #include <sch_shape.h>
@@ -39,6 +40,73 @@
 #include <string_utils.h>
 #include <trace_helpers.h>
 #include <io/kicad/kicad_io_utils.h>
+
+
+namespace
+{
+wxString libraryItemSignature( const SCH_ITEM& aItem )
+{
+    const BOX2I box = aItem.GetBoundingBox();
+
+    return wxString::Format( wxS( "%d/%d/%d/%d/%d/%d/%d" ), static_cast<int>( aItem.Type() ),
+                             aItem.GetUnit(), aItem.GetBodyStyle(), box.GetLeft(), box.GetTop(),
+                             box.GetRight(), box.GetBottom() );
+}
+
+
+wxString libraryItemKey( const LIB_SYMBOL& aSymbol, const SCH_ITEM& aItem, size_t aOccurrence )
+{
+    return wxString::Format( wxS( "symbol/%s/item/%s/%zu" ), aSymbol.GetName(),
+                             libraryItemSignature( aItem ), aOccurrence );
+}
+
+
+void applyLibraryMetadata( const wxString& aPath, const std::vector<LIB_SYMBOL*>& aSymbols )
+{
+    BACKPLANE_DOCUMENT_METADATA metadata;
+    metadata.Load( aPath );
+
+    for( const LIB_SYMBOL* symbol : aSymbols )
+    {
+        if( !symbol )
+            continue;
+
+        metadata.Apply( wxString::Format( wxS( "symbol/%s" ), symbol->GetName() ),
+                        *const_cast<LIB_SYMBOL*>( symbol ) );
+
+        std::map<wxString, size_t> occurrences;
+
+        for( SCH_ITEM& item : const_cast<LIB_SYMBOL*>( symbol )->GetDrawItems() )
+        {
+            const wxString signature = libraryItemSignature( item );
+            metadata.Apply( libraryItemKey( *symbol, item, occurrences[signature]++ ), item );
+        }
+    }
+}
+
+
+void captureLibraryMetadata( const wxString& aPath, const std::vector<LIB_SYMBOL*>& aSymbols )
+{
+    BACKPLANE_DOCUMENT_METADATA metadata;
+
+    for( const LIB_SYMBOL* symbol : aSymbols )
+    {
+        if( !symbol )
+            continue;
+
+        metadata.Capture( wxString::Format( wxS( "symbol/%s" ), symbol->GetName() ), *symbol );
+        std::map<wxString, size_t> occurrences;
+
+        for( const SCH_ITEM& item : symbol->GetDrawItems() )
+        {
+            const wxString signature = libraryItemSignature( item );
+            metadata.Capture( libraryItemKey( *symbol, item, occurrences[signature]++ ), item );
+        }
+    }
+
+    metadata.Save( aPath );
+}
+}
 
 
 SCH_IO_KICAD_SEXPR_LIB_CACHE::SCH_IO_KICAD_SEXPR_LIB_CACHE( const wxString& aFullPathAndFileName ) :
@@ -81,6 +149,13 @@ void SCH_IO_KICAD_SEXPR_LIB_CACHE::Load()
         SCH_IO_KICAD_SEXPR_PARSER parser( &reader );
 
         parser.ParseLib( m_symbols );
+
+        std::vector<LIB_SYMBOL*> loadedSymbols;
+
+        for( const auto& [name, symbol] : m_symbols )
+            loadedSymbols.push_back( symbol );
+
+        applyLibraryMetadata( m_libFileName.GetFullPath(), loadedSymbols );
 
         SetFileFormatVersionAtLoad( parser.GetParsedRequiredVersion() );
         updateParentSymbolLinks();
@@ -164,6 +239,16 @@ void SCH_IO_KICAD_SEXPR_LIB_CACHE::Load()
                             m_symbolSourceFiles[ name ] = sourceFilePath;
                         }
                     }
+
+                    std::vector<LIB_SYMBOL*> loadedSymbols;
+
+                    for( const auto& [name, symbol] : m_symbols )
+                    {
+                        if( m_symbolSourceFiles[name] == sourceFilePath )
+                            loadedSymbols.push_back( symbol );
+                    }
+
+                    applyLibraryMetadata( sourceFilePath, loadedSymbols );
 
                     // Collect any parse warnings from this file
                     for( const wxString& warning : parser.GetParseWarnings() )
@@ -263,6 +348,8 @@ void SCH_IO_KICAD_SEXPR_LIB_CACHE::Save( const std::optional<bool>& aOpt )
 
         formatter->Print( ")" );
         formatter.reset();
+
+        captureLibraryMetadata( fn.GetFullPath(), orderedSymbols );
     }
     else
     {
@@ -326,6 +413,8 @@ void SCH_IO_KICAD_SEXPR_LIB_CACHE::Save( const std::optional<bool>& aOpt )
 
             formatter->Print( ")" );
             formatter.reset();
+
+            captureLibraryMetadata( oldFn.GetFullPath(), symbols );
 
             // Update source file tracking for new symbols
             for( LIB_SYMBOL* symbol : symbols )

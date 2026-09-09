@@ -115,6 +115,7 @@ void PCB_REFERENCE_IMAGE::swapData( BOARD_ITEM* aItem )
     std::swap( m_flags, item->m_flags );
     std::swap( m_parent, item->m_parent );
     std::swap( m_forceVisible, item->m_forceVisible );
+    std::swap( m_customProperties, item->m_customProperties );
     m_referenceImage.SwapData( item->m_referenceImage );
 }
 
@@ -191,6 +192,7 @@ void PCB_REFERENCE_IMAGE::Serialize( google::protobuf::Any& aContainer ) const
     refImage.mutable_image_scale()->set_value( m_referenceImage.GetImageScale() );
     refImage.set_locked( IsLocked() ? kiapi::common::types::LockedState::LS_LOCKED
                                     : kiapi::common::types::LockedState::LS_UNLOCKED );
+    kiapi::common::PackCustomProperties( refImage.mutable_custom_properties(), *this );
 
     wxMemoryOutputStream imageStream;
 
@@ -244,6 +246,7 @@ bool PCB_REFERENCE_IMAGE::Deserialize( const google::protobuf::Any& aContainer )
         m_referenceImage.SetImageScale( refImage.image_scale().value() );
 
     SetLocked( refImage.locked() == kiapi::common::types::LockedState::LS_LOCKED );
+    kiapi::common::UnpackCustomProperties( refImage.custom_properties(), *this );
     return true;
 }
 

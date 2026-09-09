@@ -69,11 +69,97 @@
 #include <zone.h>
 
 #include <build_version.h>
+#include <backplane_document_metadata.h>
 #include <filter_reader.h>
 #include <ctl_flags.h>
 
 
 using namespace PCB_KEYS_T;
+
+
+namespace
+{
+wxString metadataKey( const BOARD_ITEM& aItem, const BOARD_ITEM* aRoot )
+{
+    // Library footprint roots omit their UUID in stock 10.0.6 files.
+    return &aItem == aRoot ? wxS( "root" ) : aItem.m_Uuid.AsString();
+}
+
+
+void applyMetadata( BOARD_ITEM* aRoot, BACKPLANE_DOCUMENT_METADATA& aMetadata )
+{
+    if( !aRoot )
+        return;
+
+    auto apply = [&]( BOARD_ITEM* item )
+    {
+        const wxString key = metadataKey( *item, aRoot );
+        aMetadata.Apply( key, *item );
+
+        if( auto* footprint = dynamic_cast<FOOTPRINT*>( item ) )
+        {
+            const auto extra = aMetadata.ReadExtension( key, "footprint" );
+
+            if( extra.is_null() )
+                return;
+
+            try
+            {
+                footprint->SetExcludedFromSim( extra.value( "exclude_from_simulation", false ) );
+
+                if( extra.contains( "variant_simulation" ) )
+                {
+                    for( const auto& [name, value] : extra.at( "variant_simulation" ).items() )
+                    {
+                        if( auto* variant = footprint->GetVariant( wxString::FromUTF8( name ) ) )
+                            variant->SetExcludedFromSim( value.get<bool>() );
+                    }
+                }
+            }
+            catch( const nlohmann::json::exception& error )
+            {
+                THROW_IO_ERROR( wxString::Format( "Invalid Backplane footprint metadata: %s",
+                                                 wxString::FromUTF8( error.what() ) ) );
+            }
+        }
+    };
+
+    apply( aRoot );
+    aRoot->RunOnChildren( apply, RECURSE_MODE::RECURSE );
+}
+
+
+void captureMetadata( BOARD_ITEM* aRoot, BACKPLANE_DOCUMENT_METADATA& aMetadata )
+{
+    if( !aRoot )
+        return;
+
+    auto capture = [&]( BOARD_ITEM* item )
+    {
+        const wxString key = metadataKey( *item, aRoot );
+        aMetadata.Capture( key, *item );
+
+        if( auto* footprint = dynamic_cast<FOOTPRINT*>( item ) )
+        {
+            auto extra = nlohmann::json::object();
+
+            if( footprint->IsExcludedFromSim() )
+                extra["exclude_from_simulation"] = true;
+
+            for( const auto& [name, variant] : footprint->GetVariants() )
+            {
+                if( variant.GetExcludedFromSim() )
+                    extra["variant_simulation"][name.ToStdString()] = true;
+            }
+
+            aMetadata.CaptureExtension( key, "footprint", extra );
+        }
+    };
+
+    capture( aRoot );
+    aRoot->RunOnChildren( capture, RECURSE_MODE::RECURSE );
+}
+}
 
 
 FP_CACHE_ENTRY::FP_CACHE_ENTRY( FOOTPRINT* aFootprint, const WX_FILENAME& aFileName ) :
@@ -138,6 +224,10 @@ void FP_CACHE::Save( FOOTPRINT* aFootprintFilter )
             m_owner->Format( footprint.get() );
         }
 
+        BACKPLANE_DOCUMENT_METADATA metadata;
+        captureMetadata( footprint.get(), metadata );
+        metadata.Save( fileName );
+
         m_cache_timestamp += fn.GetTimestamp();
     }
 
@@ -190,6 +280,10 @@ void FP_CACHE::Load()
 
                 if( !footprint )
                     THROW_IO_ERROR( wxEmptyString );   // caught locally, just below...
+
+                BACKPLANE_DOCUMENT_METADATA metadata;
+                metadata.Load( fn.GetFullPath() );
+                applyMetadata( footprint, metadata );
 
                 footprint->SetFPID( LIB_ID( wxEmptyString, fpName ) );
                 m_footprints.insert( fpName, new FP_CACHE_ENTRY( footprint, fn ) );
@@ -316,6 +410,10 @@ void PCB_IO_KICAD_SEXPR::SaveBoard( const wxString& aFileName, BOARD* aBoard,
     PRETTIFIED_FILE_OUTPUTFORMATTER formatter( aFileName );
     FormatBoardToFormatter( &formatter, aBoard, aProperties );
     formatter.Finish();
+
+    BACKPLANE_DOCUMENT_METADATA metadata;
+    captureMetadata( aBoard, metadata );
+    metadata.Save( aFileName );
 }
 
 
@@ -2324,7 +2422,9 @@ void PCB_IO_KICAD_SEXPR::format( const PCB_TEXT* aText ) const
         formatRenderCache( aText );
 
     if( !field )
+    {
         m_out->Print( ")" );
+    }
 }
 
 
@@ -3159,7 +3259,13 @@ BOARD* PCB_IO_KICAD_SEXPR::LoadBoard( const wxString& aFileName, BOARD* aAppendT
 
     // Give the filename to the board if it's new
     if( !aAppendToMe )
+    {
         board->SetFileName( aFileName );
+
+        BACKPLANE_DOCUMENT_METADATA metadata;
+        metadata.Load( aFileName );
+        applyMetadata( board, metadata );
+    }
 
     return board;
 }
@@ -3332,7 +3438,16 @@ FOOTPRINT* PCB_IO_KICAD_SEXPR::ImportFootprint( const wxString& aFootprintPath,
 
     aFootprintNameOut = wxFileName( aFootprintPath ).GetName();
 
-    return dynamic_cast<FOOTPRINT*>( Parse( fcontents ) );
+    std::unique_ptr<FOOTPRINT> footprint( dynamic_cast<FOOTPRINT*>( Parse( fcontents ) ) );
+
+    if( footprint )
+    {
+        BACKPLANE_DOCUMENT_METADATA metadata;
+        metadata.Load( aFootprintPath );
+        applyMetadata( footprint.get(), metadata );
+    }
+
+    return footprint.release();
 }
 
 

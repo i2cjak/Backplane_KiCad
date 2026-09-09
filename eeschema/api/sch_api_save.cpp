@@ -183,12 +183,22 @@ bool SaveSchematic( SCHEMATIC& aSchematic, PROJECT& aProject )
 
         success &= SaveSheetToFile( screens.GetSheet( i ), aSchematic, fileName.GetFullPath() );
 
-        if( success )
-            screen->SetContentModified( false );
     }
 
     if( success )
+    {
         UpdateProjectFile( aSchematic, aProject );
+
+        // Updating the project metadata can record ERC exclusions and touch
+        // schematic state after the individual sheet writes.  Clear the
+        // complete hierarchy only after that final update so SaveDocument
+        // reports a clean document to the IPC client.
+        for( size_t i = 0; i < screens.GetCount(); i++ )
+        {
+            if( SCH_SCREEN* screen = screens.GetScreen( i ) )
+                screen->SetContentModified( false );
+        }
+    }
 
     return success;
 }

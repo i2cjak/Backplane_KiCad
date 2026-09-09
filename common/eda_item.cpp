@@ -68,9 +68,55 @@ EDA_ITEM::EDA_ITEM( const EDA_ITEM& base ) :
         m_parent( base.m_parent ),
         m_group( base.m_group ),
         m_isRollover( false ),
-        m_forceVisible( base.m_forceVisible )
+        m_forceVisible( base.m_forceVisible ),
+        m_customProperties( base.m_customProperties )
 {
     SetForcedTransparency( base.GetForcedTransparency() );
+}
+
+
+void EDA_ITEM::RemoveCustomProperty( const wxString& aKey )
+{
+    for( auto it = m_customProperties.begin(); it != m_customProperties.end(); ++it )
+    {
+        if( it->first.CmpNoCase( aKey ) == 0 )
+        {
+            m_customProperties.erase( it );
+            return;
+        }
+    }
+}
+
+
+std::vector<wxString> EDA_ITEM::RemoveConflictingCustomProperties()
+{
+    std::vector<wxString> removed;
+
+    for( const auto& [key, value] : m_customProperties )
+    {
+        if( PROPERTY_MANAGER::Instance().GetProperty( TYPE_HASH( *this ), key ) )
+            removed.push_back( key );
+    }
+
+    for( const wxString& key : removed )
+        RemoveCustomProperty( key );
+
+    return removed;
+}
+
+
+bool EDA_ITEM::GetCustomProperty( const wxString& aKey, wxString& aValue ) const
+{
+    for( const auto& [key, value] : m_customProperties )
+    {
+        if( key.CmpNoCase( aKey ) == 0 )
+        {
+            aValue = value;
+            return true;
+        }
+    }
+
+    return false;
 }
 
 
@@ -366,6 +412,7 @@ EDA_ITEM& EDA_ITEM::operator=( const EDA_ITEM& aItem )
     m_group        = aItem.m_group;
     m_forceVisible = aItem.m_forceVisible;
     m_isRollover   = aItem.m_isRollover;
+    m_customProperties = aItem.m_customProperties;
 
     SetForcedTransparency( aItem.GetForcedTransparency() );
 

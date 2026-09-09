@@ -44,6 +44,10 @@ class API_HANDLER_EDITOR : public API_HANDLER
 public:
     API_HANDLER_EDITOR( EDA_BASE_FRAME* aFrame = nullptr );
 
+    // A staged transaction is unsaved document state, including before EndCommit.
+    // The CLI lifecycle also queries this before unloading a document.
+    bool hasPendingChanges() const;
+
 protected:
     /// If the header is valid, returns the item container
     HANDLER_RESULT<std::optional<KIID>> validateItemHeaderDocument(
@@ -78,6 +82,10 @@ protected:
 
     HANDLER_RESULT<commands::HitTestResponse> handleHitTest(
         const HANDLER_CONTEXT<commands::HitTest>& aCtx );
+
+    virtual HANDLER_RESULT<commands::GetDocumentModifiedStateResponse>
+    handleGetDocumentModifiedState(
+            const HANDLER_CONTEXT<commands::GetDocumentModifiedState>& aCtx );
 
     HANDLER_RESULT<types::TitleBlockInfo> handleGetTitleBlockInfo(
             const HANDLER_CONTEXT<commands::GetTitleBlockInfo>& aCtx );
@@ -130,6 +138,14 @@ protected:
     virtual wxString getDrawingSheetFileName() { return wxEmptyString; }
 
     virtual void setDrawingSheetFileName( const wxString& aFileName ) {}
+
+    /**
+     * Return the modified state for the currently handled document.
+     *
+     * Headless handlers override this to query their document context.  A null
+     * result means that this handler has no document state available.
+     */
+    virtual std::optional<bool> documentIsModified() const;
 
     virtual void onModified() {}
 

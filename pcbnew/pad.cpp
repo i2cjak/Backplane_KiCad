@@ -214,6 +214,7 @@ void PAD::Serialize( google::protobuf::Any &aContainer ) const
     if( FOOTPRINT* parent = GetParentFootprint() )
         pad.mutable_parent()->set_value( parent->m_Uuid.AsStdString() );
 
+    kiapi::common::PackCustomProperties( pad.mutable_custom_properties(), *this );
     aContainer.PackFrom( pad );
 }
 
@@ -256,6 +257,8 @@ bool PAD::Deserialize( const google::protobuf::Any &aContainer )
         if( pad.symbol_pin().no_connect() )
             m_pinType += wxT( "+no_connect" );
     }
+
+    kiapi::common::UnpackCustomProperties( pad.custom_properties(), *this );
 
     return true;
 }

@@ -18,6 +18,7 @@
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <algorithm>
 #include <trace_helpers.h>
 
 #include <sch_pin.h>
@@ -31,6 +32,8 @@
 #include <sch_label.h>
 #include <sch_line.h>
 #include <sch_no_connect.h>
+#include <sch_rule_area.h>
+#include <sch_marker.h>
 #include <sch_shape.h>
 #include <sch_sheet.h>
 #include <sch_screen.h>
@@ -69,6 +72,8 @@ std::unique_ptr<EDA_ITEM> CreateItemForType( KICAD_T aType, EDA_ITEM* aContainer
     case SCH_GLOBAL_LABEL_T:    return std::make_unique<SCH_GLOBALLABEL>();
     case SCH_HIER_LABEL_T:      return std::make_unique<SCH_HIERLABEL>();
     case SCH_DIRECTIVE_LABEL_T: return std::make_unique<SCH_DIRECTIVE_LABEL>();
+    case SCH_RULE_AREA_T:       return std::make_unique<SCH_RULE_AREA>();
+    case SCH_MARKER_T:          return std::make_unique<SCH_MARKER>( nullptr, VECTOR2I() );
     case SCH_FIELD_T:           return std::make_unique<SCH_FIELD>( parentSchItem );
     case SCH_GROUP_T:           return std::make_unique<SCH_GROUP>();
     case SCH_SYMBOL_T:          return std::make_unique<SCH_SYMBOL>();
@@ -118,6 +123,27 @@ bool PackSymbol( kiapi::schematic::types::SchematicSymbolInstance* aOutput, cons
 
     if( !any.UnpackTo( aOutput ) )
         return false;
+
+    // Instance pins carry UUIDs and alternate selections that are not present on
+    // the library pins serialized by SCH_SYMBOL.  Include them from the concrete
+    // sheet path so an update can rebuild the symbol without changing connectivity.
+    kiapi::schematic::types::SchematicSymbol* definition = aOutput->mutable_definition();
+    std::vector<const SCH_PIN*> pins = aInput->GetPins( &aPath );
+
+    std::ranges::sort( pins,
+                       []( const SCH_PIN* a, const SCH_PIN* b )
+                       {
+                           return a->m_Uuid < b->m_Uuid;
+                       } );
+
+    for( const SCH_PIN* pin : pins )
+    {
+        kiapi::schematic::types::SchematicSymbolChild* child = definition->add_items();
+        child->mutable_unit()->set_unit( pin->GetUnit() );
+        child->mutable_body_style()->set_style( pin->GetBodyStyle() );
+        child->set_is_private( pin->IsPrivate() );
+        pin->Serialize( *child->mutable_item() );
+    }
 
     PackSheetPath( *aOutput->mutable_path(), path );
     aOutput->mutable_reference_field()->mutable_text()->set_text( instance.m_Reference.ToUTF8() );
@@ -222,6 +248,27 @@ bool PackSheet( kiapi::schematic::types::SheetSymbol* aOutput, const SCH_SHEET* 
     PackSheetPath( *aOutput->mutable_path(), aPath.Path() );
     aOutput->set_page_number( aPath.GetPageNumber().ToUTF8() );
 
+    for( const SCH_SHEET_INSTANCE& instance : aInput->GetInstances() )
+    {
+        if( instance.m_Path != aPath.Path() )
+            continue;
+
+        for( const auto& [name, variantInfo] : instance.m_Variants )
+        {
+            kiapi::schematic::types::SheetVariant* variant = aOutput->add_variants();
+            variant->set_name( name.ToUTF8() );
+            variant->set_description( variantInfo.m_Description.ToUTF8() );
+            variant->set_exclude_from_sim( variantInfo.m_ExcludedFromSim );
+            variant->set_exclude_from_bom( variantInfo.m_ExcludedFromBOM );
+            variant->set_dnp( variantInfo.m_DNP );
+
+            for( const auto& [key, value] : variantInfo.m_Fields )
+                ( *variant->mutable_fields() )[std::string( key.ToUTF8() )] = value.ToUTF8();
+        }
+
+        break;
+    }
+
     return true;
 }
 
@@ -246,6 +293,20 @@ tl::expected<bool, ApiResponseStatus> UnpackSheet( SCH_SHEET* aOutput, const kia
         SCH_SHEET_INSTANCE instance;
         instance.m_Path = instancePath;
         instance.m_PageNumber = wxString::FromUTF8( aInput.page_number() );
+
+        for( const kiapi::schematic::types::SheetVariant& variantProto : aInput.variants() )
+        {
+            SCH_SHEET_VARIANT variant( wxString::FromUTF8( variantProto.name() ) );
+            variant.m_Description = wxString::FromUTF8( variantProto.description() );
+            variant.m_ExcludedFromSim = variantProto.exclude_from_sim();
+            variant.m_ExcludedFromBOM = variantProto.exclude_from_bom();
+            variant.m_DNP = variantProto.dnp();
+
+            for( const auto& [key, value] : variantProto.fields() )
+                variant.m_Fields[wxString::FromUTF8( key )] = wxString::FromUTF8( value );
+
+            instance.m_Variants.emplace( variant.m_Name, std::move( variant ) );
+        }
 
         aOutput->AddInstance( instance );
     }

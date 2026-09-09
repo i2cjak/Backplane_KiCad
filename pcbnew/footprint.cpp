@@ -76,6 +76,7 @@
 #include <api/board/board_types.pb.h>
 #include <api/api_enums.h>
 #include <api/api_utils.h>
+#include <api/api_pcb_embedded_utils.h>
 #include <api/api_pcb_utils.h>
 #include <properties/property.h>
 #include <properties/property_mgr.h>
@@ -331,6 +332,7 @@ void FOOTPRINT::Serialize( google::protobuf::Any &aContainer ) const
     attrs->set_not_in_schematic( IsBoardOnly() );
     attrs->set_exclude_from_position_files( IsExcludedFromPosFiles() );
     attrs->set_exclude_from_bill_of_materials( IsExcludedFromBOM() );
+    attrs->set_exclude_from_simulation( IsExcludedFromSim() );
     attrs->set_exempt_from_courtyard_requirement( AllowMissingCourtyard() );
     attrs->set_do_not_populate( IsDNP() );
     attrs->set_allow_soldermask_bridges( AllowSolderMaskBridges() );
@@ -437,6 +439,25 @@ void FOOTPRINT::Serialize( google::protobuf::Any &aContainer ) const
     footprint.set_symbol_sheet_filename( m_sheetfile.ToUTF8() );
     footprint.set_symbol_footprint_filters( m_filters.ToUTF8() );
 
+    kiapi::common::PackCustomProperties( footprint.mutable_custom_properties(), *this );
+    kiapi::board::PackEmbeddedFiles( *footprint.mutable_embedded_files(), *this );
+
+    for( const auto& [variantName, variant] : m_variants )
+    {
+        types::FootprintVariant* variantMsg = footprint.add_variants();
+        variantMsg->set_name( variantName.ToUTF8() );
+        variantMsg->set_do_not_populate( variant.GetDNP() );
+        variantMsg->set_exclude_from_bill_of_materials( variant.GetExcludedFromBOM() );
+        variantMsg->set_exclude_from_position_files( variant.GetExcludedFromPosFiles() );
+        variantMsg->set_exclude_from_simulation( variant.GetExcludedFromSim() );
+
+        for( const auto& [fieldName, fieldValue] : variant.GetFields() )
+        {
+            variantMsg->mutable_fields()->insert( { std::string( fieldName.ToUTF8() ),
+                                                    std::string( fieldValue.ToUTF8() ) } );
+        }
+    }
+
     aContainer.PackFrom( footprint );
 }
 
@@ -508,6 +529,7 @@ bool FOOTPRINT::Deserialize( const google::protobuf::Any &aContainer )
 
     SetBoardOnly( footprint.attributes().not_in_schematic() );
     SetExcludedFromBOM( footprint.attributes().exclude_from_bill_of_materials() );
+    SetExcludedFromSim( footprint.attributes().exclude_from_simulation() );
     SetExcludedFromPosFiles( footprint.attributes().exclude_from_position_files() );
     SetAllowMissingCourtyard( footprint.attributes().exempt_from_courtyard_requirement() );
     SetDNP( footprint.attributes().do_not_populate() );
@@ -648,6 +670,31 @@ bool FOOTPRINT::Deserialize( const google::protobuf::Any &aContainer )
 
         if( item && item->Deserialize( itemMsg ) )
             Add( item.release(), ADD_MODE::APPEND );
+    }
+
+    kiapi::common::UnpackCustomProperties( footprint.custom_properties(), *this );
+
+    if( !kiapi::board::UnpackEmbeddedFiles( *this, footprint.embedded_files() ) )
+        return false;
+
+    m_variants.clear();
+
+    for( const types::FootprintVariant& variantMsg : footprint.variants() )
+    {
+        wxString variantName = wxString::FromUTF8( variantMsg.name() );
+
+        if( variantName.IsEmpty() || variantName.CmpNoCase( GetDefaultVariantName() ) == 0 )
+            continue;
+
+        FOOTPRINT_VARIANT& variant = m_variants[variantName];
+        variant.SetName( variantName );
+        variant.SetDNP( variantMsg.do_not_populate() );
+        variant.SetExcludedFromBOM( variantMsg.exclude_from_bill_of_materials() );
+        variant.SetExcludedFromPosFiles( variantMsg.exclude_from_position_files() );
+        variant.SetExcludedFromSim( variantMsg.exclude_from_simulation() );
+
+        for( const auto& [fieldName, fieldValue] : variantMsg.fields() )
+            variant.SetFieldValue( wxString::FromUTF8( fieldName ), wxString::FromUTF8( fieldValue ) );
     }
 
     return true;
@@ -1259,6 +1306,7 @@ FOOTPRINT_VARIANT* FOOTPRINT::AddVariant( const wxString& aVariantName )
     FOOTPRINT_VARIANT variant( aVariantName );
     variant.SetDNP( IsDNP() );
     variant.SetExcludedFromBOM( IsExcludedFromBOM() );
+    variant.SetExcludedFromSim( IsExcludedFromSim() );
     variant.SetExcludedFromPosFiles( IsExcludedFromPosFiles() );
 
     auto inserted = m_variants.emplace( aVariantName, std::move( variant ) );
@@ -1335,6 +1383,22 @@ bool FOOTPRINT::GetExcludedFromBOMForVariant( const wxString& aVariantName ) con
 
     // Fall back to default if variant doesn't exist
     return IsExcludedFromBOM();
+}
+
+
+bool FOOTPRINT::GetExcludedFromSimForVariant( const wxString& aVariantName ) const
+{
+    // Empty variant name means default
+    if( aVariantName.IsEmpty() || aVariantName.CmpNoCase( GetDefaultVariantName() ) == 0 )
+        return IsExcludedFromSim();
+
+    const FOOTPRINT_VARIANT* variant = GetVariant( aVariantName );
+
+    if( variant )
+        return variant->GetExcludedFromSim();
+
+    // Fall back to default if variant doesn't exist
+    return IsExcludedFromSim();
 }
 
 

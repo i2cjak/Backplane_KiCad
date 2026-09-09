@@ -42,6 +42,11 @@ public:
 
     EDA_ITEM* Clone() const override { return new PCB_TABLECELL( *this ); }
 
+    void CopyFrom( const BOARD_ITEM* aOther ) override;
+
+    void Serialize( google::protobuf::Any& aContainer ) const override;
+    bool Deserialize( const google::protobuf::Any& aContainer ) override;
+
     EDA_GROUP* GetParentGroup() const override
     {
         BOARD_ITEM* parent = GetParent();

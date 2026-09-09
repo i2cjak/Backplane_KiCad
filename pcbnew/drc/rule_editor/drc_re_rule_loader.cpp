@@ -90,7 +90,7 @@ static std::shared_ptr<DRC_RE_BASE_CONSTRAINT_DATA> makeCustomRuleData( const DR
 }
 
 
-wxString DRC_RULE_LOADER::extractRuleBody( const wxString& aOriginalText )
+wxString DRC_RULE_LOADER::ExtractRuleBody( const wxString& aOriginalText )
 {
     int ruleKeyword = aOriginalText.Find( wxS( "rule " ) );
     if( ruleKeyword == wxNOT_FOUND )
@@ -111,7 +111,7 @@ wxString DRC_RULE_LOADER::extractRuleBody( const wxString& aOriginalText )
 }
 
 
-wxString DRC_RULE_LOADER::extractRuleComment( const wxString& aOriginalText )
+wxString DRC_RULE_LOADER::ExtractRuleComment( const wxString& aOriginalText )
 {
     wxString      comment;
     wxArrayString lines = wxSplit( aOriginalText, '\n', '\0' );
@@ -619,7 +619,7 @@ std::vector<DRC_RE_LOADED_PANEL_ENTRY> DRC_RULE_LOADER::LoadRule( const DRC_RULE
 
         if( match.panelType == CUSTOM_RULE && customFallback )
         {
-            customFallback->SetRuleText( extractRuleBody( aOriginalText ) );
+            customFallback->SetRuleText( ExtractRuleBody( aOriginalText ) );
         }
 
         if( match.panelType != VIA_STYLE && match.panelType != SILK_TO_SOLDERMASK_CLEARANCE
@@ -635,7 +635,7 @@ std::vector<DRC_RE_LOADED_PANEL_ENTRY> DRC_RULE_LOADER::LoadRule( const DRC_RULE
             source = source.Mid( 1, source.Length() - 2 );
         entry.layerSource = source;
 
-        wxString comment = extractRuleComment( aOriginalText );
+        wxString comment = ExtractRuleComment( aOriginalText );
         if( !comment.IsEmpty() )
             constraintData->SetComment( comment );
 
@@ -653,11 +653,11 @@ std::vector<DRC_RE_LOADED_PANEL_ENTRY> DRC_RULE_LOADER::LoadRule( const DRC_RULE
         customData->SetRuleName( aRule.m_Name );
         customData->SetRuleCondition( condition );
 
-        wxString comment = extractRuleComment( aOriginalText );
+        wxString comment = ExtractRuleComment( aOriginalText );
         if( !comment.IsEmpty() )
             customData->SetComment( comment );
 
-        customData->SetRuleText( extractRuleBody( aOriginalText ) );
+        customData->SetRuleText( ExtractRuleBody( aOriginalText ) );
 
         DRC_RE_LOADED_PANEL_ENTRY entry( CUSTOM_RULE, customData, aRule.m_Name, condition,
                                          aRule.m_Severity, aRule.m_LayerCondition );
@@ -696,7 +696,7 @@ std::vector<DRC_RE_LOADED_PANEL_ENTRY> DRC_RULE_LOADER::LoadFromString( const wx
     for( const auto& rule : parsedRules )
     {
         // Extract the actual original text from the file content
-        wxString originalText = extractRuleText( aRulesText, rule->m_Name );
+        wxString originalText = ExtractRuleText( aRulesText, rule->m_Name );
 
         std::vector<DRC_RE_LOADED_PANEL_ENTRY> ruleEntries = LoadRule( *rule, originalText );
 
@@ -708,7 +708,7 @@ std::vector<DRC_RE_LOADED_PANEL_ENTRY> DRC_RULE_LOADER::LoadFromString( const wx
 }
 
 
-wxString DRC_RULE_LOADER::extractRuleText( const wxString& aContent, const wxString& aRuleName )
+wxString DRC_RULE_LOADER::ExtractRuleText( const wxString& aContent, const wxString& aRuleName )
 {
     // Search for the rule by name, handling both quoted and unquoted names.
     // The quoted form includes the closing quote as a boundary so partial

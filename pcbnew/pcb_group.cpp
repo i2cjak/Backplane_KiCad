@@ -72,6 +72,7 @@ void PCB_GROUP::Serialize( google::protobuf::Any &aContainer ) const
     if( const BOARD* board = GetBoard() )
         group.mutable_parent()->set_value( board->m_Uuid.AsStdString() );
 
+    kiapi::common::PackCustomProperties( group.mutable_custom_properties(), *this );
     aContainer.PackFrom( group );
 }
 
@@ -98,6 +99,8 @@ bool PCB_GROUP::Deserialize( const google::protobuf::Any &aContainer )
         if( BOARD_ITEM* item = board->ResolveItem( id, true ) )
             AddItem( item );
     }
+
+    kiapi::common::UnpackCustomProperties( group.custom_properties(), *this );
 
     return true;
 }

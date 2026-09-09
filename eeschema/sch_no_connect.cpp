@@ -38,6 +38,8 @@
 #include <core/mirror.h>
 #include <trigo.h>
 #include <gr_basic.h>
+#include <api/api_utils.h>
+#include <api/schematic/schematic_types.pb.h>
 
 
 SCH_NO_CONNECT::SCH_NO_CONNECT( const VECTOR2I& pos ) :
@@ -53,6 +55,41 @@ SCH_NO_CONNECT::SCH_NO_CONNECT( const VECTOR2I& pos ) :
 EDA_ITEM* SCH_NO_CONNECT::Clone() const
 {
     return new SCH_NO_CONNECT( *this );
+}
+
+
+void SCH_NO_CONNECT::Serialize( google::protobuf::Any& aContainer ) const
+{
+    using namespace kiapi::common;
+
+    kiapi::schematic::types::NoConnectMarker marker;
+
+    marker.mutable_id()->set_value( m_Uuid.AsStdString() );
+    PackVector2( *marker.mutable_position(), m_pos, schIUScale );
+    PackDistance( *marker.mutable_size(), m_size, schIUScale );
+    marker.set_locked( IsLocked() ? types::LockedState::LS_LOCKED
+                                  : types::LockedState::LS_UNLOCKED );
+
+    PackCustomProperties( marker.mutable_custom_properties(), *this );
+    aContainer.PackFrom( marker );
+}
+
+
+bool SCH_NO_CONNECT::Deserialize( const google::protobuf::Any& aContainer )
+{
+    using namespace kiapi::common;
+
+    kiapi::schematic::types::NoConnectMarker marker;
+
+    if( !aContainer.UnpackTo( &marker ) )
+        return false;
+
+    const_cast<KIID&>( m_Uuid ) = KIID( marker.id().value() );
+    m_pos = UnpackVector2( marker.position(), schIUScale );
+    m_size = UnpackDistance( marker.size(), schIUScale );
+    UnpackCustomProperties( marker.custom_properties(), *this );
+    SetLocked( marker.locked() == types::LockedState::LS_LOCKED );
+    return true;
 }
 
 

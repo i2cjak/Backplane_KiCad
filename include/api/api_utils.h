@@ -23,7 +23,9 @@
 
 #include <optional>
 #include <google/protobuf/any.pb.h>
+#include <google/protobuf/repeated_field.h>
 
+#include <base_units.h>
 #include <core/typeinfo.h>
 #include <lib_id.h>
 #include <api/common/types/base_types.pb.h>
@@ -34,6 +36,10 @@
 #include <gal/color4d.h>
 
 class SHAPE_LINE_CHAIN;
+class STROKE_PARAMS;
+class LINE_ENDING;
+class TEXT_ATTRIBUTES;
+class EDA_ITEM;
 class KIID_PATH;
 class PROJECT;
 
@@ -55,35 +61,76 @@ KICOMMON_API LIB_ID LibIdFromProto( const types::LibraryIdentifier& aId );
 
 KICOMMON_API types::LibraryIdentifier LibIdToProto( const LIB_ID& aId );
 
-KICOMMON_API void PackVector2( types::Vector2& aOutput, const VECTOR2I& aInput );
+KICOMMON_API void PackVector2( types::Vector2& aOutput, const VECTOR2I& aInput,
+                               const EDA_IU_SCALE& aScale = pcbIUScale );
 
-KICOMMON_API VECTOR2I UnpackVector2( const types::Vector2& aInput );
+KICOMMON_API VECTOR2I UnpackVector2( const types::Vector2& aInput,
+                                     const EDA_IU_SCALE& aScale = pcbIUScale );
 
 KICOMMON_API void PackVector3D( types::Vector3D& aOutput, const VECTOR3D& aInput );
 
 KICOMMON_API VECTOR3D UnpackVector3D( const types::Vector3D& aInput );
 
-KICOMMON_API void PackBox2( types::Box2& aOutput, const BOX2I& aInput );
+KICOMMON_API void PackBox2( types::Box2& aOutput, const BOX2I& aInput,
+                            const EDA_IU_SCALE& aScale = pcbIUScale );
 
-KICOMMON_API BOX2I UnpackBox2( const types::Box2& aInput );
+KICOMMON_API BOX2I UnpackBox2( const types::Box2& aInput,
+                               const EDA_IU_SCALE& aScale = pcbIUScale );
 
-KICOMMON_API void PackPolyLine( types::PolyLine& aOutput, const SHAPE_LINE_CHAIN& aSlc );
+KICOMMON_API void PackPolyLine( types::PolyLine& aOutput, const SHAPE_LINE_CHAIN& aSlc,
+                                const EDA_IU_SCALE& aScale = pcbIUScale );
 
-KICOMMON_API SHAPE_LINE_CHAIN UnpackPolyLine( const types::PolyLine& aInput );
+KICOMMON_API SHAPE_LINE_CHAIN UnpackPolyLine( const types::PolyLine& aInput,
+                                              const EDA_IU_SCALE& aScale = pcbIUScale );
 
-KICOMMON_API void PackPolySet( types::PolySet& aOutput, const SHAPE_POLY_SET& aInput );
+KICOMMON_API void PackPolySet( types::PolySet& aOutput, const SHAPE_POLY_SET& aInput,
+                               const EDA_IU_SCALE& aScale = pcbIUScale );
 
-KICOMMON_API SHAPE_POLY_SET UnpackPolySet( const types::PolySet& aInput );
+KICOMMON_API SHAPE_POLY_SET UnpackPolySet( const types::PolySet& aInput,
+                                           const EDA_IU_SCALE& aScale = pcbIUScale );
 
 KICOMMON_API void PackColor( types::Color& aOutput, const KIGFX::COLOR4D& aInput );
 
 KICOMMON_API KIGFX::COLOR4D UnpackColor( const types::Color& aInput );
 
+KICOMMON_API void PackDistance( types::Distance& aOutput, int aInput,
+                                const EDA_IU_SCALE& aScale = pcbIUScale );
+
+KICOMMON_API int UnpackDistance( const types::Distance& aInput,
+                                  const EDA_IU_SCALE& aScale = pcbIUScale );
+
 KICOMMON_API void PackSheetPath( types::SheetPath& aOutput, const KIID_PATH& aInput );
 
 KICOMMON_API KIID_PATH UnpackSheetPath( const types::SheetPath& aInput );
 
+KICOMMON_API void PackStroke( types::StrokeAttributes& aOutput, const STROKE_PARAMS& aInput,
+                              const EDA_IU_SCALE& aScale = pcbIUScale );
+
+KICOMMON_API void UnpackStroke( STROKE_PARAMS& aOutput, const types::StrokeAttributes& aInput,
+                                const EDA_IU_SCALE& aScale = pcbIUScale );
+
+KICOMMON_API void PackLineEnding( types::LineEnding& aOutput, const LINE_ENDING& aInput,
+                                  const EDA_IU_SCALE& aScale = pcbIUScale );
+
+KICOMMON_API LINE_ENDING UnpackLineEnding( const types::LineEnding& aInput,
+                                           const EDA_IU_SCALE& aScale = pcbIUScale );
+
+void PackTextAttributes( types::TextAttributes& aOutput, const TEXT_ATTRIBUTES& aInput,
+                                      const EDA_IU_SCALE& aScale = pcbIUScale );
+
+void UnpackTextAttributes( TEXT_ATTRIBUTES& aOutput, const types::TextAttributes& aInput,
+                                        const EDA_IU_SCALE& aScale = pcbIUScale );
+
+KICOMMON_API void PackCustomProperties(
+        google::protobuf::RepeatedPtrField<types::CustomProperty>* aOutput, const EDA_ITEM& aItem );
+
+KICOMMON_API void UnpackCustomProperties(
+        const google::protobuf::RepeatedPtrField<types::CustomProperty>& aInput, EDA_ITEM& aItem );
+
 KICOMMON_API void PackProject( types::ProjectSpecifier& aOutput, const PROJECT& aInput );
+
+extern const KICOMMON_API std::string KiwayClientName;
+extern const KICOMMON_API std::string StandaloneCrossProbeClientName;
 
 } // namespace kiapi::common
 

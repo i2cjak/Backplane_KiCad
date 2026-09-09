@@ -39,6 +39,9 @@ public:
 
     ~SCH_TABLE();
 
+    void Serialize( google::protobuf::Any& aContainer ) const override;
+    bool Deserialize( const google::protobuf::Any& aContainer ) override;
+
     static inline bool ClassOf( const EDA_ITEM* aItem )
     {
         return aItem && SCH_TABLE_T == aItem->Type();
@@ -121,7 +124,7 @@ public:
 
     int GetRowCount() const
     {
-        return m_cells.size() / m_colCount;
+        return m_colCount > 0 ? static_cast<int>( m_cells.size() ) / m_colCount : 0;
     }
 
     void SetColWidth( int aCol, int aWidth ) { m_colWidths[aCol] = aWidth; }

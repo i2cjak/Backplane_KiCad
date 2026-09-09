@@ -20,6 +20,7 @@
 #include <api/api_enums.h>
 #include <import_export.h>
 #include <api/common/types/base_types.pb.h>
+#include <api/common/types/embedded_files.pb.h>
 #include <api/common/types/enums.pb.h>
 #include <api/board/board.pb.h>
 #include <api/board/board_types.pb.h>
@@ -28,7 +29,9 @@
 
 #include <core/typeinfo.h>
 #include <eda_shape.h>
+#include <embedded_files.h>
 #include <font/text_attributes.h>
+#include <line_ending.h>
 #include <jobs/job_export_sch_netlist.h>
 #include <jobs/job_export_sch_plot.h>
 #include <layer_ids.h>
@@ -759,5 +762,73 @@ types::PageSize ToProtoEnum( PAGE_SIZE_TYPE aValue )
     default:
         wxCHECK_MSG( false, types::PageSize::PS_UNKNOWN,
                      "Unhandled case in ToProtoEnum<PAGE_SIZE_TYPE>" );
+    }
+}
+
+
+template<> KICOMMON_API
+EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE FromProtoEnum( common::types::EmbeddedFileType aValue )
+{
+    switch( aValue )
+    {
+    case common::types::EFT_FONT:      return EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE::FONT;
+    case common::types::EFT_MODEL:     return EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE::MODEL;
+    case common::types::EFT_WORKSHEET: return EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE::WORKSHEET;
+    case common::types::EFT_DATASHEET: return EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE::DATASHEET;
+    case common::types::EFT_UNKNOWN:
+    case common::types::EFT_OTHER:
+    default:                           return EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE::OTHER;
+    }
+}
+
+
+template<> KICOMMON_API
+common::types::EmbeddedFileType ToProtoEnum( EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE aValue )
+{
+    switch( aValue )
+    {
+    case EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE::FONT:      return common::types::EFT_FONT;
+    case EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE::MODEL:     return common::types::EFT_MODEL;
+    case EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE::WORKSHEET: return common::types::EFT_WORKSHEET;
+    case EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE::DATASHEET: return common::types::EFT_DATASHEET;
+    case EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE::OTHER:     return common::types::EFT_OTHER;
+    }
+
+    wxCHECK_MSG( false, common::types::EFT_UNKNOWN,
+                 "Unhandled case in ToProtoEnum<EMBEDDED_FILES::EMBEDDED_FILE::FILE_TYPE>" );
+}
+
+
+template<> KICOMMON_API
+types::LineEndingStyle ToProtoEnum( LINE_ENDING_STYLE aValue )
+{
+    switch( aValue )
+    {
+    case LINE_ENDING_STYLE::NONE:       return types::LineEndingStyle::LES_NONE;
+    case LINE_ENDING_STYLE::ARROW:      return types::LineEndingStyle::LES_ARROW;
+    case LINE_ENDING_STYLE::CIRCLE:     return types::LineEndingStyle::LES_CIRCLE;
+    case LINE_ENDING_STYLE::SQUARE:     return types::LineEndingStyle::LES_SQUARE;
+    case LINE_ENDING_STYLE::ARROW_OPEN: return types::LineEndingStyle::LES_ARROW_OPEN;
+    default:
+        wxCHECK_MSG( false, types::LineEndingStyle::LES_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<LINE_ENDING_STYLE>" );
+    }
+}
+
+
+template<> KICOMMON_API
+LINE_ENDING_STYLE FromProtoEnum( types::LineEndingStyle aValue )
+{
+    switch( aValue )
+    {
+    case types::LineEndingStyle::LES_NONE:       return LINE_ENDING_STYLE::NONE;
+    case types::LineEndingStyle::LES_ARROW:      return LINE_ENDING_STYLE::ARROW;
+    case types::LineEndingStyle::LES_CIRCLE:     return LINE_ENDING_STYLE::CIRCLE;
+    case types::LineEndingStyle::LES_SQUARE:     return LINE_ENDING_STYLE::SQUARE;
+    case types::LineEndingStyle::LES_ARROW_OPEN: return LINE_ENDING_STYLE::ARROW_OPEN;
+    case types::LineEndingStyle::LES_UNKNOWN:
+    default:
+        wxCHECK_MSG( false, LINE_ENDING_STYLE::NONE,
+                     "Unhandled case in FromProtoEnum<types::LineEndingStyle>" );
     }
 }

@@ -22,6 +22,7 @@
 #include <api/api_enums.h>
 #include <api/api_sch_utils.h>
 #include <api/api_utils.h>
+#include <api/cross_probe_client.h>
 #include <api/sch_context.h>
 #include <magic_enum.hpp>
 #include <base_screen.h>
@@ -35,6 +36,8 @@
 #include <sch_commit.h>
 #include <sch_edit_frame.h>
 #include <sch_label.h>
+#include <sch_pin.h>
+#include <sch_reference_list.h>
 #include <sch_screen.h>
 #include <sch_sheet.h>
 #include <sch_sheet_path.h>
@@ -42,6 +45,9 @@
 #include <sch_symbol.h>
 #include <schematic.h>
 #include <project.h>
+#include <string_utils.h>
+#include <tool/tool_manager.h>
+#include <tools/sch_selection_tool.h>
 #include <wildcards_and_files_ext.h>
 #include <wx/filename.h>
 
@@ -53,18 +59,197 @@ using kiapi::common::types::DocumentType;
 using kiapi::common::types::ItemRequestStatus;
 
 
+namespace
+{
+using SELECTED_SCH_ITEM = std::pair<SCH_ITEM*, SCH_SHEET_PATH>;
+
+
+void collectSelectedSchematicItems( const SCHEMATIC* aSchematic,
+                                    std::vector<SELECTED_SCH_ITEM>& aItems )
+{
+    if( !aSchematic )
+        return;
+
+    for( const SCH_SHEET_PATH& path : aSchematic->Hierarchy() )
+    {
+        SCH_SCREEN* screen = path.LastScreen();
+
+        for( SCH_ITEM* item : screen->Items() )
+        {
+            if( item->IsSelected() )
+                aItems.emplace_back( item, path );
+
+            item->RunOnChildren(
+                    [&]( SCH_ITEM* child )
+                    {
+                        if( child->IsSelected() )
+                            aItems.emplace_back( child, path );
+                    },
+                    RECURSE_MODE::RECURSE );
+        }
+    }
+}
+
+
+void clearSelectedSchematicItems( const SCHEMATIC* aSchematic )
+{
+    std::vector<SELECTED_SCH_ITEM> selected;
+    collectSelectedSchematicItems( aSchematic, selected );
+
+    for( const auto& [item, path] : selected )
+        item->ClearSelected();
+}
+
+
+void packSchematicSelectionItem( google::protobuf::Any& aOutput, SCH_ITEM* aItem,
+                                 const SCH_SHEET_PATH& aPath )
+{
+    if( aItem->Type() == SCH_SYMBOL_T )
+    {
+        kiapi::schematic::types::SchematicSymbolInstance symbol;
+
+        if( PackSymbol( &symbol, static_cast<SCH_SYMBOL*>( aItem ), aPath ) )
+            aOutput.PackFrom( symbol );
+    }
+    else if( aItem->Type() == SCH_SHEET_T )
+    {
+        kiapi::schematic::types::SheetSymbol sheet;
+
+        if( PackSheet( &sheet, static_cast<SCH_SHEET*>( aItem ), aPath ) )
+            aOutput.PackFrom( sheet );
+    }
+    else
+    {
+        aItem->Serialize( aOutput );
+    }
+}
+
+
+struct SCH_SYNC_TARGET
+{
+    SCH_SHEET_PATH path;
+    SCH_ITEM* focus = nullptr;
+    std::vector<SCH_ITEM*> items;
+};
+
+
+bool matchesFootprintSpec( const SCH_REFERENCE& aReference, const SelectionSpec& aSpec )
+{
+    return aSpec.spec_case() == SelectionSpec::kFootprint
+           && aReference.GetRef() + aReference.GetRefNumber()
+                      == wxString::FromUTF8( aSpec.footprint().reference() );
+}
+
+
+void appendMatchingSchematicItems( const SCH_SHEET_PATH& aPath,
+                                   const SelectionSpec& aSpec,
+                                   std::vector<SCH_ITEM*>& aItems )
+{
+    if( aSpec.spec_case() != SelectionSpec::kFootprint
+        && aSpec.spec_case() != SelectionSpec::kPad )
+        return;
+
+    SCH_REFERENCE_LIST references;
+    aPath.GetSymbols( references, SYMBOL_FILTER_NON_POWER, true );
+
+    for( unsigned i = 0; i < references.GetCount(); ++i )
+    {
+        SCH_REFERENCE& reference = references[i];
+
+        if( reference.IsSplitNeeded() )
+            reference.Split();
+
+        if( !matchesFootprintSpec( reference, aSpec )
+            && !( aSpec.spec_case() == SelectionSpec::kPad
+                  && reference.GetRef() + reference.GetRefNumber()
+                             == wxString::FromUTF8( aSpec.pad().reference() ) ) )
+        {
+            continue;
+        }
+
+        SCH_SYMBOL* symbol = reference.GetSymbol();
+
+        if( aSpec.spec_case() == SelectionSpec::kFootprint )
+        {
+            aItems.push_back( symbol );
+            continue;
+        }
+
+        const wxString padNumber = wxString::FromUTF8( aSpec.pad().number() );
+
+        for( SCH_PIN* pin : symbol->GetPins( &aPath ) )
+        {
+            for( const wxString& expanded : ExpandStackedPinNotation( pin->GetEffectivePadNumber() ) )
+            {
+                if( expanded == padNumber )
+                {
+                    aItems.push_back( pin );
+                    break;
+                }
+            }
+        }
+    }
+}
+
+
+std::optional<SCH_SYNC_TARGET> resolveSyncSelection( const SCHEMATIC& aSchematic,
+                                                     const SyncSelection& aRequest )
+{
+    const SCH_SHEET_LIST hierarchy = aSchematic.Hierarchy();
+    std::vector<SCH_SHEET_PATH> paths;
+    paths.reserve( hierarchy.size() );
+    paths.push_back( aSchematic.CurrentSheet() );
+
+    for( const SCH_SHEET_PATH& path : hierarchy )
+    {
+        if( path != aSchematic.CurrentSheet() )
+            paths.push_back( path );
+    }
+
+    for( const SCH_SHEET_PATH& path : paths )
+    {
+        SCH_SYNC_TARGET target;
+        target.path = path;
+
+        if( aRequest.has_focus_item() )
+            appendMatchingSchematicItems( path, aRequest.focus_item(), target.items );
+
+        for( const SelectionSpec& spec : aRequest.items() )
+            appendMatchingSchematicItems( path, spec, target.items );
+
+        if( !target.items.empty() )
+        {
+            if( aRequest.has_focus_item() )
+            {
+                std::vector<SCH_ITEM*> focusItems;
+                appendMatchingSchematicItems( path, aRequest.focus_item(), focusItems );
+
+                if( !focusItems.empty() )
+                    target.focus = focusItems.front();
+            }
+
+            return target;
+        }
+    }
+
+    return std::nullopt;
+}
+}
+
+
 std::set<KICAD_T> API_HANDLER_SCH::s_allowedTypes = {
-    // SCH_MARKER_T,
+    SCH_MARKER_T,
     SCH_JUNCTION_T,
     SCH_NO_CONNECT_T,
     SCH_BUS_WIRE_ENTRY_T,
     SCH_BUS_BUS_ENTRY_T,
     SCH_LINE_T,
     SCH_SHAPE_T,
+    SCH_RULE_AREA_T,
     SCH_BITMAP_T,
     SCH_TEXTBOX_T,
     SCH_TEXT_T,
-    // SCH_TABLE_T,
+    SCH_TABLE_T,
     SCH_LABEL_T,
     SCH_GLOBAL_LABEL_T,
     SCH_GROUP_T,
@@ -112,6 +297,7 @@ API_HANDLER_SCH::API_HANDLER_SCH( std::shared_ptr<SCH_CONTEXT> aContext,
 {
     using namespace kiapi::schematic::jobs;
     using namespace kiapi::schematic::types;
+    using namespace kiapi::schematic::commands;
 
     registerHandler<GetOpenDocuments, GetOpenDocumentsResponse>(
             &API_HANDLER_SCH::handleGetOpenDocuments );
@@ -122,6 +308,15 @@ API_HANDLER_SCH::API_HANDLER_SCH( std::shared_ptr<SCH_CONTEXT> aContext,
 
     registerHandler<GetItems, GetItemsResponse>( &API_HANDLER_SCH::handleGetItems );
     registerHandler<GetItemsById, GetItemsResponse>( &API_HANDLER_SCH::handleGetItemsById );
+    registerHandler<GetSelection, SelectionResponse>( &API_HANDLER_SCH::handleGetSelection );
+    registerHandler<ClearSelection, Empty>( &API_HANDLER_SCH::handleClearSelection );
+    registerHandler<AddToSelection, SelectionResponse>( &API_HANDLER_SCH::handleAddToSelection );
+    registerHandler<RemoveFromSelection, SelectionResponse>( &API_HANDLER_SCH::handleRemoveFromSelection );
+    registerHandler<CrossProbeAnnounce, CrossProbeAnnounceResponse>(
+            &API_HANDLER_SCH::handleCrossProbeAnnounce );
+    registerHandler<SyncSelection, SyncSelectionResponse>( &API_HANDLER_SCH::handleSyncSelection );
+    registerHandler<HighlightNets, HighlightNetsResponse>( &API_HANDLER_SCH::handleHighlightNets );
+    registerHandler<FocusOnItem, FocusOnItemResponse>( &API_HANDLER_SCH::handleFocusOnItem );
 
     registerHandler<RunSchematicJobExportSvg, types::RunJobResponse>(
             &API_HANDLER_SCH::handleRunSchematicJobExportSvg );
@@ -139,6 +334,78 @@ API_HANDLER_SCH::API_HANDLER_SCH( std::shared_ptr<SCH_CONTEXT> aContext,
     registerHandler<GetPageSettings, types::PageSettings>( &API_HANDLER_SCH::handleGetPageSettings );
     registerHandler<SetPageSettings, types::PageSettings>( &API_HANDLER_SCH::handleSetPageSettings );
     registerHandler<GetSchematicNetlist, SchematicNetlistResponse>( &API_HANDLER_SCH::handleGetSchematicNetlist );
+    registerHandler<GetVariants, VariantsResponse>( &API_HANDLER_SCH::handleGetVariants );
+    registerHandler<AddVariant, Empty>( &API_HANDLER_SCH::handleAddVariant );
+    registerHandler<DeleteVariant, Empty>( &API_HANDLER_SCH::handleDeleteVariant );
+    registerHandler<RenameVariant, Empty>( &API_HANDLER_SCH::handleRenameVariant );
+    registerHandler<CopyVariant, Empty>( &API_HANDLER_SCH::handleCopyVariant );
+    registerHandler<SetVariantDescription, Empty>( &API_HANDLER_SCH::handleSetVariantDescription );
+    registerHandler<SetCurrentVariant, Empty>( &API_HANDLER_SCH::handleSetCurrentVariant );
+    registerHandler<GetCurrentVariant, CurrentVariantResponse>( &API_HANDLER_SCH::handleGetCurrentVariant );
+
+    // KiCad 10.0.6 published these two commands in the `types` package.  The
+    // command package was corrected upstream, but Any::UnpackTo also checks
+    // the type URL, so merely registering the corrected handler leaves old
+    // clients with an "unhandled" request.  Decode the old wire-compatible
+    // payload into the corrected request and return the old response URL so
+    // generated 10.0.6 clients can still unpack it.
+    // Register the two compatibility entries explicitly so each can decode
+    // its concrete request and invoke the shared handler.
+    m_handlers.emplace( "kiapi.schematic.types.GetSchematicHierarchy",
+            [this]( ApiRequest& aRequest ) -> API_RESULT
+            {
+                GetSchematicHierarchy request;
+                ApiResponse envelope;
+
+                if( !request.ParseFromString( aRequest.message().value() ) )
+                {
+                    envelope.mutable_status()->set_status( ApiStatusCode::AS_BAD_REQUEST );
+                    envelope.mutable_status()->set_error_message( "could not unpack legacy schematic hierarchy command" );
+                    return envelope;
+                }
+
+                HANDLER_CONTEXT<GetSchematicHierarchy> context;
+                context.ClientName = aRequest.header().client_name();
+                context.Request = std::move( request );
+                HANDLER_RESULT<SchematicHierarchyResponse> response = handleGetSchematicHierarchy( context );
+
+                if( !response.has_value() )
+                    return tl::unexpected( response.error() );
+
+                envelope.mutable_status()->set_status( ApiStatusCode::AS_OK );
+                envelope.mutable_message()->PackFrom( *response );
+                envelope.mutable_message()->set_type_url(
+                        "type.googleapis.com/kiapi.schematic.types.SchematicHierarchyResponse" );
+                return envelope;
+            } );
+
+    m_handlers.emplace( "kiapi.schematic.types.GetSchematicNetlist",
+            [this]( ApiRequest& aRequest ) -> API_RESULT
+            {
+                GetSchematicNetlist request;
+                ApiResponse envelope;
+
+                if( !request.ParseFromString( aRequest.message().value() ) )
+                {
+                    envelope.mutable_status()->set_status( ApiStatusCode::AS_BAD_REQUEST );
+                    envelope.mutable_status()->set_error_message( "could not unpack legacy schematic netlist command" );
+                    return envelope;
+                }
+
+                HANDLER_CONTEXT<GetSchematicNetlist> context;
+                context.ClientName = aRequest.header().client_name();
+                context.Request = std::move( request );
+                HANDLER_RESULT<SchematicNetlistResponse> response = handleGetSchematicNetlist( context );
+
+                if( !response.has_value() )
+                    return tl::unexpected( response.error() );
+
+                envelope.mutable_status()->set_status( ApiStatusCode::AS_OK );
+                envelope.mutable_message()->PackFrom( *response );
+                envelope.mutable_message()->set_type_url(
+                        "type.googleapis.com/kiapi.schematic.types.SchematicNetlistResponse" );
+                return envelope;
+            } );
 }
 
 
@@ -176,12 +443,7 @@ tl::expected<bool, ApiResponseStatus>
 API_HANDLER_SCH::validateDocumentInternal( const DocumentSpecifier& aDocument ) const
 {
     if( aDocument.type() != DocumentType::DOCTYPE_SCHEMATIC )
-    {
-        ApiResponseStatus e;
-        e.set_status( ApiStatusCode::AS_BAD_REQUEST );
-        e.set_error_message( "the requested document is not a schematic" );
-        return tl::unexpected( e );
-    }
+        return false;
 
     const PROJECT& prj = m_context->Prj();
 
@@ -194,7 +456,7 @@ API_HANDLER_SCH::validateDocumentInternal( const DocumentSpecifier& aDocument ) 
         return tl::unexpected( e );
     }
 
-    if( aDocument.project().path().compare( prj.GetProjectPath().ToUTF8() ) != 0 )
+    if( aDocument.project().path().compare( prj.GetProjectDirectory().ToUTF8() ) != 0 )
     {
         ApiResponseStatus e;
         e.set_status( ApiStatusCode::AS_BAD_REQUEST );
@@ -320,8 +582,10 @@ HANDLER_RESULT<GetOpenDocumentsResponse> API_HANDLER_SCH::handleGetOpenDocuments
 
     doc.set_type( DocumentType::DOCTYPE_SCHEMATIC );
 
-    if( std::optional<SCH_SHEET_PATH> path = m_context->GetCurrentSheet() )
-        PackSheetPath( *doc.mutable_sheet_path(), path->Path() );
+    // OpenDocument identifies the schematic file as a whole.  Do not add the
+    // currently selected sheet here: the CLI OpenDocument response has no
+    // sheet selector, and adding a transient current-sheet path makes the two
+    // otherwise identical document specifiers compare unequal.
 
     PackProject( *doc.mutable_project(), m_context->Prj() );
 
@@ -533,6 +797,299 @@ HANDLER_RESULT<GetItemsResponse> API_HANDLER_SCH::handleGetItemsById( const HAND
 }
 
 
+HANDLER_RESULT<SelectionResponse> API_HANDLER_SCH::handleGetSelection(
+        const HANDLER_CONTEXT<GetSelection>& aCtx )
+{
+    if( HANDLER_RESULT<std::optional<KIID>> valid = validateItemHeaderDocument( aCtx.Request.header() );
+        !valid.has_value() )
+    {
+        return tl::unexpected( valid.error() );
+    }
+
+    std::set<KICAD_T> filter;
+
+    for( KICAD_T type : parseRequestedItemTypes( aCtx.Request.types() ) )
+    {
+        if( s_allowedTypes.contains( type ) )
+            filter.insert( type );
+    }
+
+    std::vector<SELECTED_SCH_ITEM> selected;
+
+    if( m_frame )
+    {
+        if( SCH_SELECTION_TOOL* selectionTool = toolManager()->GetTool<SCH_SELECTION_TOOL>() )
+        {
+            SCH_SHEET_LIST hierarchy = schematic()->Hierarchy();
+
+            for( EDA_ITEM* selectedItem : selectionTool->GetSelection() )
+            {
+                SCH_ITEM* item = dynamic_cast<SCH_ITEM*>( selectedItem );
+
+                if( !item )
+                    continue;
+
+                SCH_SHEET_PATH path;
+
+                if( SCH_ITEM* resolved = hierarchy.ResolveItem( item->m_Uuid, &path, true ) )
+                    selected.emplace_back( resolved, path );
+            }
+        }
+    }
+    else
+    {
+        collectSelectedSchematicItems( schematic(), selected );
+    }
+
+    SelectionResponse response;
+
+    for( const auto& [item, path] : selected )
+    {
+        if( filter.empty() || filter.contains( item->Type() ) )
+        {
+            google::protobuf::Any packed;
+            packSchematicSelectionItem( packed, item, path );
+            response.mutable_items()->Add( std::move( packed ) );
+        }
+    }
+
+    return response;
+}
+
+
+HANDLER_RESULT<Empty> API_HANDLER_SCH::handleClearSelection(
+        const HANDLER_CONTEXT<ClearSelection>& aCtx )
+{
+    if( std::optional<ApiResponseStatus> busy = checkForBusy() )
+        return tl::unexpected( *busy );
+
+    if( !validateItemHeaderDocument( aCtx.Request.header() ) )
+    {
+        ApiResponseStatus e;
+        e.set_status( ApiStatusCode::AS_UNHANDLED );
+        return tl::unexpected( e );
+    }
+
+    if( m_frame )
+    {
+        if( SCH_SELECTION_TOOL* selectionTool = toolManager()->GetTool<SCH_SELECTION_TOOL>() )
+            selectionTool->ClearSelection();
+
+        m_frame->Refresh();
+    }
+    else
+    {
+        clearSelectedSchematicItems( schematic() );
+    }
+
+    return Empty();
+}
+
+
+HANDLER_RESULT<SelectionResponse> API_HANDLER_SCH::handleAddToSelection(
+        const HANDLER_CONTEXT<AddToSelection>& aCtx )
+{
+    if( std::optional<ApiResponseStatus> busy = checkForBusy() )
+        return tl::unexpected( *busy );
+
+    if( !validateItemHeaderDocument( aCtx.Request.header() ) )
+    {
+        ApiResponseStatus e;
+        e.set_status( ApiStatusCode::AS_UNHANDLED );
+        return tl::unexpected( e );
+    }
+
+    EDA_ITEMS toAdd;
+    SCH_SHEET_LIST hierarchy = schematic()->Hierarchy();
+
+    for( const types::KIID& id : aCtx.Request.items() )
+    {
+        SCH_SHEET_PATH path;
+
+        if( SCH_ITEM* item = hierarchy.ResolveItem( KIID( id.value() ), &path, true ) )
+            toAdd.push_back( item );
+    }
+
+    if( m_frame )
+    {
+        if( SCH_SELECTION_TOOL* selectionTool = toolManager()->GetTool<SCH_SELECTION_TOOL>() )
+            selectionTool->AddItemsToSel( &toAdd );
+
+        m_frame->Refresh();
+    }
+    else
+    {
+        for( EDA_ITEM* item : toAdd )
+            item->SetSelected();
+    }
+
+    HANDLER_CONTEXT<GetSelection> getContext;
+    getContext.ClientName = aCtx.ClientName;
+    getContext.Request.mutable_header()->CopyFrom( aCtx.Request.header() );
+    return handleGetSelection( getContext );
+}
+
+
+HANDLER_RESULT<SelectionResponse> API_HANDLER_SCH::handleRemoveFromSelection(
+        const HANDLER_CONTEXT<RemoveFromSelection>& aCtx )
+{
+    if( std::optional<ApiResponseStatus> busy = checkForBusy() )
+        return tl::unexpected( *busy );
+
+    if( !validateItemHeaderDocument( aCtx.Request.header() ) )
+    {
+        ApiResponseStatus e;
+        e.set_status( ApiStatusCode::AS_UNHANDLED );
+        return tl::unexpected( e );
+    }
+
+    EDA_ITEMS toRemove;
+    SCH_SHEET_LIST hierarchy = schematic()->Hierarchy();
+
+    for( const types::KIID& id : aCtx.Request.items() )
+    {
+        SCH_SHEET_PATH path;
+
+        if( SCH_ITEM* item = hierarchy.ResolveItem( KIID( id.value() ), &path, true ) )
+            toRemove.push_back( item );
+    }
+
+    if( m_frame )
+    {
+        if( SCH_SELECTION_TOOL* selectionTool = toolManager()->GetTool<SCH_SELECTION_TOOL>() )
+            selectionTool->RemoveItemsFromSel( &toRemove );
+
+        m_frame->Refresh();
+    }
+    else
+    {
+        for( EDA_ITEM* item : toRemove )
+            item->ClearSelected();
+    }
+
+    HANDLER_CONTEXT<GetSelection> getContext;
+    getContext.ClientName = aCtx.ClientName;
+    getContext.Request.mutable_header()->CopyFrom( aCtx.Request.header() );
+    return handleGetSelection( getContext );
+}
+
+
+HANDLER_RESULT<CrossProbeAnnounceResponse> API_HANDLER_SCH::handleCrossProbeAnnounce(
+        const HANDLER_CONTEXT<CrossProbeAnnounce>& aCtx )
+{
+    CROSS_PROBE_CLIENT::RegisterPeer( static_cast<FRAME_T>( aCtx.Request.frame_type() ),
+                                      aCtx.Request.socket_path() );
+
+    CrossProbeAnnounceResponse response;
+    response.set_status( CPS_OK );
+    return response;
+}
+
+
+HANDLER_RESULT<SyncSelectionResponse> API_HANDLER_SCH::handleSyncSelection(
+        const HANDLER_CONTEXT<SyncSelection>& aCtx )
+{
+    std::optional<SCH_SYNC_TARGET> target = resolveSyncSelection( *schematic(), aCtx.Request );
+
+    if( m_frame )
+    {
+        if( SCH_SELECTION_TOOL* selectionTool = toolManager()->GetTool<SCH_SELECTION_TOOL>() )
+        {
+            selectionTool->ClearSelection( true );
+            EDA_ITEMS selected;
+
+            if( target )
+            {
+                for( SCH_ITEM* item : target->items )
+                    selected.push_back( item );
+            }
+
+            selectionTool->AddItemsToSel( &selected );
+        }
+
+        m_frame->Refresh();
+    }
+    else
+    {
+        clearSelectedSchematicItems( schematic() );
+
+        if( target )
+        {
+            for( SCH_ITEM* item : target->items )
+                item->SetSelected();
+        }
+    }
+
+    SyncSelectionResponse response;
+    response.set_status( target || aCtx.Request.items_size() == 0 ? CPS_OK : CPS_NOT_FOUND );
+    return response;
+}
+
+
+HANDLER_RESULT<HighlightNetsResponse> API_HANDLER_SCH::handleHighlightNets(
+        const HANDLER_CONTEXT<HighlightNets>& aCtx )
+{
+    HighlightNetsResponse response;
+
+    if( !m_frame )
+    {
+        ApiResponseStatus e;
+        e.set_status( ApiStatusCode::AS_UNIMPLEMENTED );
+        e.set_error_message( "schematic net highlighting requires a GUI document" );
+        return tl::unexpected( e );
+    }
+
+    if( aCtx.Request.net_name().empty() )
+    {
+        response.set_status( CPS_INVALID );
+        response.set_message( "HighlightNets requires at least one net name" );
+        return response;
+    }
+
+    // This is a receiver command.  Apply it to this schematic frame instead
+    // of forwarding it back to the PCB editor, which would reverse the
+    // direction of a standalone cross-probe request.
+    for( const std::string& name : aCtx.Request.net_name() )
+    {
+        std::string payload = "$NET: \"" + name + "\"";
+        m_frame->ExecuteRemoteCommand( payload.c_str() );
+    }
+
+    response.set_status( CPS_OK );
+    return response;
+}
+
+
+HANDLER_RESULT<FocusOnItemResponse> API_HANDLER_SCH::handleFocusOnItem(
+        const HANDLER_CONTEXT<FocusOnItem>& aCtx )
+{
+    SyncSelection request;
+    request.set_mode( SSM_ITEMS_AND_NETS );
+    request.mutable_focus_item()->CopyFrom( aCtx.Request.focus_item() );
+    request.mutable_items()->Add()->CopyFrom( aCtx.Request.focus_item() );
+
+    std::optional<SCH_SYNC_TARGET> target = resolveSyncSelection( *schematic(), request );
+    FocusOnItemResponse response;
+
+    if( !target )
+    {
+        response.set_status( CPS_NOT_FOUND );
+        return response;
+    }
+
+    if( m_frame )
+    {
+        if( target->focus )
+            m_frame->FocusOnItem( target->focus );
+
+        m_frame->Refresh();
+    }
+
+    response.set_status( CPS_OK );
+    return response;
+}
+
+
 HANDLER_RESULT<std::unique_ptr<EDA_ITEM>> API_HANDLER_SCH::createItemForType( KICAD_T aType, EDA_ITEM* aContainer )
 {
     if( !aContainer )
@@ -645,6 +1202,17 @@ HANDLER_RESULT<ItemRequestStatus> API_HANDLER_SCH::handleCreateUpdateItemsIntern
             status.set_code( ItemStatusCode::ISC_INVALID_TYPE );
             status.set_error_message( fmt::format( "Could not decode a valid type from {}",
                                                    anyItem.type_url() ) );
+            aItemHandler( status, anyItem );
+            continue;
+        }
+
+        // ERC markers are transient read-only diagnostics.  They have no
+        // stable KIID and constructing one through the normal item factory
+        // lacks the live ERC context required by SCH_MARKER::Deserialize.
+        if( *type == SCH_MARKER_T )
+        {
+            status.set_code( ItemStatusCode::ISC_IMMUTABLE );
+            status.set_error_message( "schematic ERC markers are read-only API results" );
             aItemHandler( status, anyItem );
             continue;
         }
@@ -948,11 +1516,39 @@ void API_HANDLER_SCH::setDrawingSheetFileName( const wxString& aFileName )
 
 void API_HANDLER_SCH::onModified()
 {
+    // A headless context has no frame to route OnModify() through.  Mark every
+    // screen directly so edits to a subsheet (and project-level variant
+    // changes) are included by the subsequent save.
+    if( SCHEMATIC* sch = schematic() )
+    {
+        SCH_SCREENS screens( sch->Root() );
+
+        for( SCH_SCREEN* screen = screens.GetFirst(); screen; screen = screens.GetNext() )
+            screen->SetContentModified();
+    }
+
     if( m_frame )
     {
         m_frame->Refresh();
         m_frame->OnModify();
     }
+}
+
+
+std::optional<bool> API_HANDLER_SCH::documentIsModified() const
+{
+    if( !schematic() )
+        return std::nullopt;
+
+    SCH_SCREENS screens( schematic()->Root() );
+
+    for( SCH_SCREEN* screen = screens.GetFirst(); screen; screen = screens.GetNext() )
+    {
+        if( screen->IsContentModified() )
+            return true;
+    }
+
+    return hasPendingChanges();
 }
 
 
@@ -1275,15 +1871,15 @@ void API_HANDLER_SCH::packSheetInstance( kiapi::schematic::types::SheetInstance*
 }
 
 
-HANDLER_RESULT<kiapi::schematic::types::SchematicHierarchyResponse> API_HANDLER_SCH::handleGetSchematicHierarchy(
-        const HANDLER_CONTEXT<kiapi::schematic::types::GetSchematicHierarchy>& aCtx )
+HANDLER_RESULT<kiapi::schematic::commands::SchematicHierarchyResponse> API_HANDLER_SCH::handleGetSchematicHierarchy(
+        const HANDLER_CONTEXT<kiapi::schematic::commands::GetSchematicHierarchy>& aCtx )
 {
     HANDLER_RESULT<bool> documentValidation = validateDocument( aCtx.Request.document() );
 
     if( !documentValidation )
         return tl::unexpected( documentValidation.error() );
 
-    kiapi::schematic::types::SchematicHierarchyResponse response;
+    kiapi::schematic::commands::SchematicHierarchyResponse response;
     response.mutable_document()->CopyFrom( aCtx.Request.document() );
 
     if( !schematic()->HasHierarchy() )
@@ -1314,8 +1910,8 @@ HANDLER_RESULT<kiapi::schematic::types::SchematicHierarchyResponse> API_HANDLER_
 }
 
 
-HANDLER_RESULT<kiapi::schematic::types::SchematicNetlistResponse>
-API_HANDLER_SCH::handleGetSchematicNetlist( const HANDLER_CONTEXT<kiapi::schematic::types::GetSchematicNetlist>& aCtx )
+HANDLER_RESULT<kiapi::schematic::commands::SchematicNetlistResponse>
+API_HANDLER_SCH::handleGetSchematicNetlist( const HANDLER_CONTEXT<kiapi::schematic::commands::GetSchematicNetlist>& aCtx )
 {
     if( std::optional<ApiResponseStatus> busy = checkForBusy() )
         return tl::unexpected( *busy );
@@ -1348,7 +1944,7 @@ API_HANDLER_SCH::handleGetSchematicNetlist( const HANDLER_CONTEXT<kiapi::schemat
         return tl::unexpected( e );
     }
 
-    kiapi::schematic::types::SchematicNetlistResponse response;
+    kiapi::schematic::commands::SchematicNetlistResponse response;
     response.mutable_document()->CopyFrom( aCtx.Request.document() );
 
     for( const auto& [key, subgraphList] : connectionGraph->GetNetMap() )

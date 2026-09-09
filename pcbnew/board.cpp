@@ -1953,7 +1953,7 @@ BOARD_ITEM* BOARD::ResolveItem( const KIID& aID, bool aAllowNullptrReturn ) cons
             for( PCB_TABLECELL* cell : static_cast<PCB_TABLE*>( drawing )->GetCells() )
             {
                 if( cell->m_Uuid == aID )
-                    return CacheAndReturnItemById( aID, drawing );
+                    return CacheAndReturnItemById( aID, cell );
             }
         }
 

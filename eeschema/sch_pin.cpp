@@ -265,16 +265,16 @@ void SCH_PIN::Serialize( google::protobuf::Any& aContainer ) const
     pin.set_name( GetName().ToUTF8() );
     pin.set_number( GetNumber().ToUTF8() );
 
-    PackVector2( *pin.mutable_position(), GetPosition() );
-    pin.mutable_length()->set_value_nm( GetLength() );
+    PackVector2( *pin.mutable_position(), GetPosition(), schIUScale );
+    PackDistance( *pin.mutable_length(), GetLength(), schIUScale );
     pin.set_orientation( ToProtoEnum<PIN_ORIENTATION, SchematicPinOrientation>( GetOrientation() ) );
 
     pin.set_electrical_type( ToProtoEnum<ELECTRICAL_PINTYPE, types::ElectricalPinType>( GetType() ) );
     pin.set_shape( ToProtoEnum<GRAPHIC_PINSHAPE, SchematicPinShape>( GetShape() ) );
     pin.set_visible( IsVisible() );
 
-    pin.mutable_name_text_size()->set_value_nm( GetNameTextSize() );
-    pin.mutable_number_text_size()->set_value_nm( GetNumberTextSize() );
+    PackDistance( *pin.mutable_name_text_size(), GetNameTextSize(), schIUScale );
+    PackDistance( *pin.mutable_number_text_size(), GetNumberTextSize(), schIUScale );
 
     for( const ALT& alt : GetAlternates() | std::views::values )
     {
@@ -287,6 +287,7 @@ void SCH_PIN::Serialize( google::protobuf::Any& aContainer ) const
     if( !m_alt.IsEmpty() )
         pin.set_active_alternate( m_alt.ToUTF8() );
 
+    kiapi::common::PackCustomProperties( pin.mutable_custom_properties(), *this );
     aContainer.PackFrom( pin );
 }
 
@@ -301,20 +302,23 @@ bool SCH_PIN::Deserialize( const google::protobuf::Any& aContainer )
     if( !aContainer.UnpackTo( &pin ) )
         return false;
 
+    kiapi::common::UnpackCustomProperties( pin.custom_properties(), *this );
+
+
     const_cast<KIID&>( m_Uuid ) = KIID( pin.id().value() );
     SetName( wxString::FromUTF8( pin.name() ) );
     SetNumber( wxString::FromUTF8( pin.number() ) );
 
-    SetPosition( UnpackVector2( pin.position() ) );
-    SetLength( pin.length().value_nm() );
+    SetPosition( UnpackVector2( pin.position(), schIUScale ) );
+    SetLength( UnpackDistance( pin.length(), schIUScale ) );
     SetOrientation( FromProtoEnum<PIN_ORIENTATION>( pin.orientation() ) );
 
     SetType( FromProtoEnum<ELECTRICAL_PINTYPE>( pin.electrical_type() ) );
     SetShape( FromProtoEnum<GRAPHIC_PINSHAPE>( pin.shape() ) );
     SetVisible( pin.visible() );
 
-    SetNameTextSize( pin.name_text_size().value_nm() );
-    SetNumberTextSize( pin.number_text_size().value_nm() );
+    SetNameTextSize( UnpackDistance( pin.name_text_size(), schIUScale ) );
+    SetNumberTextSize( UnpackDistance( pin.number_text_size(), schIUScale ) );
 
     std::map<wxString, ALT>& alts = GetAlternates();
 

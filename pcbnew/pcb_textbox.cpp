@@ -117,6 +117,7 @@ void PCB_TEXTBOX::Serialize( google::protobuf::Any& aContainer ) const
     attrs->set_keep_upright( IsKeepUpright() );
     kiapi::common::PackVector2( *attrs->mutable_size(), GetTextSize() );
 
+    kiapi::common::PackCustomProperties( boardText.mutable_custom_properties(), *this );
     aContainer.PackFrom( boardText );
 }
 
@@ -169,6 +170,8 @@ bool PCB_TEXTBOX::Deserialize( const google::protobuf::Any& aContainer )
 
         SetAttributes( attrs );
     }
+
+    kiapi::common::UnpackCustomProperties( boardText.custom_properties(), *this );
 
     return true;
 }

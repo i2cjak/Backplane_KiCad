@@ -21,9 +21,14 @@
 #include <api/headless_board_context.h>
 #include <board.h>
 #include <pcbnew_scripting_helpers.h>
+#include <pgm_base.h>
 #include <project.h>
+#include <settings/settings_manager.h>
 #include <tool/tool_manager.h>
+#include <wildcards_and_files_ext.h>
 #include <wx/debug.h>
+#include <wx/filefn.h>
+#include <wx/filename.h>
 
 
 HEADLESS_BOARD_CONTEXT::HEADLESS_BOARD_CONTEXT( std::unique_ptr<BOARD> aBoard, PROJECT* aProject,
@@ -84,7 +89,13 @@ bool HEADLESS_BOARD_CONTEXT::SaveBoard()
     if( fileName.IsEmpty() )
         return false;
 
-    return ::SaveBoard( fileName, m_board.get(), false );
+    if( !::SaveBoard( fileName, m_board.get(), true ) )
+        return false;
+
+    // The scripting helper owns a different settings manager.  IPC documents
+    // belong to the application's manager, which must save their live settings.
+    return m_project->IsReadOnly()
+           || Pgm().GetSettingsManager().SaveProject( wxEmptyString, m_project );
 }
 
 
@@ -94,7 +105,32 @@ bool HEADLESS_BOARD_CONTEXT::SavePcbCopy( const wxString& aFileName, bool aCreat
         return false;
 
     wxString outPath = aFileName;
-    bool skipSettings = !aCreateProject;
+    if( !::SaveBoard( outPath, m_board.get(), true ) )
+        return false;
 
-    return ::SaveBoard( outPath, m_board.get(), skipSettings );
+    if( aCreateProject )
+    {
+        wxFileName projectFile( aFileName );
+        projectFile.SetExt( FILEEXT::ProjectFileExtension );
+
+        // Save a copy without renaming the live project or its open documents.
+        if( !projectFile.FileExists() )
+            Pgm().GetSettingsManager().SaveProjectCopy( projectFile.GetFullPath(), m_project );
+
+        if( !projectFile.FileExists() )
+            return false;
+
+        wxFileName sourceRules( m_project->GetProjectFullName() );
+        wxFileName targetRules( aFileName );
+        sourceRules.SetExt( FILEEXT::DesignRulesFileExtension );
+        targetRules.SetExt( FILEEXT::DesignRulesFileExtension );
+
+        if( sourceRules.FileExists() && !targetRules.FileExists()
+            && !wxCopyFile( sourceRules.GetFullPath(), targetRules.GetFullPath(), false ) )
+        {
+            return false;
+        }
+    }
+
+    return true;
 }

@@ -72,7 +72,7 @@ void SCH_SHEET_PIN::Serialize( google::protobuf::Any& aContainer ) const
     SheetPin pin;
 
     pin.mutable_id()->set_value( m_Uuid.AsStdString() );
-    kiapi::common::PackVector2( *pin.mutable_position(), GetPosition() );
+    kiapi::common::PackVector2( *pin.mutable_position(), GetPosition(), schIUScale );
     pin.set_spin_style(
             ToProtoEnum<SPIN_STYLE::SPIN, SchematicLabelSpinStyle>(
                     static_cast<SPIN_STYLE::SPIN>( static_cast<int>( GetSpinStyle() ) ) ) );
@@ -82,7 +82,7 @@ void SCH_SHEET_PIN::Serialize( google::protobuf::Any& aContainer ) const
                                          : kiapi::common::types::LockedState::LS_UNLOCKED );
 
     google::protobuf::Any any;
-    EDA_TEXT::Serialize( any );
+    EDA_TEXT::Serialize( any, schIUScale );
     any.UnpackTo( pin.mutable_text() );
 
     aContainer.PackFrom( pin );
@@ -103,10 +103,10 @@ bool SCH_SHEET_PIN::Deserialize( const google::protobuf::Any& aContainer )
     google::protobuf::Any any;
     any.PackFrom( pin.text() );
 
-    if( !EDA_TEXT::Deserialize( any ) )
+    if( !EDA_TEXT::Deserialize( any, schIUScale ) )
         return false;
 
-    SetPosition( kiapi::common::UnpackVector2( pin.position() ) );
+    SetPosition( kiapi::common::UnpackVector2( pin.position(), schIUScale ) );
     SetSide( FromProtoEnum<SHEET_SIDE, SheetSide>( pin.side() ) );
     SetSpinStyle( FromProtoEnum<SPIN_STYLE::SPIN, SchematicLabelSpinStyle>( pin.spin_style() ) );
     SetShape( FromProtoEnum<LABEL_FLAG_SHAPE, SchematicLabelShape>( pin.shape() ) );

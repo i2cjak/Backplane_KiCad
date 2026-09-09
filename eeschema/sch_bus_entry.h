@@ -40,6 +40,9 @@ public:
     SCH_BUS_ENTRY_BASE( KICAD_T aType, const VECTOR2I& pos = VECTOR2I( 0, 0 ),
                         bool aFlipY = false );
 
+    void Serialize( google::protobuf::Any& aContainer ) const override;
+    bool Deserialize( const google::protobuf::Any& aContainer ) override;
+
     bool IsStartDangling() const { return m_isStartDangling; }
     bool IsEndDangling() const { return m_isEndDangling; }
 

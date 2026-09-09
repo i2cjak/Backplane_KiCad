@@ -32,6 +32,7 @@
 
 #include <eda_units.h>
 #include <core/wx_stl_compat.h>
+#include <line_ending.h>
 #include <hashtables.h>
 #include <lib_id.h>
 #include <layer_ids.h>     // PCB_LAYER_ID
@@ -43,11 +44,13 @@
 #include <padstack.h>
 
 #include <chrono>
+#include <map>
 #include <unordered_map>
 
 
 class PCB_ARC;
 class BOARD;
+class EDA_ITEM;
 class BOARD_ITEM;
 class ZONE_SETTINGS;
 class BOARD_CONNECTED_ITEM;
@@ -160,6 +163,7 @@ private:
         KIID              uuid;
         LIB_ID            libId;
         std::vector<KIID> memberUuids;
+        std::map<wxString, wxString> customProperties;
     };
 
     struct GENERATOR_INFO : GROUP_INFO
@@ -330,7 +334,11 @@ private:
 
     void parseZoneLayerProperty( std::map<PCB_LAYER_ID, ZONE_LAYER_PROPERTIES>& aProperties );
 
+    void parseLineEnding( LINE_ENDING& aEnding );
+
     std::pair<wxString, wxString> parseBoardProperty();
+    void parseCustomProperty( EDA_ITEM* aItem );
+    void parseCustomProperty( std::map<wxString, wxString>& aProps );
 
     void parseVariants();
     void parseFootprintVariant( FOOTPRINT* aFootprint );

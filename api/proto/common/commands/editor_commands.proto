@@ -35,6 +35,13 @@ message RefreshEditor
   kiapi.common.types.FrameType frame = 1;
 }
 
+// Opens a specific item from a library by identifier.
+message OpenLibraryItem
+{
+  kiapi.common.types.DocumentType type = 1;
+  kiapi.common.types.LibraryIdentifier identifier = 2;
+}
+
 // Retrieves a list of open documents of the given type
 message GetOpenDocuments
 {
@@ -45,6 +52,24 @@ message GetOpenDocuments
 message GetOpenDocumentsResponse
 {
   repeated kiapi.common.types.DocumentSpecifier documents = 1;
+}
+
+enum DocumentModifiedState
+{
+  DMS_UNKNOWN    = 0;
+  DMS_UNMODIFIED = 1;
+  DMS_MODIFIED   = 2;
+}
+
+// Checks whether a currently open editor or headless document has unsaved changes.
+message GetDocumentModifiedState
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+}
+
+message GetDocumentModifiedStateResponse
+{
+  DocumentModifiedState state = 1;
 }
 
 // Saves the given document to a new location and opens the new copy

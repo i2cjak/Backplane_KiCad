@@ -1,0 +1,85 @@
+/*
+ * This program source code file is part of KiCad, a free EDA CAD application.
+ *
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or (at your
+ * option) any later version.
+ */
+
+/*
+ * variant_commands.proto
+ * Commands and responses for reading and editing design variants.
+ */
+
+syntax = "proto3";
+
+package kiapi.common.commands;
+
+import "common/types/base_types.proto";
+import "common/types/variants.proto";
+
+message GetVariants
+{
+  // Within a project, variants can exist on the schematic and the board.
+  // They are not necessarily in sync.
+  kiapi.common.types.DocumentSpecifier document = 1;
+}
+
+message VariantsResponse
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+  repeated kiapi.common.types.DesignVariant variants = 2;
+}
+
+message AddVariant
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+  string name = 2;
+  optional string description = 3;
+}
+
+message DeleteVariant
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+  string name = 2;
+}
+
+message RenameVariant
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+  string old_name = 2;
+  string new_name = 3;
+}
+
+message SetVariantDescription
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+  string name = 2;
+  string description = 3;
+}
+
+message CopyVariant
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+  string old_name = 2;
+  string new_name = 3;
+  optional string new_description = 4;
+}
+
+message SetCurrentVariant
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+  optional string name = 2;
+}
+
+message GetCurrentVariant
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+}
+
+message CurrentVariantResponse
+{
+  // Omitted when the current variant is the default variant.
+  optional string name = 1;
+}

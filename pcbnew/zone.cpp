@@ -349,6 +349,7 @@ void ZONE::Serialize( google::protobuf::Any& aContainer ) const
             ToProtoEnum<ZONE_BORDER_DISPLAY_STYLE, types::ZoneBorderStyle>( m_borderStyle ) );
     zone.mutable_border()->mutable_pitch()->set_value_nm( m_borderHatchPitch );
 
+    kiapi::common::PackCustomProperties( zone.mutable_custom_properties(), *this );
     aContainer.PackFrom( zone );
 }
 
@@ -450,6 +451,8 @@ bool ZONE::Deserialize( const google::protobuf::Any& aContainer )
     }
 
     HatchBorder();
+
+    kiapi::common::UnpackCustomProperties( zone.custom_properties(), *this );
 
     return true;
 }

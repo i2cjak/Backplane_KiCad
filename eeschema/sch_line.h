@@ -30,6 +30,7 @@
 #include <list>         // for std::list
 #include <geometry/seg.h>
 #include <math/vector3.h>
+#include <line_ending.h>
 
 class NETLIST_OBJECT_LIST;
 
@@ -151,6 +152,14 @@ public:
     void     SetEndX( int aX ) { SetEndPoint( VECTOR2I( aX, m_end.y ) ); }
     int      GetEndY() const { return m_end.y; }
     void     SetEndY( int aY ) { SetEndPoint( VECTOR2I( m_end.x, aY ) ); }
+
+    // Schematic lines do not derive from EDA_SHAPE, but IPC clients can still
+    // assign endpoint styles.  Native 10.0.6 files do not have fields for
+    // these values; the schematic IO companion metadata persists them.
+    const LINE_ENDING& GetStartEnding() const { return m_startEnding; }
+    void SetStartEnding( const LINE_ENDING& aEnding ) { m_startEnding = aEnding; }
+    const LINE_ENDING& GetEndEnding() const { return m_endEnding; }
+    void SetEndEnding( const LINE_ENDING& aEnding ) { m_endEnding = aEnding; }
 
     /**
      * Get the geometric aspect of the wire as a SEG
@@ -387,6 +396,8 @@ private:
     bool               m_endIsDangling;    ///< True if end point is not connected.
     VECTOR2I           m_start;            ///< Line start point
     VECTOR2I           m_end;              ///< Line end point
+    LINE_ENDING        m_startEnding;
+    LINE_ENDING        m_endEnding;
     EDA_ANGLE          m_storedAngle;      ///< Stored angle
     STROKE_PARAMS      m_stroke;           ///< Line stroke properties.
 

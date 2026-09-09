@@ -93,8 +93,8 @@ void SCH_SHEET::Serialize( google::protobuf::Any& aContainer ) const
     SheetSymbol sheet;
 
     sheet.mutable_id()->set_value( m_Uuid.AsStdString() );
-    PackVector2( *sheet.mutable_position(), GetPosition() );
-    PackVector2( *sheet.mutable_size(), GetSize() );
+    PackVector2( *sheet.mutable_position(), GetPosition(), schIUScale );
+    PackVector2( *sheet.mutable_size(), GetSize(), schIUScale );
     sheet.set_locked( IsLocked() ? LockedState::LS_LOCKED : LockedState::LS_UNLOCKED );
     sheet.set_exclude_from_sim( GetExcludedFromSim() );
     sheet.set_exclude_from_bom( GetExcludedFromBOM() );
@@ -102,7 +102,7 @@ void SCH_SHEET::Serialize( google::protobuf::Any& aContainer ) const
     sheet.set_dnp( GetDNP() );
 
     StrokeAttributes* borderStroke = sheet.mutable_border_stroke();
-    borderStroke->mutable_width()->set_value_nm( GetBorderWidth() );
+    PackDistance( *borderStroke->mutable_width(), GetBorderWidth(), schIUScale );
     borderStroke->set_style( ToProtoEnum<LINE_STYLE, StrokeLineStyle>( LINE_STYLE::SOLID ) );
 
     if( GetBorderColor() != COLOR4D::UNSPECIFIED )
@@ -138,6 +138,7 @@ void SCH_SHEET::Serialize( google::protobuf::Any& aContainer ) const
         any.UnpackTo( sheet.add_pins() );
     }
 
+    kiapi::common::PackCustomProperties( sheet.mutable_custom_properties(), *this );
     aContainer.PackFrom( sheet );
 }
 
@@ -153,16 +154,19 @@ bool SCH_SHEET::Deserialize( const google::protobuf::Any& aContainer )
     if( !aContainer.UnpackTo( &sheet ) )
         return false;
 
+    kiapi::common::UnpackCustomProperties( sheet.custom_properties(), *this );
+
+
     const_cast<::KIID&>( m_Uuid ) = ::KIID( sheet.id().value() );
-    SetPosition( UnpackVector2( sheet.position() ) );
-    SetSize( UnpackVector2( sheet.size() ) );
+    SetPosition( UnpackVector2( sheet.position(), schIUScale ) );
+    SetSize( UnpackVector2( sheet.size(), schIUScale ) );
     SetLocked( sheet.locked() == LockedState::LS_LOCKED );
     SetExcludedFromSim( sheet.exclude_from_sim() );
     SetExcludedFromBOM( sheet.exclude_from_bom() );
     SetExcludedFromBoard( sheet.exclude_from_board() );
     SetDNP( sheet.dnp() );
 
-    SetBorderWidth( sheet.border_stroke().width().value_nm() );
+    SetBorderWidth( UnpackDistance( sheet.border_stroke().width(), schIUScale ) );
     SetBorderColor( sheet.border_stroke().has_color() ? UnpackColor( sheet.border_stroke().color() )
                                                        : COLOR4D::UNSPECIFIED );
 
@@ -485,7 +489,6 @@ void SCH_SHEET::swapData( SCH_ITEM* aItem )
     std::swap( m_pos, sheet->m_pos );
     std::swap( m_size, sheet->m_size );
     m_fields.swap( sheet->m_fields );
-    std::swap( m_fieldsAutoplaced, sheet->m_fieldsAutoplaced );
     m_pins.swap( sheet->m_pins );
 
     // Update parent pointers after swapping.

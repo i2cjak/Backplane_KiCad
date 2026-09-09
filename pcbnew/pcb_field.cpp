@@ -22,6 +22,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
  */
 
+#include <api/api_utils.h>
 #include <common.h>
 #include <view/view.h>
 #include <pcb_field.h>
@@ -57,6 +58,18 @@ PCB_FIELD::PCB_FIELD( const PCB_TEXT& aText, FIELD_T aFieldId, const wxString& a
 }
 
 
+void PCB_FIELD::CopyFrom( const BOARD_ITEM* aOther )
+{
+    wxCHECK( aOther && aOther->Type() == PCB_FIELD_T, /* void */ );
+
+    const PCB_FIELD* other = static_cast<const PCB_FIELD*>( aOther );
+    PCB_TEXT::operator=( *other );
+    m_id = other->m_id;
+    m_ordinal = other->m_ordinal;
+    m_name = other->m_name;
+}
+
+
 void PCB_FIELD::Serialize( google::protobuf::Any &aContainer ) const
 {
     kiapi::board::types::Field field;
@@ -69,6 +82,7 @@ void PCB_FIELD::Serialize( google::protobuf::Any &aContainer ) const
     field.mutable_id()->set_id( (int) GetId() );
     field.set_visible( IsVisible() );
 
+    kiapi::common::PackCustomProperties( field.mutable_custom_properties(), *this );
     aContainer.PackFrom( field );
 }
 
@@ -98,6 +112,8 @@ bool PCB_FIELD::Deserialize( const google::protobuf::Any &aContainer )
 
     if( field.text().layer() == kiapi::board::types::BoardLayer::BL_UNKNOWN )
         SetLayer( F_SilkS );
+
+    kiapi::common::UnpackCustomProperties( field.custom_properties(), *this );
 
     return true;
 }

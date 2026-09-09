@@ -37,6 +37,32 @@
 #include <properties/property.h>
 #include <properties/property_mgr.h>
 
+#include <api/api_enums.h>
+#include <api/api_utils.h>
+#include <api/schematic/schematic_types.pb.h>
+
+
+namespace
+{
+void packStroke( kiapi::common::types::StrokeAttributes& aOutput, const STROKE_PARAMS& aInput )
+{
+    kiapi::common::PackDistance( *aOutput.mutable_width(), aInput.GetWidth(), schIUScale );
+    aOutput.set_style( ToProtoEnum<LINE_STYLE, kiapi::common::types::StrokeLineStyle>( aInput.GetLineStyle() ) );
+
+    if( aInput.GetColor() != COLOR4D::UNSPECIFIED )
+        kiapi::common::PackColor( *aOutput.mutable_color(), aInput.GetColor() );
+}
+
+
+void unpackStroke( STROKE_PARAMS& aOutput, const kiapi::common::types::StrokeAttributes& aInput )
+{
+    aOutput.SetWidth( kiapi::common::UnpackDistance( aInput.width(), schIUScale ) );
+    aOutput.SetLineStyle(
+            FromProtoEnum<LINE_STYLE, kiapi::common::types::StrokeLineStyle>( aInput.style() ) );
+    aOutput.SetColor( aInput.has_color() ? kiapi::common::UnpackColor( aInput.color() )
+                                         : COLOR4D::UNSPECIFIED );
+}
+}
 
 SCH_TABLE::SCH_TABLE( int aLineWidth ) :
         SCH_ITEM( nullptr, SCH_TABLE_T ),
@@ -76,6 +102,101 @@ SCH_TABLE::~SCH_TABLE()
     // We own our cells; delete them
     for( SCH_TABLECELL* cell : m_cells )
         delete cell;
+}
+
+
+void SCH_TABLE::Serialize( google::protobuf::Any& aContainer ) const
+{
+    using namespace kiapi::common;
+    using namespace kiapi::schematic::types;
+
+    SchematicTable table;
+
+    table.mutable_id()->set_value( m_Uuid.AsStdString() );
+    table.set_locked( IsLocked() ? types::LockedState::LS_LOCKED : types::LockedState::LS_UNLOCKED );
+
+    table.set_column_count( m_colCount );
+
+    for( int col = 0; col < m_colCount; ++col )
+        kiapi::common::PackDistance( *table.add_column_widths(), GetColWidth( col ), schIUScale );
+
+    for( int row = 0; row < GetRowCount(); ++row )
+        kiapi::common::PackDistance( *table.add_row_heights(), GetRowHeight( row ), schIUScale );
+
+    for( const SCH_TABLECELL* cell : m_cells )
+        cell->Serialize( *table.add_cells() );
+
+    table.set_external_border( m_strokeExternal ? TableStrokeMode::TSM_ENABLED : TableStrokeMode::TSM_DISABLED );
+    table.set_header_separator( m_StrokeHeaderSeparator ? TableStrokeMode::TSM_ENABLED
+                                                        : TableStrokeMode::TSM_DISABLED );
+
+    packStroke( *table.mutable_border_stroke(), m_borderStroke );
+
+    table.set_row_separators( m_strokeRows ? TableStrokeMode::TSM_ENABLED : TableStrokeMode::TSM_DISABLED );
+    table.set_column_separators( m_strokeColumns ? TableStrokeMode::TSM_ENABLED : TableStrokeMode::TSM_DISABLED );
+
+    packStroke( *table.mutable_separators_stroke(), m_separatorsStroke );
+
+    kiapi::common::PackCustomProperties( table.mutable_custom_properties(), *this );
+    aContainer.PackFrom( table );
+}
+
+
+bool SCH_TABLE::Deserialize( const google::protobuf::Any& aContainer )
+{
+    using namespace kiapi::schematic::types;
+
+    SchematicTable table;
+
+    if( !aContainer.UnpackTo( &table ) )
+        return false;
+
+    kiapi::common::UnpackCustomProperties( table.custom_properties(), *this );
+
+
+    const_cast<KIID&>( m_Uuid ) = KIID( table.id().value() );
+    SetLocked( table.locked() == kiapi::common::types::LockedState::LS_LOCKED );
+
+    ClearCells();
+    m_colWidths.clear();
+    m_rowHeights.clear();
+
+    SetColCount( table.column_count() );
+
+    for( int i = 0; i < table.column_widths_size() && i < table.column_count(); ++i )
+        SetColWidth( i, kiapi::common::UnpackDistance( table.column_widths( i ), schIUScale ) );
+
+    for( const SchematicTableCell& protoCell : table.cells() )
+    {
+        SCH_TABLECELL* cell = new SCH_TABLECELL();
+
+        if( !cell->Deserialize( protoCell ) )
+        {
+            delete cell;
+            continue;
+        }
+
+        AddCell( cell );
+    }
+
+    int rowCount = m_colCount > 0 ? static_cast<int>( m_cells.size() ) / m_colCount : 0;
+
+    for( int i = 0; i < table.row_heights_size() && i < rowCount; ++i )
+        SetRowHeight( i, kiapi::common::UnpackDistance( table.row_heights( i ), schIUScale ) );
+
+    m_strokeExternal = table.external_border() == TableStrokeMode::TSM_ENABLED;
+    m_StrokeHeaderSeparator = table.header_separator() == TableStrokeMode::TSM_ENABLED;
+
+    if( table.has_border_stroke() )
+        unpackStroke( m_borderStroke, table.border_stroke() );
+
+    m_strokeRows = table.row_separators() == TableStrokeMode::TSM_ENABLED;
+    m_strokeColumns = table.column_separators() == TableStrokeMode::TSM_ENABLED;
+
+    if( table.has_separators_stroke() )
+        unpackStroke( m_separatorsStroke, table.separators_stroke() );
+
+    return true;
 }
 
 

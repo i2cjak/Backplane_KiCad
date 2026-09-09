@@ -135,6 +135,7 @@ void PCB_TEXT::Serialize( google::protobuf::Any& aContainer ) const
     else if( const BOARD* board = GetBoard() )
         boardText.mutable_parent()->set_value( board->m_Uuid.AsStdString() );
 
+    kiapi::common::PackCustomProperties( boardText.mutable_custom_properties(), *this );
     aContainer.PackFrom( boardText );
 }
 
@@ -159,6 +160,8 @@ bool PCB_TEXT::Deserialize( const google::protobuf::Any& aContainer )
     const types::Text& text = boardText.text();
 
     SetPosition( UnpackVector2( text.position() ) );
+
+    kiapi::common::UnpackCustomProperties( boardText.custom_properties(), *this );
 
     return true;
 }

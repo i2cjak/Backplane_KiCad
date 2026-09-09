@@ -1,0 +1,28 @@
+/*
+ * This program source code file is part of KiCad, a free EDA CAD application.
+ *
+ * This program is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License as published by the
+ * Free Software Foundation, either version 3 of the License, or (at your
+ * option) any later version.
+ */
+
+/*
+ * variants.proto
+ * Types describing design variants, shared by schematic, board, and project
+ */
+
+syntax = "proto3";
+
+package kiapi.common.types;
+
+// One design variant in a project.
+message DesignVariant
+{
+  // Variant name (must be case-insensitively unique in a project).
+  // The default (base) variant has no name.
+  string name = 1;
+
+  // Human-readable description of the variant.
+  string description = 2;
+}

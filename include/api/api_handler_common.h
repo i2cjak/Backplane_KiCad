@@ -41,6 +41,9 @@ public:
     using CLOSE_DOCUMENT_HANDLER = std::function<HANDLER_RESULT<Empty>(
             const commands::CloseDocument& )>;
 
+    using CLOSE_ALL_DOCUMENTS_HANDLER = std::function<HANDLER_RESULT<Empty>(
+            const commands::CloseAllDocuments& )>;
+
     API_HANDLER_COMMON();
 
     ~API_HANDLER_COMMON() override {}
@@ -55,12 +58,20 @@ public:
         m_closeDocumentHandler = std::move( aHandler );
     }
 
+    void SetCloseAllDocumentsHandler( CLOSE_ALL_DOCUMENTS_HANDLER aHandler )
+    {
+        m_closeAllDocumentsHandler = std::move( aHandler );
+    }
+
 private:
     HANDLER_RESULT<commands::GetVersionResponse> handleGetVersion(
         const HANDLER_CONTEXT<commands::GetVersion>& aCtx );
 
     HANDLER_RESULT<commands::PathResponse> handleGetKiCadBinaryPath(
         const HANDLER_CONTEXT<commands::GetKiCadBinaryPath>& aCtx );
+
+    HANDLER_RESULT<commands::GetPathsResponse> handleGetPaths(
+        const HANDLER_CONTEXT<commands::GetPaths>& aCtx );
 
     HANDLER_RESULT<commands::NetClassesResponse> handleGetNetClasses(
         const HANDLER_CONTEXT<commands::GetNetClasses>& aCtx );
@@ -94,9 +105,13 @@ private:
     HANDLER_RESULT<Empty> handleCloseDocument(
         const HANDLER_CONTEXT<commands::CloseDocument>& aCtx );
 
+    HANDLER_RESULT<Empty> handleCloseAllDocuments(
+        const HANDLER_CONTEXT<commands::CloseAllDocuments>& aCtx );
+
 private:
     OPEN_DOCUMENT_HANDLER m_openDocumentHandler;
     CLOSE_DOCUMENT_HANDLER m_closeDocumentHandler;
+    CLOSE_ALL_DOCUMENTS_HANDLER m_closeAllDocumentsHandler;
 };
 
 #endif //KICAD_API_HANDLER_COMMON_H

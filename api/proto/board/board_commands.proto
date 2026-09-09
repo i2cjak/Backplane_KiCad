@@ -23,11 +23,13 @@ syntax = "proto3";
 package kiapi.board.commands;
 
 import "common/types/base_types.proto";
+import "common/types/embedded_files.proto";
 import "google/protobuf/any.proto";
 import "common/types/enums.proto";
 import "common/types/project_settings.proto";
 import "board/board.proto";
 import "board/board_types.proto";
+import "board/board_jobs.proto";
 import "common/commands/editor_commands.proto";
 /*
  * Board stackup and properties
@@ -82,6 +84,26 @@ message SetBoardEnabledLayers
   repeated kiapi.board.types.BoardLayer layers = 3;
 }
 
+// Returns kiapi.common.types.EmbeddedFiles
+message GetEmbeddedFiles
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+}
+
+// Appends embedded files to the board.  Returns Empty.
+message AddEmbeddedFiles
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+  kiapi.common.types.EmbeddedFiles files = 2;
+}
+
+// Replaces all embedded files in the board.  Returns Empty.
+message SetEmbeddedFiles
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+  kiapi.common.types.EmbeddedFiles files = 2;
+}
+
 message GetGraphicsDefaults
 {
   kiapi.common.types.DocumentSpecifier board = 1;
@@ -90,6 +112,65 @@ message GetGraphicsDefaults
 message GraphicsDefaultsResponse
 {
   kiapi.board.GraphicsDefaults defaults = 1;
+}
+
+enum CustomRulesStatus
+{
+  CRS_UNKNOWN = 0;
+  CRS_NONE = 1;
+  CRS_VALID = 2;
+  CRS_INVALID = 3;
+}
+
+message GetBoardDesignRules
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+}
+
+message SetBoardDesignRules
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+  kiapi.board.BoardDesignRules rules = 2;
+}
+
+message BoardDesignRulesResponse
+{
+  kiapi.board.BoardDesignRules rules = 1;
+  CustomRulesStatus custom_rules_status = 2;
+}
+
+message GetCustomDesignRules
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+}
+
+message SetCustomDesignRules
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+  repeated kiapi.board.CustomRule rules = 2;
+}
+
+message CustomRulesResponse
+{
+  CustomRulesStatus status = 1;
+  repeated kiapi.board.CustomRule rules = 2;
+  string error_text = 3;
+}
+
+message GetBoardPlotSettings
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+}
+
+message SetBoardPlotSettings
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+  kiapi.board.jobs.BoardPlotSettings plot_settings = 2;
+}
+
+message BoardPlotSettingsResponse
+{
+  kiapi.board.jobs.BoardPlotSettings plot_settings = 1;
 }
 
 enum BoardOriginType
@@ -220,6 +301,37 @@ message NetClassForNetsResponse
 {
   // Map of net name to netclass info
   map<string, kiapi.common.project.NetClass> classes = 1;
+}
+
+/*
+ * Netlist import
+ */
+
+enum NetlistMatchMode
+{
+  NMM_UNKNOWN = 0;
+  NMM_UUID = 1;
+  NMM_REFERENCE = 2;
+}
+
+message ImportNetlist
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+  string netlist_path = 2;
+  bool dry_run = 3;
+  NetlistMatchMode match_mode = 4;
+  bool delete_extra_footprints = 5;
+  bool update_footprints = 6;
+  bool transfer_groups = 7;
+  bool override_locks = 8;
+}
+
+message ImportNetlistResponse
+{
+  uint32 error_count = 1;
+  uint32 warning_count = 2;
+  uint32 new_footprint_count = 3;
+  string report = 4;
 }
 
 /*

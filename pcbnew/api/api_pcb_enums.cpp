@@ -20,7 +20,9 @@
 
 #include <import_export.h>
 #include <api/api_enums.h>
+#include <api/board/board.pb.h>
 #include <api/board/board_types.pb.h>
+#include <drc/drc_rule.h>
 #include <api/board/board_commands.pb.h>
 #include <api/board/board_jobs.pb.h>
 #include <api/common/types/enums.pb.h>
@@ -1599,3 +1601,107 @@ JOB_EXPORT_PCB_STATS::UNITS FromProtoEnum( kiapi::common::types::Units aValue )
 }
 
 // Adding something new here?  Add it to test_api_enums.cpp!
+
+
+template<>
+CustomRuleConstraintType ToProtoEnum( DRC_CONSTRAINT_T aValue )
+{
+    switch( aValue )
+    {
+    case NULL_CONSTRAINT:                 return CustomRuleConstraintType::CRCT_UNKNOWN;
+    case CLEARANCE_CONSTRAINT:            return CustomRuleConstraintType::CRCT_CLEARANCE;
+    case CREEPAGE_CONSTRAINT:             return CustomRuleConstraintType::CRCT_CREEPAGE;
+    case HOLE_CLEARANCE_CONSTRAINT:       return CustomRuleConstraintType::CRCT_HOLE_CLEARANCE;
+    case HOLE_TO_HOLE_CONSTRAINT:         return CustomRuleConstraintType::CRCT_HOLE_TO_HOLE;
+    case EDGE_CLEARANCE_CONSTRAINT:       return CustomRuleConstraintType::CRCT_EDGE_CLEARANCE;
+    case HOLE_SIZE_CONSTRAINT:            return CustomRuleConstraintType::CRCT_HOLE_SIZE;
+    case COURTYARD_CLEARANCE_CONSTRAINT:  return CustomRuleConstraintType::CRCT_COURTYARD_CLEARANCE;
+    case SILK_CLEARANCE_CONSTRAINT:       return CustomRuleConstraintType::CRCT_SILK_CLEARANCE;
+    case TEXT_HEIGHT_CONSTRAINT:          return CustomRuleConstraintType::CRCT_TEXT_HEIGHT;
+    case TEXT_THICKNESS_CONSTRAINT:       return CustomRuleConstraintType::CRCT_TEXT_THICKNESS;
+    case TRACK_WIDTH_CONSTRAINT:          return CustomRuleConstraintType::CRCT_TRACK_WIDTH;
+    case TRACK_SEGMENT_LENGTH_CONSTRAINT: return CustomRuleConstraintType::CRCT_TRACK_SEGMENT_LENGTH;
+    case ANNULAR_WIDTH_CONSTRAINT:        return CustomRuleConstraintType::CRCT_ANNULAR_WIDTH;
+    case ZONE_CONNECTION_CONSTRAINT:      return CustomRuleConstraintType::CRCT_ZONE_CONNECTION;
+    case THERMAL_RELIEF_GAP_CONSTRAINT:   return CustomRuleConstraintType::CRCT_THERMAL_RELIEF_GAP;
+    case THERMAL_SPOKE_WIDTH_CONSTRAINT:  return CustomRuleConstraintType::CRCT_THERMAL_SPOKE_WIDTH;
+    case MIN_RESOLVED_SPOKES_CONSTRAINT:  return CustomRuleConstraintType::CRCT_MIN_RESOLVED_SPOKES;
+    case SOLDER_MASK_EXPANSION_CONSTRAINT:return CustomRuleConstraintType::CRCT_SOLDER_MASK_EXPANSION;
+    case SOLDER_PASTE_ABS_MARGIN_CONSTRAINT:return CustomRuleConstraintType::CRCT_SOLDER_PASTE_ABS_MARGIN;
+    case SOLDER_PASTE_REL_MARGIN_CONSTRAINT:return CustomRuleConstraintType::CRCT_SOLDER_PASTE_REL_MARGIN;
+    case DISALLOW_CONSTRAINT:             return CustomRuleConstraintType::CRCT_DISALLOW;
+    case VIA_DIAMETER_CONSTRAINT:         return CustomRuleConstraintType::CRCT_VIA_DIAMETER;
+    case LENGTH_CONSTRAINT:               return CustomRuleConstraintType::CRCT_LENGTH;
+    case SKEW_CONSTRAINT:                 return CustomRuleConstraintType::CRCT_SKEW;
+    case DIFF_PAIR_GAP_CONSTRAINT:        return CustomRuleConstraintType::CRCT_DIFF_PAIR_GAP;
+    case MAX_UNCOUPLED_CONSTRAINT:        return CustomRuleConstraintType::CRCT_MAX_UNCOUPLED;
+    case DIFF_PAIR_INTRA_SKEW_CONSTRAINT: return CustomRuleConstraintType::CRCT_DIFF_PAIR_INTRA_SKEW;
+    case VIA_COUNT_CONSTRAINT:            return CustomRuleConstraintType::CRCT_VIA_COUNT;
+    case PHYSICAL_CLEARANCE_CONSTRAINT:   return CustomRuleConstraintType::CRCT_PHYSICAL_CLEARANCE;
+    case PHYSICAL_HOLE_CLEARANCE_CONSTRAINT:return CustomRuleConstraintType::CRCT_PHYSICAL_HOLE_CLEARANCE;
+    case ASSERTION_CONSTRAINT:            return CustomRuleConstraintType::CRCT_ASSERTION;
+    case CONNECTION_WIDTH_CONSTRAINT:     return CustomRuleConstraintType::CRCT_CONNECTION_WIDTH;
+    case TRACK_ANGLE_CONSTRAINT:          return CustomRuleConstraintType::CRCT_TRACK_ANGLE;
+    case VIA_DANGLING_CONSTRAINT:         return CustomRuleConstraintType::CRCT_VIA_DANGLING;
+    case BRIDGED_MASK_CONSTRAINT:         return CustomRuleConstraintType::CRCT_BRIDGED_MASK;
+    case SOLDER_MASK_SLIVER_CONSTRAINT:   return CustomRuleConstraintType::CRCT_SOLDER_MASK_SLIVER;
+
+    default:
+        wxCHECK_MSG( false, CustomRuleConstraintType::CRCT_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<DRC_CONSTRAINT_T>" );
+    }
+}
+
+
+template<>
+CustomRuleConstraintOption ToProtoEnum( DRC_CONSTRAINT::OPTIONS aValue )
+{
+    switch( aValue )
+    {
+    case DRC_CONSTRAINT::OPTIONS::SKEW_WITHIN_DIFF_PAIRS: return CustomRuleConstraintOption::CRCO_SKEW_WITHIN_DIFF_PAIRS;
+    case DRC_CONSTRAINT::OPTIONS::SPACE_DOMAIN:           return CustomRuleConstraintOption::CRCO_SPACE_DOMAIN;
+    case DRC_CONSTRAINT::OPTIONS::TIME_DOMAIN:            return CustomRuleConstraintOption::CRCO_TIME_DOMAIN;
+
+    default:
+        wxCHECK_MSG( false, CustomRuleConstraintOption::CRCO_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<DRC_CONSTRAINT::OPTIONS>" );
+    }
+}
+
+
+template<>
+CustomRuleDisallowType ToProtoEnum( DRC_DISALLOW_T aValue )
+{
+    switch( aValue )
+    {
+    case DRC_DISALLOW_THROUGH_VIAS: return CustomRuleDisallowType::CRDT_THROUGH_VIAS;
+    case DRC_DISALLOW_MICRO_VIAS:   return CustomRuleDisallowType::CRDT_MICRO_VIAS;
+    case DRC_DISALLOW_BLIND_VIAS:   return CustomRuleDisallowType::CRDT_BLIND_VIAS;
+    case DRC_DISALLOW_BURIED_VIAS:  return CustomRuleDisallowType::CRDT_BURIED_VIAS;
+    case DRC_DISALLOW_TRACKS:       return CustomRuleDisallowType::CRDT_TRACKS;
+    case DRC_DISALLOW_PADS:         return CustomRuleDisallowType::CRDT_PADS;
+    case DRC_DISALLOW_ZONES:        return CustomRuleDisallowType::CRDT_ZONES;
+    case DRC_DISALLOW_TEXTS:        return CustomRuleDisallowType::CRDT_TEXTS;
+    case DRC_DISALLOW_GRAPHICS:     return CustomRuleDisallowType::CRDT_GRAPHICS;
+    case DRC_DISALLOW_HOLES:        return CustomRuleDisallowType::CRDT_HOLES;
+    case DRC_DISALLOW_FOOTPRINTS:   return CustomRuleDisallowType::CRDT_FOOTPRINTS;
+
+    default:
+        wxCHECK_MSG( false, CustomRuleDisallowType::CRDT_UNKNOWN,
+                     "Unhandled case in ToProtoEnum<DRC_DISALLOW_T>" );
+    }
+}
+
+
+template<>
+FLIP_DIRECTION FromProtoEnum( kiapi::board::commands::BoardFlipDirection aValue )
+{
+    switch( aValue )
+    {
+    case kiapi::board::commands::BoardFlipDirection::BFD_LEFT_RIGHT: return FLIP_DIRECTION::LEFT_RIGHT;
+
+    default:
+    case kiapi::board::commands::BoardFlipDirection::BFD_UNKNOWN:
+    case kiapi::board::commands::BoardFlipDirection::BFD_TOP_BOTTOM: return FLIP_DIRECTION::TOP_BOTTOM;
+    }
+}

@@ -292,7 +292,6 @@ void SCH_LABEL_BASE::swapData( SCH_ITEM* aItem )
     SCH_LABEL_BASE* label = static_cast<SCH_LABEL_BASE*>( aItem );
 
     m_fields.swap( label->m_fields );
-    std::swap( m_fieldsAutoplaced, label->m_fieldsAutoplaced );
 
     for( SCH_FIELD& field : m_fields )
         field.SetParent( this );
@@ -1624,9 +1623,9 @@ void packLabel( LabelProto& aOutput, const SCH_LABEL_BASE& aLabel )
                                           : kiapi::common::types::LockedState::LS_UNLOCKED );
 
     google::protobuf::Any any;
-    aLabel.EDA_TEXT::Serialize( any );
+    aLabel.EDA_TEXT::Serialize( any, schIUScale );
     any.UnpackTo( aOutput.mutable_text() );
-    kiapi::common::PackVector2( *aOutput.mutable_position(), aLabel.GetPosition() );
+    kiapi::common::PackVector2( *aOutput.mutable_position(), aLabel.GetPosition(), schIUScale );
 
     for( const SCH_FIELD& field : aLabel.GetFields() )
     {
@@ -1651,10 +1650,10 @@ bool unpackLabel( const LabelProto& aInput, SCH_LABEL_BASE& aLabel )
     google::protobuf::Any any;
     any.PackFrom( aInput.text() );
 
-    if( !aLabel.EDA_TEXT::Deserialize( any ) )
+    if( !aLabel.EDA_TEXT::Deserialize( any, schIUScale ) )
         return false;
 
-    aLabel.SetPosition( kiapi::common::UnpackVector2( aInput.position() ) );
+    aLabel.SetPosition( kiapi::common::UnpackVector2( aInput.position(), schIUScale ) );
     aLabel.GetFields().clear();
 
     for( const types::SchematicField& field : aInput.fields() )
@@ -1674,6 +1673,7 @@ void SCH_LABEL::Serialize( google::protobuf::Any& aContainer ) const
 
     packLabel( label, *this );
 
+    kiapi::common::PackCustomProperties( label.mutable_custom_properties(), *this );
     aContainer.PackFrom( label );
 }
 
@@ -1684,6 +1684,9 @@ bool SCH_LABEL::Deserialize( const google::protobuf::Any& aContainer )
 
     if( !aContainer.UnpackTo( &label ) )
         return false;
+
+    kiapi::common::UnpackCustomProperties( label.custom_properties(), *this );
+
 
     return unpackLabel( label, *this );
 }
@@ -1773,9 +1776,10 @@ void SCH_DIRECTIVE_LABEL::Serialize( google::protobuf::Any& aContainer ) const
 
     packLabel( label, *this );
     label.set_shape( ToProtoEnum<LABEL_FLAG_SHAPE, kiapi::schematic::types::SchematicLabelShape>( GetShape() ) );
-    label.mutable_pin_length()->set_value_nm( m_pinLength );
-    label.mutable_symbol_size()->set_value_nm( m_symbolSize );
+    kiapi::common::PackDistance( *label.mutable_pin_length(), m_pinLength, schIUScale );
+    kiapi::common::PackDistance( *label.mutable_symbol_size(), m_symbolSize, schIUScale );
 
+    kiapi::common::PackCustomProperties( label.mutable_custom_properties(), *this );
     aContainer.PackFrom( label );
 }
 
@@ -1787,16 +1791,19 @@ bool SCH_DIRECTIVE_LABEL::Deserialize( const google::protobuf::Any& aContainer )
     if( !aContainer.UnpackTo( &label ) )
         return false;
 
+    kiapi::common::UnpackCustomProperties( label.custom_properties(), *this );
+
+
     if( !unpackLabel( label, *this ) )
         return false;
 
     SetShape( FromProtoEnum<LABEL_FLAG_SHAPE, kiapi::schematic::types::SchematicLabelShape>( label.shape() ) );
 
     if( label.has_pin_length() )
-        m_pinLength = label.pin_length().value_nm();
+        m_pinLength = kiapi::common::UnpackDistance( label.pin_length(), schIUScale );
 
     if( label.has_symbol_size() )
-        m_symbolSize = label.symbol_size().value_nm();
+        m_symbolSize = kiapi::common::UnpackDistance( label.symbol_size(), schIUScale );
 
     return true;
 }
@@ -2135,9 +2142,9 @@ void SCH_GLOBALLABEL::Serialize( google::protobuf::Any& aContainer ) const
                                  : kiapi::common::types::LockedState::LS_UNLOCKED );
 
     google::protobuf::Any any;
-    EDA_TEXT::Serialize( any );
+    EDA_TEXT::Serialize( any, schIUScale );
     any.UnpackTo( label.mutable_text() );
-    kiapi::common::PackVector2( *label.mutable_position(), GetPosition() );
+    kiapi::common::PackVector2( *label.mutable_position(), GetPosition(), schIUScale );
 
     label.set_shape( ToProtoEnum<LABEL_FLAG_SHAPE, types::SchematicLabelShape>( GetShape() ) );
 
@@ -2157,6 +2164,7 @@ void SCH_GLOBALLABEL::Serialize( google::protobuf::Any& aContainer ) const
         fieldAny.UnpackTo( label.mutable_intersheet_refs_field() );
     }
 
+    kiapi::common::PackCustomProperties( label.mutable_custom_properties(), *this );
     aContainer.PackFrom( label );
 }
 
@@ -2167,6 +2175,9 @@ bool SCH_GLOBALLABEL::Deserialize( const google::protobuf::Any& aContainer )
 
     if( !aContainer.UnpackTo( &label ) )
         return false;
+
+    kiapi::common::UnpackCustomProperties( label.custom_properties(), *this );
+
 
     if( !unpackLabel( label, *this ) )
         return false;
@@ -2396,6 +2407,7 @@ void SCH_HIERLABEL::Serialize( google::protobuf::Any& aContainer ) const
     packLabel( label, *this );
     label.set_shape( ToProtoEnum<LABEL_FLAG_SHAPE, kiapi::schematic::types::SchematicLabelShape>( GetShape() ) );
 
+    kiapi::common::PackCustomProperties( label.mutable_custom_properties(), *this );
     aContainer.PackFrom( label );
 }
 
@@ -2406,6 +2418,9 @@ bool SCH_HIERLABEL::Deserialize( const google::protobuf::Any& aContainer )
 
     if( !aContainer.UnpackTo( &label ) )
         return false;
+
+    kiapi::common::UnpackCustomProperties( label.custom_properties(), *this );
+
 
     if( !unpackLabel( label, *this ) )
         return false;

@@ -2128,16 +2128,26 @@ void PCB_PAINTER::draw( const PCB_SHAPE* aShape, int aLayer )
         switch( aShape->GetShape() )
         {
         case SHAPE_T::SEGMENT:
+        {
+            VECTOR2I segStart = aShape->GetStart();
+            VECTOR2I segEnd = aShape->GetEnd();
+
+            if( !EDA_SHAPE::ShortenSegmentForEndings( segStart, segEnd, aShape->GetStartEnding(),
+                                                       aShape->GetEndEnding(), thickness ) )
+            {
+                break;
+            }
+
             if( aShape->IsProxyItem() )
             {
                 std::vector<VECTOR2I> pts;
-                VECTOR2I offset = ( aShape->GetEnd() - aShape->GetStart() ).Perpendicular();
+                VECTOR2I offset = ( segEnd - segStart ).Perpendicular();
                 offset = offset.Resize( thickness / 2 );
 
-                pts.push_back( aShape->GetStart() + offset );
-                pts.push_back( aShape->GetStart() - offset );
-                pts.push_back( aShape->GetEnd() - offset );
-                pts.push_back( aShape->GetEnd() + offset );
+                pts.push_back( segStart + offset );
+                pts.push_back( segStart - offset );
+                pts.push_back( segEnd - offset );
+                pts.push_back( segEnd + offset );
 
                 m_gal->SetLineWidth( m_pcbSettings.m_outlineWidth );
                 m_gal->DrawLine( pts[0], pts[1] );
@@ -2151,17 +2161,18 @@ void PCB_PAINTER::draw( const PCB_SHAPE* aShape, int aLayer )
             }
             else if( outline_mode )
             {
-                m_gal->DrawSegment( aShape->GetStart(), aShape->GetEnd(), thickness );
+                m_gal->DrawSegment( segStart, segEnd, thickness );
             }
             else if( lineStyle == LINE_STYLE::SOLID )
             {
                 m_gal->SetIsFill( true );
                 m_gal->SetIsStroke( false );
 
-                m_gal->DrawSegment( aShape->GetStart(), aShape->GetEnd(), thickness );
+                m_gal->DrawSegment( segStart, segEnd, thickness );
             }
 
             break;
+        }
 
         case SHAPE_T::RECTANGLE:
         {
@@ -2269,11 +2280,15 @@ void PCB_PAINTER::draw( const PCB_SHAPE* aShape, int aLayer )
             EDA_ANGLE startAngle;
             EDA_ANGLE endAngle;
             aShape->CalcArcAngles( startAngle, endAngle );
+            EDA_ANGLE arcAngle = endAngle - startAngle;
+
+            if( !aShape->ShortenArcForEndings( startAngle, arcAngle, aShape->GetRadius(), thickness ) )
+                break;
 
             if( outline_mode )
             {
                 m_gal->DrawArcSegment( aShape->GetCenter(), aShape->GetRadius(), startAngle,
-                                       endAngle - startAngle, thickness, m_maxError );
+                                       arcAngle, thickness, m_maxError );
             }
             else if( lineStyle == LINE_STYLE::SOLID )
             {
@@ -2281,7 +2296,7 @@ void PCB_PAINTER::draw( const PCB_SHAPE* aShape, int aLayer )
                 m_gal->SetIsStroke( false );
 
                 m_gal->DrawArcSegment( aShape->GetCenter(), aShape->GetRadius(), startAngle,
-                                       endAngle - startAngle, thickness, m_maxError );
+                                       arcAngle, thickness, m_maxError );
             }
             break;
         }
@@ -2320,6 +2335,33 @@ void PCB_PAINTER::draw( const PCB_SHAPE* aShape, int aLayer )
         case SHAPE_T::POLY:
         {
             SHAPE_POLY_SET&  shape = const_cast<PCB_SHAPE*>( aShape )->GetPolyShape();
+            bool             hasEndings = aShape->GetStartEnding().GetStyle() != LINE_ENDING_STYLE::NONE
+                              || aShape->GetEndEnding().GetStyle() != LINE_ENDING_STYLE::NONE;
+
+            auto drawOutlineBody = [&]( const SHAPE_LINE_CHAIN& aOutline, int aOutlineIdx )
+            {
+                if( aOutline.PointCount() < 2 )
+                    return;
+
+                if( hasEndings )
+                {
+                    std::vector<VECTOR2I> pts;
+
+                    if( !aShape->GetShortenedBodyPolyPoints( aOutline, aOutlineIdx, pts, thickness ) )
+                        return;
+
+                    SHAPE_LINE_CHAIN shortened;
+
+                    for( const VECTOR2I& pt : pts )
+                        shortened.Append( pt );
+
+                    shortened.SetClosed( aOutline.IsClosed() );
+                    m_gal->DrawSegmentChain( shortened, thickness );
+                    return;
+                }
+
+                m_gal->DrawSegmentChain( aOutline, thickness );
+            };
 
             if( shape.OutlineCount() == 0 )
                 break;
@@ -2327,7 +2369,7 @@ void PCB_PAINTER::draw( const PCB_SHAPE* aShape, int aLayer )
             if( outline_mode )
             {
                 for( int ii = 0; ii < shape.OutlineCount(); ++ii )
-                    m_gal->DrawSegmentChain( shape.Outline( ii ), thickness );
+                    drawOutlineBody( shape.COutline( ii ), ii );
             }
             else
             {
@@ -2337,7 +2379,7 @@ void PCB_PAINTER::draw( const PCB_SHAPE* aShape, int aLayer )
                 if( lineStyle == LINE_STYLE::SOLID && thickness > 0 )
                 {
                     for( int ii = 0; ii < shape.OutlineCount(); ++ii )
-                        m_gal->DrawSegmentChain( shape.Outline( ii ), thickness );
+                        drawOutlineBody( shape.COutline( ii ), ii );
                 }
 
                 if( isSolidFill )
@@ -2367,41 +2409,19 @@ void PCB_PAINTER::draw( const PCB_SHAPE* aShape, int aLayer )
         }
 
         case SHAPE_T::BEZIER:
-            if( outline_mode )
+        {
+            std::optional<BEZIER<double>> curve = aShape->ShortenedBezierCurve( thickness );
+
+            if( curve )
             {
-                std::vector<VECTOR2D> output;
-                std::vector<VECTOR2D> pointCtrl;
-
-                pointCtrl.push_back( aShape->GetStart() );
-                pointCtrl.push_back( aShape->GetBezierC1() );
-                pointCtrl.push_back( aShape->GetBezierC2() );
-                pointCtrl.push_back( aShape->GetEnd() );
-
-                BEZIER_POLY converter( pointCtrl );
-                converter.GetPoly( output, m_maxError );
-
-                m_gal->DrawSegmentChain( aShape->GetBezierPoints(), thickness );
-            }
-            else
-            {
-                m_gal->SetIsFill( aShape->IsSolidFill() );
-                m_gal->SetIsStroke( lineStyle == LINE_STYLE::SOLID && thickness > 0 );
+                m_gal->SetIsFill( false );
+                m_gal->SetIsStroke( true );
                 m_gal->SetLineWidth( thickness );
-
-                if( aShape->GetBezierPoints().size() > 2 )
-                {
-                    m_gal->DrawPolygon( aShape->GetBezierPoints() );
-                }
-                else
-                {
-                    m_gal->DrawCurve( VECTOR2D( aShape->GetStart() ),
-                                      VECTOR2D( aShape->GetBezierC1() ),
-                                      VECTOR2D( aShape->GetBezierC2() ),
-                                      VECTOR2D( aShape->GetEnd() ), m_maxError );
-                }
+                m_gal->DrawCurve( curve->Start, curve->C1, curve->C2, curve->End, m_maxError );
             }
 
             break;
+        }
 
         case SHAPE_T::UNDEFINED:
             break;
@@ -2416,7 +2436,7 @@ void PCB_PAINTER::draw( const PCB_SHAPE* aShape, int aLayer )
             m_gal->SetIsStroke( false );
         }
 
-        std::vector<SHAPE*> shapes = aShape->MakeEffectiveShapesForStroking();
+        std::vector<SHAPE*> shapes = aShape->MakeEffectiveShapesForStroking( thickness );
 
         for( SHAPE* shape : shapes )
         {
@@ -2441,6 +2461,21 @@ void PCB_PAINTER::draw( const PCB_SHAPE* aShape, int aLayer )
 
         for( const SEG& seg : aShape->GetHatchLines() )
             m_gal->DrawLine( seg.A, seg.B );
+    }
+
+    if( aShape->GetStartEnding().GetStyle() != LINE_ENDING_STYLE::NONE
+        || aShape->GetEndEnding().GetStyle() != LINE_ENDING_STYLE::NONE )
+    {
+        EDA_ANGLE startTangent, endTangent;
+        aShape->GetEndingTangents( startTangent, endTangent, thickness );
+
+        VECTOR2I startPt, endPt;
+
+        if( aShape->GetLineEndingEndpoints( startPt, endPt ) )
+        {
+            aShape->GetStartEnding().Draw( *m_gal, startPt, startTangent, thickness, color );
+            aShape->GetEndEnding().Draw( *m_gal, endPt, endTangent, thickness, color );
+        }
     }
 }
 

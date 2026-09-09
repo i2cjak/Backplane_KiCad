@@ -268,12 +268,65 @@ struct KIFACE
         return false;
     }
 
+    /**
+     * Open a footprint library item for headless API access.  The project path
+     * may be empty when the caller wants the current/null project settings.
+     */
+    virtual bool HandleApiOpenFootprint( const wxString& aProjectPath,
+                                         const wxString& aLibId,
+                                         KICAD_API_SERVER* aServer,
+                                         wxString* aError )
+    {
+        (void) aProjectPath;
+        (void) aLibId;
+        (void) aServer;
+
+        if( aError )
+            *aError = wxS( "OpenDocument is not implemented for footprint library items on this face" );
+
+        return false;
+    }
+
     virtual bool HandleApiCloseDocument( const wxString& aBoardFileName,
                                          KICAD_API_SERVER* aServer,
                                          wxString* aError )
     {
         if( aError )
             *aError = wxS( "CloseDocument is not implemented for this face" );
+
+        return false;
+    }
+
+    /**
+     * Close an API document, optionally discarding unsaved changes.
+     *
+     * The three-argument overload above is retained for existing KIFACEs and
+     * has the safe, non-forced behavior.  Headless document owners should
+     * override this overload when they can determine their dirty state.
+     */
+    virtual bool HandleApiCloseDocument( const wxString& aBoardFileName,
+                                         KICAD_API_SERVER* aServer,
+                                         bool aForce,
+                                         wxString* aError )
+    {
+        (void) aForce;
+        return HandleApiCloseDocument( aBoardFileName, aServer, aError );
+    }
+
+    /**
+     * Query whether the named headless API document has unsaved changes.
+     */
+    virtual bool HandleApiDocumentIsModified( const wxString& aFileName,
+                                              bool* aModified,
+                                              wxString* aError )
+    {
+        (void) aFileName;
+
+        if( aModified )
+            *aModified = false;
+
+        if( aError )
+            *aError = wxS( "Document modified state is not implemented for this face" );
 
         return false;
     }
@@ -485,9 +538,20 @@ public:
                                  KICAD_API_SERVER* aServer,
                                  wxString* aError = nullptr );
 
+    bool ProcessApiOpenFootprint( KIWAY::FACE_T aFace, const wxString& aProjectPath,
+                                  const wxString& aLibId, KICAD_API_SERVER* aServer,
+                                  wxString* aError = nullptr );
+
     bool ProcessApiCloseDocument( KIWAY::FACE_T aFace, const wxString& aPath,
                                   KICAD_API_SERVER* aServer,
                                   wxString* aError = nullptr );
+
+    bool ProcessApiCloseDocument( KIWAY::FACE_T aFace, const wxString& aPath,
+                                  KICAD_API_SERVER* aServer, bool aForce,
+                                  wxString* aError = nullptr );
+
+    bool ProcessApiDocumentIsModified( KIWAY::FACE_T aFace, const wxString& aPath,
+                                       bool* aModified, wxString* aError = nullptr );
 
     /**
      * Gets the window pointer to the blocking dialog (to send it signals)

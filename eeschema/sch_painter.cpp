@@ -1923,8 +1923,22 @@ void SCH_PAINTER::draw( const SCH_LINE* aLine, int aLayer )
     }
     else
     {
-        curr_wire_shape.emplace_back( aLine->GetStartPoint().x, aLine->GetStartPoint().y, 0 );
-        curr_wire_shape.emplace_back( aLine->GetEndPoint().x, aLine->GetEndPoint().y, 0 );
+        VECTOR2I lineStart = aLine->GetStartPoint();
+        VECTOR2I lineEnd = aLine->GetEndPoint();
+        bool     drawLineBody = true;
+
+        if( aLine->IsGraphicLine() )
+        {
+            drawLineBody = EDA_SHAPE::ShortenSegmentForEndings( lineStart, lineEnd,
+                                                                aLine->GetStartEnding(), aLine->GetEndEnding(),
+                                                                KiROUND( width ) );
+        }
+
+        if( drawLineBody )
+        {
+            curr_wire_shape.emplace_back( lineStart.x, lineStart.y, 0 );
+            curr_wire_shape.emplace_back( lineEnd.x, lineEnd.y, 0 );
+        }
     }
 
     for( size_t ii = 1; ii < curr_wire_shape.size(); ii++ )
@@ -1961,6 +1975,16 @@ void SCH_PAINTER::draw( const SCH_LINE* aLine, int aLayer )
 
             m_gal->DrawArc( center, ( dstart - center ).EuclideanNorm(), startAngle, angle );
         }
+    }
+
+    if( aLine->IsGraphicLine() && !drawingShadows )
+    {
+        VECTOR2I start = aLine->GetStartPoint();
+        VECTOR2I end = aLine->GetEndPoint();
+        EDA_ANGLE lineAngle( end - start );
+
+        aLine->GetStartEnding().Draw( *m_gal, start, lineAngle + ANGLE_180, width, color );
+        aLine->GetEndEnding().Draw( *m_gal, end, lineAngle, width, color );
     }
 }
 
@@ -2179,6 +2203,23 @@ void SCH_PAINTER::draw( const SCH_SHAPE* aShape, int aLayer, bool aDimmed )
 
                 for( SHAPE* shape : shapes )
                     delete shape;
+            }
+        }
+
+        // Draw endpoint shapes for open graphic shapes after the body.  EDA_SHAPE's
+        // hit-testing and bounding-box code use the same endpoint geometry.
+        if( !aShape->IsClosed()
+            && ( aShape->GetStartEnding().GetStyle() != LINE_ENDING_STYLE::NONE
+                 || aShape->GetEndEnding().GetStyle() != LINE_ENDING_STYLE::NONE ) )
+        {
+            EDA_ANGLE startTangent, endTangent;
+            VECTOR2I  startPt, endPt;
+
+            if( aShape->GetLineEndingEndpoints( startPt, endPt ) )
+            {
+                aShape->GetEndingTangents( startTangent, endTangent, KiROUND( lineWidth ) );
+                aShape->GetStartEnding().Draw( *m_gal, startPt, startTangent, lineWidth, color );
+                aShape->GetEndEnding().Draw( *m_gal, endPt, endTangent, lineWidth, color );
             }
         }
     }

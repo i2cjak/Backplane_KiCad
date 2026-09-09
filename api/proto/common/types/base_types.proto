@@ -78,6 +78,18 @@ message KIID
   string value = 1;
 }
 
+// Opaque identity used when a rule checker exclusion refers to a marker whose
+// domain-specific details are owned by the board or schematic document.
+message RuleCheckerMarkerID
+{
+  string opaque_id = 1;
+}
+
+message RuleCheckerMarker
+{
+  RuleCheckerMarkerID id = 1;
+}
+
 /**
  * Identifier for the type of document being targeted by a request
  */
@@ -407,6 +419,24 @@ message GraphicBezierAttributes
   kiapi.common.types.Vector2  end      = 4;
 }
 
+enum LineEndingStyle
+{
+  LES_UNKNOWN    = 0;
+  LES_NONE       = 1;
+  LES_ARROW      = 2;
+  LES_CIRCLE     = 3;
+  LES_SQUARE     = 4;
+  LES_ARROW_OPEN = 5;
+}
+
+message LineEnding
+{
+  LineEndingStyle style = 1;
+  optional kiapi.common.types.Distance length = 2;
+  optional kiapi.common.types.Distance width = 3;
+  optional kiapi.common.types.StrokeAttributes stroke = 4;
+}
+
 message GraphicShape
 {
   // Reserved for future use; base EDA_SHAPE doesn't have an ID or locked state right now
@@ -422,6 +452,9 @@ message GraphicShape
     PolySet                      polygon    = 8;
     GraphicBezierAttributes      bezier     = 9;
   }
+
+  optional LineEnding start_ending = 12;
+  optional LineEnding end_ending   = 13;
 }
 
 // A SHAPE_COMPOUND in KiCad
@@ -550,4 +583,11 @@ message PageSettings
   // Path to a .kicad_wks drawing sheet file.
   // Empty string means the default (built-in) drawing sheet is used.
   string drawing_sheet = 5;
+}
+
+// An arbitrary user-defined string property attached to an item.
+message CustomProperty
+{
+  string key = 1;
+  string value = 2;
 }
