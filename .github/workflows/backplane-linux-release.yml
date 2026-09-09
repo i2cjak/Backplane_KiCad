@@ -25,6 +25,97 @@ jobs:
           ref: ${{ inputs.ref || github.sha }}
           fetch-depth: 1
 
+      - name: Install Git LFS for library checkout
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y git-lfs
+
+      - name: Fetch pinned official KiCad libraries
+        shell: bash
+        env:
+          KICAD_LIBRARY_TAG: 10.0.6
+          KICAD_SYMBOLS_COMMIT: 7800d91437ce44e2ed0928f2ad31a287457b8a68
+          KICAD_FOOTPRINTS_COMMIT: 819223b66f96508feaeaa305301b5e6bb5c1038b
+          KICAD_3DMODELS_COMMIT: e62ed1fc7862da83f789bd562671b5e4b82afcdf
+          KICAD_TEMPLATES_COMMIT: 46d7ee8fe0c19837672c33c3747c2fe87eaae853
+        run: |
+          set -euo pipefail
+          library_root="$RUNNER_TEMP/kicad-libraries"
+          stage_root="$RUNNER_TEMP/kicad-library-stage/share/kicad"
+          mkdir -p "$library_root" "$stage_root/symbols" "$stage_root/footprints" "$stage_root/3dmodels" "$stage_root/template"
+
+          clone_library() {
+            local name="$1" commit="$2"
+            local checkout="$library_root/$name"
+            git clone --depth 1 --no-tags --branch "$KICAD_LIBRARY_TAG" \
+              "https://gitlab.com/kicad/libraries/$name.git" "$checkout"
+            test "$(git -C "$checkout" rev-parse HEAD)" = "$commit"
+            if [ "$name" = kicad-packages3D ]; then
+              command -v git-lfs >/dev/null
+              git -C "$checkout" lfs pull
+            fi
+            printf 'repository=https://gitlab.com/kicad/libraries/%s.git\nref=%s\ncommit=%s\n' \
+              "$name" "$KICAD_LIBRARY_TAG" "$commit" > "$checkout/BACKPLANE_SOURCE.txt"
+          }
+
+          clone_library kicad-symbols "$KICAD_SYMBOLS_COMMIT"
+          clone_library kicad-footprints "$KICAD_FOOTPRINTS_COMMIT"
+          clone_library kicad-packages3D "$KICAD_3DMODELS_COMMIT"
+          clone_library kicad-templates "$KICAD_TEMPLATES_COMMIT"
+
+          find "$library_root/kicad-symbols" -maxdepth 1 -type d -name '*.kicad_symdir' \
+            -exec cp -a {} "$stage_root/symbols/" \;
+          find "$library_root/kicad-footprints" -maxdepth 1 -type d -name '*.pretty' \
+            -exec cp -a {} "$stage_root/footprints/" \;
+          find "$library_root/kicad-packages3D" -maxdepth 1 -type d -name '*.3dshapes' \
+            -exec cp -a {} "$stage_root/3dmodels/" \;
+          test "$(find "$stage_root/symbols" -type f -name '*.kicad_sym' | wc -l)" -gt 0
+          test "$(find "$stage_root/footprints" -type f | wc -l)" -gt 0
+          test "$(find "$stage_root/3dmodels" -type f | wc -l)" -gt 0
+          test "$(find "$stage_root/3dmodels" -type f -size +1k | wc -l)" -gt 0
+
+          cp "$library_root/kicad-symbols/sym-lib-table" "$stage_root/template/sym-lib-table"
+          cp "$library_root/kicad-footprints/fp-lib-table" "$stage_root/template/fp-lib-table"
+          cp -a "$library_root/kicad-templates/Projects" "$stage_root/template/"
+          cp -a "$library_root/kicad-templates/Worksheets" "$stage_root/template/"
+          cat > "$stage_root/sym-lib-table" <<'TABLE'
+          (sym_lib_table
+            (version 7)
+            (lib (name "KiCad")(type "Table")(uri "${KICAD10_TEMPLATE_DIR}/sym-lib-table")(options "")(descr "Official KiCad symbol libraries"))
+          )
+          TABLE
+          cat > "$stage_root/design-block-lib-table" <<'TABLE'
+          (design_block_lib_table
+            (version 7)
+          )
+          TABLE
+          cat > "$stage_root/fp-lib-table" <<'TABLE'
+          (fp_lib_table
+            (version 7)
+            (lib (name "KiCad")(type "Table")(uri "${KICAD10_TEMPLATE_DIR}/fp-lib-table")(options "")(descr "Official KiCad footprint libraries"))
+          )
+          TABLE
+
+          mkdir -p "$RUNNER_TEMP/kicad-library-stage/licenses/kicad-libraries"
+          for name in kicad-symbols kicad-footprints kicad-packages3D kicad-templates; do
+            destination="$RUNNER_TEMP/kicad-library-stage/licenses/kicad-libraries/$name"
+            mkdir -p "$destination"
+            cp "$library_root/$name/BACKPLANE_SOURCE.txt" "$destination/"
+            find "$library_root/$name" -maxdepth 1 -type f \
+              \( -iname 'LICENSE*' -o -iname 'COPYING*' -o -iname 'NOTICE*' -o -iname 'README*' \) \
+              -exec cp {} "$destination/" \;
+          done
+
+          # Keep source snapshots alongside the binary runtime so users can
+          # inspect the exact library revisions used in this release.
+          mkdir -p "$RUNNER_TEMP/kicad-library-source"
+          for name in kicad-symbols kicad-footprints kicad-packages3D kicad-templates; do
+            tar -C "$library_root/$name" --exclude=.git -czf \
+              "$RUNNER_TEMP/kicad-library-source/$name-$KICAD_LIBRARY_TAG-source.tar.gz" .
+          done
+          # Keep one staged copy while the native build runs.
+          rm -rf "$library_root"
+
       - name: Install KiCad build dependencies
         run: |
           sudo apt-get update
@@ -68,6 +159,8 @@ jobs:
             -DKICAD_SCRIPTING_WXPYTHON=OFF \
             -DKICAD_USE_PCH=OFF \
             -DKICAD_IPC_API=ON \
+            -DPYTHON_EXECUTABLE=/usr/bin/python3 \
+            -DPYTHON_LIBRARY=/usr/lib/x86_64-linux-gnu/libpython3.12.so \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
@@ -108,10 +201,41 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Resolve KiCad's installed shared libraries while assembling the ELF closure.
+          export LD_LIBRARY_PATH="$PWD/stage/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           version="$(stage/bin/kicad-cli --version | head -n 1 | tr ' /' '__')"
           archive_root="backplane-kicad-linux-x86_64-${version}"
           mkdir -p "release/${archive_root}/licenses"
           cp -a stage/. "release/${archive_root}/"
+          # Compilation outputs are no longer needed; retain room for the complete libraries.
+          rm -rf build/backplane-linux
+          mkdir -p "release/${archive_root}/share/kicad"
+          for directory in symbols footprints 3dmodels; do
+            mv "$RUNNER_TEMP/kicad-library-stage/share/kicad/$directory" "release/${archive_root}/share/kicad/"
+          done
+          cp -a "$RUNNER_TEMP/kicad-library-stage/share/kicad/." "release/${archive_root}/share/kicad/"
+          cp -a "$RUNNER_TEMP/kicad-library-stage/licenses/kicad-libraries" \
+            "release/${archive_root}/licenses/"
+          cp "$RUNNER_TEMP/kicad-library-source/"*.tar.gz release/
+          cat "release/${archive_root}/licenses/kicad-libraries/"*/BACKPLANE_SOURCE.txt > \
+            "release/${archive_root}/KICAD_LIBRARY_SOURCES.txt"
+          test -s "release/${archive_root}/share/kicad/sym-lib-table"
+          test -s "release/${archive_root}/share/kicad/fp-lib-table"
+          test -s "release/${archive_root}/share/kicad/design-block-lib-table"
+          test "$(find "release/${archive_root}/share/kicad/symbols" -type f -name '*.kicad_sym' | wc -l)" -gt 0
+          test "$(find "release/${archive_root}/share/kicad/footprints" -type f | wc -l)" -gt 0
+          test "$(find "release/${archive_root}/share/kicad/3dmodels" -type f | wc -l)" -gt 0
+          if grep -RIlq '^version https://git-lfs.github.com/spec/v1' "release/${archive_root}/share/kicad/3dmodels"; then
+            echo 'unhydrated Git LFS pointer found in bundled 3D models' >&2
+            exit 1
+          fi
+          python_stdlib="$(/usr/bin/python3 -c 'import sysconfig; print(sysconfig.get_path("stdlib"))')"
+          python_version="$(/usr/bin/python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')"
+          test "$python_version" = 3.12
+          mkdir -p "release/${archive_root}/lib/python${python_version}" "release/${archive_root}/lib/python3/dist-packages"
+          cp -a "$python_stdlib/." "release/${archive_root}/lib/python${python_version}/"
+          printf 'systemPython=%s\nstdlib=%s\n' "$python_version" "$python_stdlib" \
+            > "release/${archive_root}/PYTHON_RUNTIME.txt"
           cp LICENSE* AUTHORS.txt README.md "release/${archive_root}/licenses/"
           cp -a /usr/share/common-licenses "release/${archive_root}/licenses/"
           mkdir -p "release/${archive_root}/licenses/vendor"
@@ -152,6 +276,11 @@ jobs:
           }
           record_package_notice ngspice
           record_package_notice libngspice0
+          for package_id in "python${python_version}" "python${python_version}-minimal" "libpython${python_version}-minimal" "libpython${python_version}-stdlib"; do
+            if dpkg-query -W "$package_id" >/dev/null 2>&1; then
+              record_package_notice "$package_id"
+            fi
+          done
           for binary in "${elf_files[@]}"; do
             file -b "$binary" | grep -q 'ELF' || continue
             lddtree -l "$binary" > "$RUNNER_TEMP/kicad-library-list"
@@ -171,17 +300,40 @@ jobs:
               esac
             done < "$RUNNER_TEMP/kicad-library-list"
           done
-          mv "release/${archive_root}/bin/kicad-cli" "release/${archive_root}/bin/kicad-cli.real"
-          cat > "release/${archive_root}/bin/kicad-cli" <<'LAUNCHER'
+          runtime_root="release/${archive_root}"
+          for executable in bitmap2component cvpcb dxf2idf eeschema gerbview idf2vrml idfcyl idfrect kicad kicad-cli pcb_calculator pcbnew pl_editor; do
+            if [ ! -x "$runtime_root/bin/$executable" ]; then
+              continue
+            fi
+            mv "$runtime_root/bin/$executable" "$runtime_root/bin/$executable.real"
+            cat > "$runtime_root/bin/$executable" <<'LAUNCHER'
           #!/usr/bin/env sh
           set -eu
           root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
           export KICAD_KIFACE_HOME="$root/bin"
           export KICAD_STOCK_DATA_HOME="$root/share/kicad"
           export KICAD_STOCK_PLUGIN_HOME="$root/lib/kicad/plugins"
-          exec "$root/lib/ld-linux-x86-64.so.2" --library-path "$root/lib" "$root/bin/kicad-cli.real" "$@"
+          export KICAD10_SYMBOL_DIR="${KICAD10_SYMBOL_DIR-$root/share/kicad/symbols}"
+          export KICAD10_FOOTPRINT_DIR="${KICAD10_FOOTPRINT_DIR-$root/share/kicad/footprints}"
+          export KICAD10_3DMODEL_DIR="${KICAD10_3DMODEL_DIR-$root/share/kicad/3dmodels}"
+          export KICAD10_TEMPLATE_DIR="${KICAD10_TEMPLATE_DIR-$root/share/kicad/template}"
+          export PYTHONHOME="${PYTHONHOME-$root}"
+          export PYTHONPATH="${PYTHONPATH-$root/lib/python3/dist-packages}"
+          config_root="${KICAD_CONFIG_HOME-${XDG_CONFIG_HOME-$HOME/.config}/kicad}/10.0"
+          mkdir -p "$config_root"
+          for table in sym-lib-table fp-lib-table design-block-lib-table; do
+            if [ ! -e "$config_root/$table" ]; then
+              temporary_table=$(mktemp "$config_root/.$table.XXXXXX")
+              cp "$root/share/kicad/$table" "$temporary_table"
+              ln "$temporary_table" "$config_root/$table" 2>/dev/null || true
+              rm -f "$temporary_table"
+            fi
+          done
+          program=$(basename "$0")
+          exec "$root/lib/ld-linux-x86-64.so.2" --library-path "$root/lib" "$root/bin/$program.real" "$@"
           LAUNCHER
-          chmod +x "release/${archive_root}/bin/kicad-cli"
+            chmod +x "$runtime_root/bin/$executable"
+          done
           {
             echo "Backplane KiCad Linux runtime"
             echo "Source commit: $(git rev-parse HEAD)"
@@ -191,11 +343,21 @@ jobs:
           } > "release/${archive_root}/RUNTIME_MANIFEST.txt"
           # The runtime must work after relocation, with its build prefix absent.
           mv stage "$RUNNER_TEMP/kicad-build-stage"
+          unset LD_LIBRARY_PATH
           "release/${archive_root}/bin/kicad-cli" --version
           "release/${archive_root}/bin/kicad-cli" api-server --help
           "$RUNNER_TEMP/ipc-smoke-venv/bin/python" scripts/backplane-ipc-smoke.py "release/${archive_root}/bin/kicad-cli"
+          /usr/bin/python3 scripts/backplane-library-smoke.py "release/${archive_root}"
+          du -sh "release/${archive_root}/share/kicad/3dmodels" "release/${archive_root}"
           (cd release && tar -czf "${archive_root}.tar.gz" "${archive_root}")
-          (cd release && sha256sum "${archive_root}.tar.gz" "${archive_root}-source.tar.gz" > SHA256SUMS)
+          for archive in release/*.tar.gz; do
+            size_bytes="$(stat -c '%s' "$archive")"
+            test "$size_bytes" -lt 2147483648 || {
+              echo "GitHub release asset exceeds the 2 GiB limit: $archive ($size_bytes bytes)" >&2
+              exit 1
+            }
+          done
+          (cd release && sha256sum ./*.tar.gz > SHA256SUMS)
 
       - name: Upload runtime archive
         uses: actions/upload-artifact@v4
@@ -204,7 +366,7 @@ jobs:
           compression-level: 0
           retention-days: 1
           path: |
-            release/backplane-kicad-linux-x86_64-*.tar.gz
+            release/*.tar.gz
             release/SHA256SUMS
           if-no-files-found: error
 

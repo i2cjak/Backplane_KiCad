@@ -687,10 +687,21 @@ const wxString& PATHS::GetExecutablePath()
 #else
         wxString envPath;
 
+        // A bundled KiCad runtime has its own bin directory even when the host
+        // application sets APPDIR or invokes us through a relocated ELF loader.
+        if( wxGetEnv( wxT( "KICAD_KIFACE_HOME" ), &envPath ) && !envPath.IsEmpty() )
+        {
+            envPath.Replace( WIN_STRING_DIR_SEP, UNIX_STRING_DIR_SEP );
+
+            if( !envPath.EndsWith( wxT( "/" ) ) )
+                envPath += wxT( "/" );
+
+            exe_path = envPath;
+        }
         // When running inside an AppImage, the bundled ld-linux is invoked as a wrapper
         // which causes /proc/self/exe to resolve to the dynamic linker rather than the
         // actual binary. Use APPDIR to construct the correct executable path.
-        if( wxGetEnv( wxT( "APPDIR" ), &envPath ) )
+        else if( wxGetEnv( wxT( "APPDIR" ), &envPath ) )
         {
             envPath.Replace( WIN_STRING_DIR_SEP, UNIX_STRING_DIR_SEP );
 
