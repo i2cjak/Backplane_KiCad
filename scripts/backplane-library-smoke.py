@@ -171,8 +171,11 @@ def main() -> None:
         glb = root / "resistor.glb"
         run(cli, ["pcb", "export", "glb", "--output", str(glb), str(board)], env, root)
         document = glb_json(glb)
-        names = json.dumps(document, sort_keys=True)
-        if "R_0603_1608Metric" not in names or not document.get("meshes"):
+        model_meshes = [
+            mesh for mesh in document.get("meshes", [])
+            if "R_0603_1608Metric" in mesh.get("name", "") and mesh.get("primitives")
+        ]
+        if not model_meshes:
             raise RuntimeError("GLB does not contain the R_0603_1608Metric model mesh")
     print("Backplane KiCad standard-library smoke passed")
 
