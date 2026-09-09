@@ -76,8 +76,10 @@ jobs:
 
           cp "$library_root/kicad-symbols/sym-lib-table" "$stage_root/template/sym-lib-table"
           cp "$library_root/kicad-footprints/fp-lib-table" "$stage_root/template/fp-lib-table"
-          cp -a "$library_root/kicad-templates/Projects" "$stage_root/template/"
-          cp -a "$library_root/kicad-templates/Worksheets" "$stage_root/template/"
+          # Match kicad-templates' install layout so KiCad discovers each template.
+          cp -a "$library_root/kicad-templates/Projects/." "$stage_root/template/"
+          find "$library_root/kicad-templates/Worksheets" -type f -name '*.kicad_wks' \
+            -exec cp {} "$stage_root/template/" \;
           cat > "$stage_root/sym-lib-table" <<'TABLE'
           (sym_lib_table
             (version 7)
