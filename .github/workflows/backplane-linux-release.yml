@@ -204,7 +204,7 @@ jobs:
         run: |
           set -euo pipefail
           # Resolve KiCad's installed shared libraries while assembling the ELF closure.
-          export LD_LIBRARY_PATH="$PWD/stage/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export LD_LIBRARY_PATH="$PWD/stage/lib:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/usr/lib:/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           version="$(stage/bin/kicad-cli --version | head -n 1 | tr ' /' '__')"
           archive_root="backplane-kicad-linux-x86_64-${version}"
           mkdir -p "release/${archive_root}/licenses"
@@ -260,8 +260,9 @@ jobs:
           mkdir -p "release/${archive_root}/lib/ngspice"
           cp -L /usr/lib/x86_64-linux-gnu/libngspice.so.0 "release/${archive_root}/lib/"
           cp -L /usr/lib/x86_64-linux-gnu/ngspice/*.cm "release/${archive_root}/lib/ngspice/"
-          mapfile -d '' elf_files < <(find "release/${archive_root}" -type f \( -perm /111 -o -name '*.so*' -o -name '*.cm' \) -print0)
+          mapfile -d '' elf_files < <(find "release/${archive_root}" -type f \( -perm /111 -o -name '*.so*' -o -name '*.kiface' -o -name '*.cm' \) -print0)
           declare -A package_notices=()
+          declare -A bundled_libraries=()
           record_package_notice() {
             local package_id="$1"
             if [ -n "${package_notices[$package_id]+set}" ]; then return; fi
@@ -289,6 +290,8 @@ jobs:
             while IFS= read -r library; do
               case "$library" in
                 /*)
+                  if [ -n "${bundled_libraries[$library]+set}" ]; then continue; fi
+                  bundled_libraries[$library]=1
                   mkdir -p "release/${archive_root}/lib"
                   destination="release/${archive_root}/lib/$(basename "$library")"
                   if [ -f "$destination" ]; then
@@ -337,6 +340,22 @@ jobs:
           LAUNCHER
             chmod +x "$runtime_root/bin/$executable"
           done
+          # Every ELF module, including non-executable KIFACEs, must resolve
+          # against the relocated runtime library directory.  Keep this gate
+          # after launcher setup so the .real executables are checked too.
+          runtime_lib_dir="$runtime_root/lib"
+          missing_soname=0
+          while IFS= read -r -d '' elf; do
+            file -b "$elf" | grep -q 'ELF' || continue
+            while IFS= read -r soname; do
+              [ -z "$soname" ] && continue
+              if [ ! -f "$runtime_lib_dir/$soname" ]; then
+                echo "Missing packaged ELF dependency: $soname (needed by $elf)" >&2
+                missing_soname=1
+              fi
+            done < <(readelf -d "$elf" 2>/dev/null | sed -n 's/.*Shared library: \[\([^]]*\)\].*/\1/p')
+          done < <(find "$runtime_root" -type f \( -perm /111 -o -name '*.so*' -o -name '*.kiface' -o -name '*.cm' \) -print0)
+          test "$missing_soname" -eq 0
           {
             echo "Backplane KiCad Linux runtime"
             echo "Source commit: $(git rev-parse HEAD)"
