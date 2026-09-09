@@ -248,13 +248,15 @@ def main():
                         server.wait()
 
         # Use the same relocated CLI entry point as Backplane's BOM and 3D
-        # viewers. This also exercises libraries loaded after process startup.
+        # viewers. The legacy demo contains VRML models unsupported by the
+        # Ubuntu 24.04 OCCT build, so test its board geometry here. The separate
+        # backplane-library-smoke.py gate verifies bundled STEP model meshes.
         exported = root / "exports"
         exported.mkdir()
         commands = (
             ["sch", "export", "bom", "--output", str(exported / "bom.csv"), str(sch_path)],
             ["sch", "export", "svg", "--output", str(exported / "schematic"), str(sch_path)],
-            ["pcb", "export", "glb", "--subst-models", "--include-tracks", "--include-pads",
+            ["pcb", "export", "glb", "--no-components", "--subst-models", "--include-tracks", "--include-pads",
              "--include-zones", "--include-silkscreen", "--include-soldermask",
              "--cut-vias-in-body", "--output", str(exported / "board.glb"),
              str(populated / "ecc83-pp.kicad_pcb")],
