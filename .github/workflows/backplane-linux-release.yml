@@ -37,7 +37,7 @@ jobs:
           KICAD_SYMBOLS_COMMIT: 7800d91437ce44e2ed0928f2ad31a287457b8a68
           KICAD_FOOTPRINTS_COMMIT: 819223b66f96508feaeaa305301b5e6bb5c1038b
           KICAD_3DMODELS_COMMIT: e62ed1fc7862da83f789bd562671b5e4b82afcdf
-          KICAD_TEMPLATES_COMMIT: 46d7ee8fe0c19837672c33c3747c2fe87eaae853
+          KICAD_TEMPLATES_COMMIT: 3ed4538b0f965d821df63a5fffc4441e723cfe7f
         run: |
           set -euo pipefail
           library_root="$RUNNER_TEMP/kicad-libraries"
