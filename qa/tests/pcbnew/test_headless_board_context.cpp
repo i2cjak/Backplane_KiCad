@@ -22,7 +22,6 @@
 
 #include <api/headless_board_context.h>
 #include <board.h>
-#include <board_loader.h>
 #include <pcb_io/pcb_io_mgr.h>
 #include <pcbnew_utils/board_file_utils.h>
 #include <settings/settings_manager.h>
@@ -58,10 +57,10 @@ BOOST_FIXTURE_TEST_CASE( HeadlessBoardContextBasics, HEADLESS_BOARD_CONTEXT_TEST
 {
     PROJECT* project = loadProject( "reference_images_load_save" );
 
-    std::unique_ptr<BOARD> board =
-            BOARD_LOADER::Load( boardPath( "reference_images_load_save" ),
-                                PCB_IO_MGR::KICAD_SEXP,
-                                project );
+    // Load the board the way the headless API server does
+    std::unique_ptr<BOARD> board( PCB_IO_MGR::Load( PCB_IO_MGR::KICAD_SEXP,
+                                                    boardPath( "reference_images_load_save" ),
+                                                    nullptr, nullptr, project ) );
 
     BOOST_REQUIRE( board );
 
