@@ -374,7 +374,7 @@ jobs:
           "release/${archive_root}/bin/kicad-cli" --version
           "release/${archive_root}/bin/kicad-cli" api-server --help
           "$RUNNER_TEMP/ipc-smoke-venv/bin/python" scripts/backplane-ipc-smoke.py "release/${archive_root}/bin/kicad-cli"
-          for regression in document-ipc footprint-ipc schematic-ipc schematic-units pcb-ipc crossprobe-ipc ipc-mutation ipc-variant ipc-embedded ipc-export ipc-rulecheck; do
+          for regression in document-ipc footprint-ipc schematic-ipc schematic-units pcb-ipc crossprobe-ipc ipc-mutation ipc-variant ipc-embedded ipc-export ipc-rulecheck sketch-router-ipc; do
             "$RUNNER_TEMP/ipc-smoke-venv/bin/python" "scripts/backplane-${regression}-regression.py" \
               "release/${archive_root}/bin/kicad-cli"
           done

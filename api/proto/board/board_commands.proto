@@ -583,6 +583,92 @@ message FlipItemsResponse
   repeated ItemFlipResult flipped_items = 3;
 }
 
+//// Routing ////
+
+// Corner style of routes made by SketchRoute
+enum SketchRouteCornerMode
+{
+  SRCM_UNKNOWN = 0;
+
+  // 45 degree corners (the default)
+  SRCM_MITERED_45 = 1;
+
+  // 45 degree corners rounded with arcs
+  SRCM_ROUNDED_45 = 2;
+
+  // 90 degree corners
+  SRCM_MITERED_90 = 3;
+
+  // 90 degree corners rounded with arcs
+  SRCM_ROUNDED_90 = 4;
+}
+
+// Routes the unrouted connections between the given items with the sketch router: an
+// autorouter for a group of connections that keeps them together as a bundle, runs it along
+// a guide path if one is given, and adds vias where a connection has to change layers.
+// Routes respect the board's design rules and never overlap existing copper.
+//
+// The new tracks, arcs and vias are added to the client's open commit if there is one (see
+// BeginCommit), so they can be kept or dropped with the rest of the commit; otherwise they are
+// committed at once as a single undo step.  Routes are found on the board as it stands: items
+// still pending in an open commit are not taken into account.
+//
+// Available in the PCB editor and in a headless kicad-cli api-server.
+// Since: 10.0.6 (Backplane)
+// Returns SketchRouteResponse
+message SketchRoute
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+
+  // Pads, footprints (standing for all of their pads), tracks or vias whose unrouted
+  // connections should be routed.  When empty, the current selection is used.
+  repeated kiapi.common.types.KIID items = 2;
+
+  // Optional path for the bundle to follow, as drawn with the sketch tool.  Arcs are
+  // approximated.  Leave empty to let the router find the path.
+  kiapi.common.types.PolyLine guide = 3;
+
+  // Copper layer the routes should keep to where they can.  BL_UNDEFINED (or unset) lets the
+  // router pick.  Plane layers are never routed on.
+  kiapi.board.types.BoardLayer preferred_layer = 4;
+
+  // Defaults to SRCM_MITERED_45
+  SketchRouteCornerMode corner_mode = 5;
+
+  // When true, connections that cannot be routed without a via are left unrouted
+  bool disallow_vias = 6;
+
+  // Time limit for the whole operation, in milliseconds; 0 for the router's default
+  uint32 time_limit_ms = 7;
+}
+
+message SketchRouteResponse
+{
+  // Unrouted connections found among the requested items
+  int32 connections = 1;
+
+  // Connections that were routed
+  int32 routed = 2;
+
+  // Connections that could not be routed
+  int32 failed = 3;
+
+  // Vias added
+  int32 vias = 4;
+
+  // Total length of the new tracks, in nanometers
+  int64 length_nm = 5;
+
+  // True if the time limit ran out before every connection was tried
+  bool timed_out = 6;
+
+  // Time taken by the router, in milliseconds
+  double elapsed_ms = 7;
+
+  // Tracks, arcs and vias created
+  repeated kiapi.common.types.KIID created_items = 8;
+}
+
 //// Interactive commands ////
 // These commands begin an interactive operation in the editor.
 // They return a response immediately, but the editor will become busy

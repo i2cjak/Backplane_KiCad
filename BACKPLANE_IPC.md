@@ -41,6 +41,29 @@ treat stackup updates as unavailable until a handler is added. The headless
 board APIs expose enabled-layer, origin, plot-setting, design-rule, custom-rule,
 netlist, connectivity, and embedded-file updates separately.
 
+## Sketch router
+
+The fork adds a sketch router to the PCB editor and to IPC. It routes a group of unrouted
+connections together as a bundle: tracks leave their pads straight, run side by side at the
+minimum pitch, stay on one layer where they can, and change layers through vias near the pads
+when they must. Routes follow the board's design rules and never overlap existing copper.
+
+In the PCB editor, select pads or footprints and use **Route > Sketch Route Selected**
+(Shift+K) to draw a path for the bundle first, or **Route > Autoroute Selected** (Shift+J) to
+let the router find one. The result is one undo step.
+
+Over IPC, `kiapi.board.commands.SketchRoute` does the same in the desktop editor and in a
+headless `kicad-cli api-server`. It takes item IDs (footprints stand for their pads; an empty
+list uses the current selection), an optional guide `PolyLine`, a preferred copper layer, the
+corner mode, whether vias are allowed, and a time limit. It returns a `SketchRouteResponse`
+with the number of connections found and routed, the vias added, the routed length and the IDs
+of the created tracks, arcs and vias. The new items join the client's open commit when there
+is one, so `EndCommit` with `CMA_DROP` removes them again; otherwise they are committed at once.
+`scripts/backplane-sketch-router-ipc-regression.py` exercises the command against the CSP
+fixture in `qa/data/pcbnew/sketch_router_csp`.
+
+The router adds no file-format tokens: it creates ordinary tracks, arcs and vias.
+
 ## File compatibility
 
 Native `.kicad_pcb`, `.kicad_sch`, `.kicad_mod`, and `.kicad_sym` files target

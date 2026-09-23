@@ -540,6 +540,7 @@ if( KICAD_IPC_API )
         api/api_pcb_variants.cpp
         api/api_pcb_connectivity.cpp
         api/api_pcb_embedded.cpp
+        api/api_pcb_sketch_route.cpp
         api/footprint_context.cpp
         api/headless_footprint_context.cpp
         api/headless_board_context.cpp

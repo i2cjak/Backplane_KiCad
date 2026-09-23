@@ -200,6 +200,8 @@ private:
 
     HANDLER_RESULT<Empty> handleRefillZones( const HANDLER_CONTEXT<RefillZones>& aCtx );
 
+    HANDLER_RESULT<SketchRouteResponse> handleSketchRoute( const HANDLER_CONTEXT<SketchRoute>& aCtx );
+
     HANDLER_RESULT<ImportNetlistResponse> handleImportNetlist(
             const HANDLER_CONTEXT<ImportNetlist>& aCtx );
 
