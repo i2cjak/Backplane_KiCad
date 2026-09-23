@@ -769,6 +769,8 @@ bool EDIT_TOOL::Init()
     menu.AddItem( PCB_ACTIONS::unrouteSelected,            isRoutable );
     menu.AddItem( PCB_ACTIONS::unrouteSegment,             isRoutable );
     menu.AddItem( PCB_ACTIONS::routerAutorouteSelected,    isRoutable );
+    menu.AddItem( PCB_ACTIONS::routerSketchRoute,          isRoutable );
+    menu.AddItem( PCB_ACTIONS::routerSketchAutoroute,      isRoutable );
 
     menu.AddItem( PCB_ACTIONS::skip,              isSkippable );
     menu.AddItem( PCB_ACTIONS::breakTrack,        SELECTION_CONDITIONS::Count( 1 )

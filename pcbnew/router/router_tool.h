@@ -39,6 +39,12 @@ public:
     int MainLoop( const TOOL_EVENT& aEvent );
     int RouteSelected( const TOOL_EVENT& aEvent );
 
+    /**
+     * Route the unrouted connections of the selection with the sketch router, optionally along
+     * a path the user sketches first.
+     */
+    int SketchRoute( const TOOL_EVENT& aEvent );
+
     int InlineBreakTrack( const TOOL_EVENT& aEvent );
     bool CanInlineDrag( int aDragMode );
     int InlineDrag( const TOOL_EVENT& aEvent );
@@ -73,6 +79,13 @@ private:
     void performRouting( VECTOR2D aStartPosition );
     void performDragging( int aMode = PNS::DM_ANY );
     void breakTrack();
+
+    /**
+     * Let the user sketch a path by clicking points or dragging freehand.
+     *
+     * @return false if the sketch was cancelled.
+     */
+    bool drawSketchPath( const TOOL_EVENT& aEvent, SHAPE_LINE_CHAIN& aSketch );
     void restoreSelection( const PCB_SELECTION& aOriginalSelection );
 
     void handleCommonEvents( TOOL_EVENT& evt );

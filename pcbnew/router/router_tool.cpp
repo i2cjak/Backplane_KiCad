@@ -83,6 +83,8 @@ using namespace std::placeholders;
 #include "pns_drag_algo.h"
 
 #include "pns_kicad_iface.h"
+#include "pns_sketch_router.h"
+#include <widgets/wx_progress_reporters.h>
 
 #include <ratsnest/ratsnest_data.h>
 
@@ -598,6 +600,10 @@ bool ROUTER_TOOL::Init()
     menu.AddItem( PCB_ACTIONS::routerContinueFromEnd, hasOtherEnd );
     menu.AddItem( PCB_ACTIONS::routerAttemptFinish,   hasOtherEnd );
     menu.AddItem( PCB_ACTIONS::routerAutorouteSelected, notRoutingCond
+                                                            && SELECTION_CONDITIONS::NotEmpty );
+    menu.AddItem( PCB_ACTIONS::routerSketchRoute,     notRoutingCond
+                                                            && SELECTION_CONDITIONS::NotEmpty );
+    menu.AddItem( PCB_ACTIONS::routerSketchAutoroute, notRoutingCond
                                                             && SELECTION_CONDITIONS::NotEmpty );
     menu.AddItem( PCB_ACTIONS::breakTrack,            notRoutingCond );
 
@@ -1922,6 +1928,276 @@ int ROUTER_TOOL::RouteSelected( const TOOL_EVENT& aEvent )
 }
 
 
+int ROUTER_TOOL::SketchRoute( const TOOL_EVENT& aEvent )
+{
+    PCB_EDIT_FRAME* frame = getEditFrame<PCB_EDIT_FRAME>();
+    const bool      drawSketch = aEvent.IsAction( &PCB_ACTIONS::routerSketchRoute );
+
+    if( m_router->RoutingInProgress() )
+        return 0;
+
+    // Remember the selection by ID: the board may change while the user sketches
+    std::vector<KIID> selected;
+
+    for( EDA_ITEM* item : m_toolMgr->GetTool<PCB_SELECTION_TOOL>()->GetSelection() )
+        selected.push_back( item->m_Uuid );
+
+    // Footprints stand for their pads
+    auto collectItems =
+            [&]()
+            {
+                std::vector<BOARD_CONNECTED_ITEM*> items;
+
+                for( const KIID& id : selected )
+                {
+                    BOARD_ITEM* item = board()->ResolveItem( id, true );
+
+                    if( !item )
+                        continue;
+
+                    if( item->Type() == PCB_FOOTPRINT_T )
+                    {
+                        for( PAD* pad : static_cast<FOOTPRINT*>( item )->Pads() )
+                            items.push_back( pad );
+                    }
+                    else if( BOARD_CONNECTED_ITEM* connected = dynamic_cast<BOARD_CONNECTED_ITEM*>( item ) )
+                    {
+                        items.push_back( connected );
+                    }
+                }
+
+                return items;
+            };
+
+    // The ratsnest describes the board as it is now; make sure the router sees the same.  The
+    // resync replaces every router item, so forget any we were holding on to.
+    auto collectConnections =
+            [&]()
+            {
+                // The tool only rebuilds its interface on a RUN reset, so after a board load it
+                // can still point at the old board
+                m_iface->SetBoard( board() );
+                m_router->SyncWorld();
+                m_startItem = nullptr;
+                m_endItem = nullptr;
+
+                return PNS::SKETCH_ROUTER::CollectConnections( board(), m_router->GetWorld(),
+                                                               collectItems() );
+            };
+
+    if( collectItems().empty() )
+    {
+        frame->ShowInfoBarMsg( _( "Select the pads, footprints or tracks to route first." ) );
+        return 0;
+    }
+
+    std::vector<PNS::SKETCH_CONNECTION> connections = collectConnections();
+
+    if( connections.empty() )
+    {
+        frame->ShowInfoBarMsg( _( "The selection has no unrouted connections." ) );
+        return 0;
+    }
+
+    SHAPE_LINE_CHAIN sketch;
+
+    if( drawSketch )
+    {
+        if( !drawSketchPath( aEvent, sketch ) )
+            return 0;
+
+        // Start over from the board as it is now that the sketch is done
+        connections = collectConnections();
+
+        if( connections.empty() )
+            return 0;
+    }
+
+    PNS::SKETCH_ROUTER          sketchRouter( m_router );
+    PNS::SKETCH_ROUTER_OPTIONS& options = sketchRouter.Options();
+
+    options.m_layers = PNS::SKETCH_ROUTER::RoutableLayers( board(), m_iface );
+    options.m_boundary = board()->GetBoardEdgesBoundingBox();
+    options.m_guide = sketch;
+
+    if( IsCopperLayer( frame->GetActiveLayer() ) )
+        options.m_preferredLayer = m_iface->GetPNSLayerFromBoardLayer( frame->GetActiveLayer() );
+
+    std::unique_ptr<WX_PROGRESS_REPORTER> reporter;
+
+    if( connections.size() > 4 )
+    {
+        reporter = std::make_unique<WX_PROGRESS_REPORTER>( frame, _( "Sketch Router" ), 1, PR_CAN_ABORT );
+        reporter->Report( wxString::Format( _( "Routing %d connections..." ), (int) connections.size() ) );
+
+        sketchRouter.SetProgressCallback(
+                [&]( int aDone, int aTotal )
+                {
+                    reporter->SetCurrentProgress( aTotal > 0 ? double( aDone ) / aTotal : 0.0 );
+                    return reporter->KeepRefreshing();
+                } );
+    }
+
+    PNS::NODE* branch = sketchRouter.Route( m_router->GetWorld(), connections );
+    reporter.reset();
+
+    const PNS::SKETCH_ROUTER_STATS& stats = sketchRouter.Stats();
+
+    if( branch )
+    {
+        m_iface->SetCommitFlags( 0 );
+        m_router->CommitRouting( branch );
+    }
+
+    wxString msg = wxString::Format( _( "Routed %d of %d connections with %d vias in %.1f s." ),
+                                     stats.m_routed, stats.m_connections, stats.m_vias,
+                                     stats.m_elapsedMs / 1000.0 );
+
+    if( stats.m_routed < stats.m_connections )
+        frame->ShowInfoBarWarning( msg, true );
+    else
+        frame->ShowInfoBarMsg( msg, true );
+
+    return 0;
+}
+
+
+bool ROUTER_TOOL::drawSketchPath( const TOOL_EVENT& aEvent, SHAPE_LINE_CHAIN& aSketch )
+{
+    PCB_EDIT_FRAME*       frame = getEditFrame<PCB_EDIT_FRAME>();
+    VIEW_CONTROLS*        controls = getViewControls();
+    std::vector<VECTOR2I> points;
+    bool                  dragging = false;
+    bool                  accepted = false;
+
+    m_toolMgr->RunAction( ACTIONS::selectionClear );
+
+    // Pop the tool again however the sketch ends
+    struct TOOL_POPPER
+    {
+        PCB_EDIT_FRAME* m_frame;
+        TOOL_EVENT      m_event;
+
+        ~TOOL_POPPER() { m_frame->PopTool( m_event ); }
+    };
+
+    frame->PushTool( aEvent );
+    TOOL_POPPER popper{ frame, aEvent };
+    Activate();
+
+    controls->ShowCursor( true );
+    controls->ForceCursorPosition( false );
+    frame->GetCanvas()->SetCurrentCursor( KICURSOR::PENCIL );
+
+    frame->ShowInfoBarMsg( _( "Sketch the route: click to add points or drag to draw freehand.  "
+                              "Press Enter or double-click to route, Backspace to remove the last "
+                              "point, Esc to cancel." ) );
+
+    auto updatePreview =
+            [&]( const VECTOR2I& aCursor )
+            {
+                SHAPE_LINE_CHAIN preview;
+
+                for( const VECTOR2I& pt : points )
+                    preview.Append( pt );
+
+                if( !dragging )
+                    preview.Append( aCursor );
+
+                m_iface->EraseView();
+
+                if( preview.PointCount() >= 2 )
+                    m_iface->DisplayPathLine( preview, 1 );
+            };
+
+    while( TOOL_EVENT* evt = Wait() )
+    {
+        frame->GetCanvas()->SetCurrentCursor( KICURSOR::PENCIL );
+
+        const VECTOR2I cursor = controls->GetMousePosition();
+
+        // Freehand points closer than a few pixels add nothing but noise
+        const double minStep = getView()->ToWorld( 8.0 );
+
+        if( evt->IsCancelInteractive() || evt->IsActivate() )
+        {
+            break;
+        }
+        else if( evt->IsMotion() )
+        {
+            updatePreview( cursor );
+        }
+        else if( evt->IsDrag( BUT_LEFT ) )
+        {
+            if( !dragging )
+            {
+                dragging = true;
+                points.push_back( KiROUND( evt->DragOrigin() ) );
+            }
+
+            if( ( cursor - points.back() ).EuclideanNorm() > minStep )
+                points.push_back( cursor );
+
+            updatePreview( cursor );
+        }
+        else if( evt->IsMouseUp( BUT_LEFT ) && dragging )
+        {
+            // A freehand sketch is finished by letting go
+            points.push_back( cursor );
+            accepted = true;
+            break;
+        }
+        else if( evt->IsClick( BUT_LEFT ) )
+        {
+            if( points.empty() || points.back() != cursor )
+                points.push_back( cursor );
+
+            updatePreview( cursor );
+        }
+        else if( evt->IsDblClick( BUT_LEFT ) || evt->IsAction( &ACTIONS::cursorDblClick )
+                 || evt->IsAction( &ACTIONS::cursorClick )   // Enter
+                 || evt->IsAction( &ACTIONS::finishInteractive ) )
+        {
+            accepted = true;
+            break;
+        }
+        else if( evt->IsAction( &ACTIONS::redo ) || evt->IsUndoRedo() )
+        {
+            // The board has to stay as it was while the sketch is drawn
+            wxBell();
+        }
+        else if( evt->IsAction( &PCB_ACTIONS::routerUndoLastSegment )
+                 || evt->IsAction( &ACTIONS::doDelete ) || evt->IsAction( &ACTIONS::undo ) )
+        {
+            // Undo removes the last sketch point rather than touching the board
+            if( !points.empty() )
+                points.pop_back();
+
+            updatePreview( cursor );
+        }
+        else
+        {
+            evt->SetPassEvent();
+        }
+    }
+
+    m_iface->EraseView();
+    frame->GetInfoBar()->Dismiss();
+
+    for( const VECTOR2I& pt : points )
+    {
+        if( aSketch.PointCount() == 0 || aSketch.CLastPoint() != pt )
+            aSketch.Append( pt );
+    }
+
+    // Too short to be a sketch; route without one
+    if( aSketch.PointCount() < 2 )
+        aSketch.Clear();
+
+    return accepted;
+}
+
+
 int ROUTER_TOOL::MainLoop( const TOOL_EVENT& aEvent )
 {
     if( m_inRouterTool )
@@ -3063,6 +3339,8 @@ void ROUTER_TOOL::setTransitions()
     Go( &ROUTER_TOOL::RouteSelected,          PCB_ACTIONS::routerRouteSelected.MakeEvent() );
     Go( &ROUTER_TOOL::RouteSelected,          PCB_ACTIONS::routerRouteSelectedFromEnd.MakeEvent() );
     Go( &ROUTER_TOOL::RouteSelected,          PCB_ACTIONS::routerAutorouteSelected.MakeEvent() );
+    Go( &ROUTER_TOOL::SketchRoute,            PCB_ACTIONS::routerSketchRoute.MakeEvent() );
+    Go( &ROUTER_TOOL::SketchRoute,            PCB_ACTIONS::routerSketchAutoroute.MakeEvent() );
     Go( &ROUTER_TOOL::DpDimensionsDialog,     PCB_ACTIONS::routerDiffPairDialog.MakeEvent() );
     Go( &ROUTER_TOOL::SettingsDialog,         PCB_ACTIONS::routerSettingsDialog.MakeEvent() );
     Go( &ROUTER_TOOL::ChangeRouterMode,       PCB_ACTIONS::routerHighlightMode.MakeEvent() );

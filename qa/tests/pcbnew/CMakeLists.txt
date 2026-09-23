@@ -56,6 +56,7 @@ set( QA_PCBNEW_SRCS
     test_lset.cpp
     test_meander_corner_radius.cpp
     test_pns_basics.cpp
+    test_pns_sketch_router.cpp
     test_pad_flashing.cpp
     test_pad_numbering.cpp
     test_pad_tenting.cpp

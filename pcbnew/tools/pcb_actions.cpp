@@ -2714,6 +2714,23 @@ TOOL_ACTION PCB_ACTIONS::routerAutorouteSelected( TOOL_ACTION_ARGS()
         .Flags( AF_ACTIVATE )
         .Parameter( PNS::PNS_MODE_ROUTE_SINGLE ) );
 
+TOOL_ACTION PCB_ACTIONS::routerSketchRoute( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveRouter.SketchRoute" )
+        .Scope( AS_GLOBAL )
+        .DefaultHotkey( MD_SHIFT + 'K' )
+        .FriendlyName( _( "Sketch Route Selected" ) )
+        .Tooltip( _( "Sketch a path for the selected connections and route them along it as a bundle" ) )
+        .Flags( AF_ACTIVATE ) );
+
+TOOL_ACTION PCB_ACTIONS::routerSketchAutoroute( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.InteractiveRouter.SketchAutoroute" )
+        .Scope( AS_GLOBAL )
+        .DefaultHotkey( MD_SHIFT + 'J' )
+        .FriendlyName( _( "Autoroute Selected" ) )
+        .Tooltip( _( "Route the unrouted connections of the selected items automatically, with vias "
+                     "where needed" ) )
+        .Flags( AF_ACTIVATE ) );
+
 TOOL_ACTION PCB_ACTIONS::cancelCurrentItem( TOOL_ACTION_ARGS()
         .Name( "pcbnew.InteractiveRouter.CancelCurrentItem" )
         .Scope( AS_GLOBAL )
