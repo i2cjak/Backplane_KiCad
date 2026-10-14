@@ -532,7 +532,8 @@ std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> RENDER_3D_OPENGL::createBoard( cons
 
         if( aBoardPoly.OutlineCount() > 0 )
             dispLists = std::make_shared<OPENGL_RENDER_LIST_DEFERRED>(
-                    layerTriangles, m_circleTexture, layer_z_bot, layer_z_top, aTransparent );
+                    layerTriangles, m_circleTexture, aBend ? layer_z_bot : layer_z_top,
+                    layer_z_top, aTransparent );
     }
 
     return dispLists;

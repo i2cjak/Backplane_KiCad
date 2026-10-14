@@ -1419,43 +1419,43 @@ void RENDER_3D_OPENGL::get3dModelsFromFootprint( std::list<MODELTORENDER> &aDstR
                                                  const FOOTPRINT* aFootprint,
                                                  bool aRenderTransparentOnly, bool aIsSelected )
 {
+    const bool constructionView = m_boardAdapter.GetConstructionView();
+    const bool foldedView = constructionView && m_boardAdapter.GetFoldedView()
+                          && m_boardAdapter.m_Cfg->m_Render.engine == RENDER_ENGINE::OPENGL;
+    const bool flipped = aFootprint->IsFlipped();
+    double zpos = m_boardAdapter.GetFootprintZPos( flipped );
+
+    VECTOR2I pos = aFootprint->GetPosition();
+
+    // A structural stack can have a different datum and total thickness
+    // from the ordinary board stack.  Seat construction-view models on
+    // the parent region face before applying any fold frame, matching the
+    // physical solids and the STEP exporter.
+    if( constructionView )
+    {
+        if( const BOARD* board = m_boardAdapter.GetBoard() )
+        {
+            const BOARD_STRUCTURE& structure = board->GetBoardStructure();
+            if( const BOARD_STRUCTURE_REGION* region = structure.RegionAt( pos ) )
+                if( structure.StackForRegion( *region ) )
+                {
+                    const auto regionalZ = m_boardAdapter.GetRegionalBodyZPos( pos );
+                    const float clearance = static_cast<float>(
+                            CONSTRUCTION_MODEL_CLEARANCE_MM * pcbIUScale.IU_PER_MM
+                            * m_boardAdapter.BiuTo3dUnits() );
+                    zpos = flipped ? regionalZ.second - clearance : regionalZ.first + clearance;
+                }
+        }
+    }
+
+    glm::mat4 fpMatrix = m_boardAdapter.GetFootprintMatrix( *aFootprint );
+    fpMatrix[3].z = static_cast<float>( zpos );
+    if( foldedView )
+        fpMatrix = foldedModelFrame( m_boardAdapter, pos, static_cast<float>( zpos ),
+                                     foldedParentThicknessMm( m_boardAdapter ) ) * fpMatrix;
+
     if( !aFootprint->Models().empty() )
     {
-        const bool constructionView = m_boardAdapter.GetConstructionView();
-        const bool foldedView = constructionView && m_boardAdapter.GetFoldedView()
-                              && m_boardAdapter.m_Cfg->m_Render.engine == RENDER_ENGINE::OPENGL;
-        const bool flipped = aFootprint->IsFlipped();
-        double zpos = m_boardAdapter.GetFootprintZPos( flipped );
-
-        VECTOR2I pos = aFootprint->GetPosition();
-
-        // A structural stack can have a different datum and total thickness
-        // from the ordinary board stack.  Seat construction-view models on
-        // the parent region face before applying any fold frame, matching the
-        // physical solids and the STEP exporter.
-        if( constructionView )
-        {
-            if( const BOARD* board = m_boardAdapter.GetBoard() )
-            {
-                const BOARD_STRUCTURE& structure = board->GetBoardStructure();
-                if( const BOARD_STRUCTURE_REGION* region = structure.RegionAt( pos ) )
-                    if( structure.StackForRegion( *region ) )
-                    {
-                        const auto regionalZ = m_boardAdapter.GetRegionalBodyZPos( pos );
-                        const float clearance = static_cast<float>(
-                                CONSTRUCTION_MODEL_CLEARANCE_MM * pcbIUScale.IU_PER_MM
-                                * m_boardAdapter.BiuTo3dUnits() );
-                        zpos = flipped ? regionalZ.second - clearance : regionalZ.first + clearance;
-                    }
-            }
-        }
-
-        glm::mat4 fpMatrix = m_boardAdapter.GetFootprintMatrix( *aFootprint );
-        fpMatrix[3].z = static_cast<float>( zpos );
-        if( foldedView )
-            fpMatrix = foldedModelFrame( m_boardAdapter, pos, static_cast<float>( zpos ),
-                                         foldedParentThicknessMm( m_boardAdapter ) ) * fpMatrix;
-
         // The placeholder stands in for the whole footprint, so several missing models share one.
         bool placeholderAdded = false;
 
@@ -1527,8 +1527,6 @@ void RENDER_3D_OPENGL::get3dModelsFromFootprint( std::list<MODELTORENDER> &aDstR
     }
     else
     {
-        const glm::mat4 fpMatrix = m_boardAdapter.GetFootprintMatrix( *aFootprint );
-
         renderPlaceholderForFootprint( aDstRenderList, fpMatrix, aFootprint, aRenderTransparentOnly, aIsSelected,
                                        1.0f );
     }
