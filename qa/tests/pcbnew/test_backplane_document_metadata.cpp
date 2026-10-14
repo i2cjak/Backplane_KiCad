@@ -5,6 +5,7 @@
 #include <boost/test/unit_test.hpp>
 #include <backplane_document_metadata.h>
 #include <pcb_shape.h>
+#include <richio.h>
 #include <wx/file.h>
 #include <wx/filefn.h>
 #include <wx/filename.h>
@@ -88,6 +89,19 @@ BOOST_AUTO_TEST_CASE( ItemsOnlyCompanionIsDeletedAfterMigration )
     BOOST_CHECK( shape.HasCustomProperties() );
     metadata.Save( path );
     BOOST_CHECK( !wxFileExists( BACKPLANE_DOCUMENT_METADATA::CompanionPath( path ) ) );
+}
+
+BOOST_AUTO_TEST_CASE( EmptyV2RecordsDoNotLeaveCompanionsAndMalformedRecordsFail )
+{
+    Write( { { "format", "backplane-kicad-metadata" }, { "version", 2 },
+             { "extensions", { { "root", nlohmann::json::object() } } } } );
+    BACKPLANE_DOCUMENT_METADATA metadata;
+    metadata.Load( path );
+    metadata.Save( path );
+    BOOST_CHECK( !wxFileExists( BACKPLANE_DOCUMENT_METADATA::CompanionPath( path ) ) );
+    Write( { { "format", "backplane-kicad-metadata" }, { "version", 2 },
+             { "extensions", { { "root", 123 } } } } );
+    BOOST_CHECK_THROW( metadata.Load( path ), IO_ERROR );
 }
 
 BOOST_AUTO_TEST_SUITE_END()

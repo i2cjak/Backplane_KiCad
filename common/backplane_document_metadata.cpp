@@ -64,6 +64,9 @@ void BACKPLANE_DOCUMENT_METADATA::Load( const wxString& aDocumentPath )
     {
         const auto data = nlohmann::json::parse( contents.ToUTF8().data() );
 
+        if( !data.at( "version" ).is_number_integer() )
+            THROW_IO_ERROR( "Backplane companion version must be an integer" );
+
         const int version = data.at( "version" ).get<int>();
 
         if( data.at( "format" ) != "backplane-kicad-metadata" || ( version != 1 && version != 2 ) )
@@ -95,6 +98,17 @@ void BACKPLANE_DOCUMENT_METADATA::Load( const wxString& aDocumentPath )
 
             if( !m_extensions.is_object() )
                 THROW_IO_ERROR( "Backplane companion extensions must be an object" );
+        }
+
+        for( auto entry = m_extensions.begin(); entry != m_extensions.end(); )
+        {
+            if( !entry->is_object() )
+                THROW_IO_ERROR( "Backplane companion extension record must be an object" );
+
+            if( entry->empty() )
+                entry = m_extensions.erase( entry );
+            else
+                ++entry;
         }
     }
     catch( const nlohmann::json::exception& error )
