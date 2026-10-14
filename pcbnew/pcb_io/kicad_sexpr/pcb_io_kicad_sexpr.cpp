@@ -306,6 +306,7 @@ void PCB_IO_KICAD_SEXPR::SaveBoard( const wxString& aFileName, BOARD& aBoard,
     PRETTIFIED_FILE_OUTPUTFORMATTER formatter( aFileName );
     FormatBoardToFormatter( &formatter, &aBoard, aProperties );
     formatter.Finish();
+    aBoard.BackplaneMetadata().Save( aFileName );
 }
 
 
@@ -3780,6 +3781,47 @@ void PCB_IO_KICAD_SEXPR::loadBoard( const wxString& aFileName, BOARD& aBoard, bo
     }
 
     DoLoad( reader, aBoard, aIsNewLoad, aProperties, m_progressReporter, lineCount );
+
+    if( aIsNewLoad )
+    {
+        auto& metadata = aBoard.BackplaneMetadata();
+        metadata.Load( aFileName );
+        metadata.Apply( wxS( "root" ), aBoard );
+        aBoard.RunOnChildren( [&]( BOARD_ITEM* item )
+        {
+            metadata.Apply( item->m_Uuid.AsString(), *item );
+
+            if( auto* footprint = dynamic_cast<FOOTPRINT*>( item ) )
+            {
+                const auto extra = metadata.ReadExtension( item->m_Uuid.AsString(), "footprint" );
+
+                if( !extra.is_null() )
+                {
+                    try
+                    {
+                        if( extra.value( "exclude_from_simulation", false ) )
+                            footprint->SetExcludedFromSim( true );
+
+                        if( extra.contains( "variant_simulation" ) )
+                        {
+                            for( const auto& [name, value] : extra.at( "variant_simulation" ).items() )
+                            {
+                                if( auto* variant = footprint->GetVariant( wxString::FromUTF8( name ) ) )
+                                {
+                                    if( value.get<bool>() )
+                                        variant->SetExcludedFromSim( true );
+                                }
+                            }
+                        }
+                    }
+                    catch( const nlohmann::json::exception& error )
+                    {
+                        THROW_IO_ERROR( wxString::FromUTF8( error.what() ) );
+                    }
+                }
+            }
+        }, RECURSE_MODE::RECURSE );
+    }
 }
 
 

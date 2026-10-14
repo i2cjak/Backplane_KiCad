@@ -77,6 +77,106 @@ using namespace TSCHEMATIC_T;
                        reader.LineNumber(), pos - reader.Line() )
 
 
+static wxString BackplaneMetadataKey( const SCH_ITEM& aItem )
+{
+    if( aItem.Type() == SCH_FIELD_T )
+    {
+        const SCH_FIELD& field = static_cast<const SCH_FIELD&>( aItem );
+        const EDA_ITEM* parent = field.GetParent();
+
+        if( parent )
+            return wxString::Format( wxS( "%s/field/%s" ),
+                                     static_cast<const SCH_ITEM*>( parent )->m_Uuid.AsString(),
+                                     field.GetName( false ) );
+    }
+
+    return aItem.m_Uuid.AsString();
+}
+
+
+// Library draw items do not have persistent UUIDs in the stock 10.0.6
+// schematic format.  A UUID-only companion key would therefore either miss
+// metadata after reopen or apply it to a different graphic.  Include the
+// owning symbol, stable draw-item ordinal, and a geometry signature.  The
+// signature intentionally changes when stock KiCad edits the graphic, making
+// the native edit authoritative instead of applying stale companion data.
+static wxString BackplaneLibraryMetadataKey( const SCH_SYMBOL& aSymbol,
+                                             const SCH_ITEM& aItem, size_t aOrdinal )
+{
+    const BOX2I box = aItem.GetBoundingBox();
+
+    return wxString::Format(
+            wxS( "%s/library/%s/%zu/%d/%d/%d/%d/%d/%d/%d" ),
+            aSymbol.m_Uuid.AsString(), aSymbol.GetSchSymbolLibraryName(), aOrdinal,
+            static_cast<int>( aItem.Type() ), aItem.GetUnit(), aItem.GetBodyStyle(), box.GetLeft(),
+            box.GetTop(), box.GetRight(), box.GetBottom() );
+}
+
+
+static void ApplyBackplaneMetadata( SCH_SCREEN& aScreen, BACKPLANE_DOCUMENT_METADATA& aMetadata )
+{
+    auto apply = [&]( SCH_ITEM* item )
+    {
+        if( item->Type() == SCH_MARKER_T )
+            return;
+
+        const wxString key = BackplaneMetadataKey( *item );
+        aMetadata.Apply( key, *item );
+
+        if( SCH_LINE* line = dynamic_cast<SCH_LINE*>( item ) )
+        {
+            LINE_ENDING start, end;
+
+            if( aMetadata.ReadLineEndings( key, start, end ) )
+            {
+                if( line->GetStartEnding().GetStyle() == LINE_ENDING_STYLE::NONE )
+                    line->SetStartEnding( start );
+                if( line->GetEndEnding().GetStyle() == LINE_ENDING_STYLE::NONE )
+                    line->SetEndEnding( end );
+            }
+        }
+
+        item->RunOnChildren( [&]( SCH_ITEM* child )
+        {
+            const wxString childKey = BackplaneMetadataKey( *child );
+            aMetadata.Apply( childKey, *child );
+
+            if( SCH_LINE* line = dynamic_cast<SCH_LINE*>( child ) )
+            {
+                LINE_ENDING start, end;
+
+                if( aMetadata.ReadLineEndings( childKey, start, end ) )
+                {
+                    if( line->GetStartEnding().GetStyle() == LINE_ENDING_STYLE::NONE )
+                        line->SetStartEnding( start );
+                    if( line->GetEndEnding().GetStyle() == LINE_ENDING_STYLE::NONE )
+                        line->SetEndEnding( end );
+                }
+            }
+        }, RECURSE_MODE::RECURSE );
+
+        if( SCH_SYMBOL* symbol = dynamic_cast<SCH_SYMBOL*>( item ) )
+        {
+            if( symbol->GetLibSymbolRef() )
+            {
+                size_t ordinal = 0;
+
+                for( SCH_ITEM& drawItem : symbol->GetLibSymbolRef()->GetDrawItems() )
+                {
+                    aMetadata.Apply( BackplaneLibraryMetadataKey( *symbol, drawItem, ordinal ), drawItem );
+                    ++ordinal;
+                }
+            }
+        }
+    };
+
+    for( SCH_ITEM* item : aScreen.Items() )
+    {
+        apply( item );
+    }
+}
+
+
 SCH_IO_KICAD_SEXPR::SCH_IO_KICAD_SEXPR() : SCH_IO( wxS( "Eeschema s-expression" ) )
 {
     init( nullptr );
@@ -340,6 +440,9 @@ void SCH_IO_KICAD_SEXPR::loadFile( const wxString& aFileName, SCH_SHEET* aSheet 
                                       m_appending, m_sheetLoad );
 
     parser.ParseSchematic( aSheet );
+    auto& metadata = aSheet->GetScreen()->BackplaneMetadata();
+    metadata.Load( aFileName );
+    ApplyBackplaneMetadata( *aSheet->GetScreen(), metadata );
 
     // Net chains live at the root-sheet level. Sub-sheet parses always produce empty maps,
     // so applying them would wipe the chains restored from the root file.
@@ -420,6 +523,9 @@ void SCH_IO_KICAD_SEXPR::SaveSchematicFile( const wxString& aFileName, SCH_SHEET
     PRETTIFIED_FILE_OUTPUTFORMATTER formatter( fn.GetFullPath() );
     FormatSchematicToFormatter( &formatter, aSheet, aSchematic, aProperties );
     formatter.Finish();
+
+    if( aSheet->GetScreen() )
+        aSheet->GetScreen()->BackplaneMetadata().Save( fn.GetFullPath() );
 
     if( aSheet->GetScreen() )
         aSheet->GetScreen()->SetFileExists( true );

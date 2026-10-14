@@ -21,6 +21,7 @@
 #ifndef SCREEN_H
 #define SCREEN_H
 
+#include <backplane_document_metadata.h>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -102,6 +103,14 @@ struct PICKED_SYMBOL
 class SCH_SCREEN : public BASE_SCREEN
 {
 public:
+    BACKPLANE_DOCUMENT_METADATA& BackplaneMetadata() { return m_backplaneMetadata; }
+    const BACKPLANE_DOCUMENT_METADATA& BackplaneMetadata() const { return m_backplaneMetadata; }
+
+private:
+    BACKPLANE_DOCUMENT_METADATA m_backplaneMetadata;
+
+public:
+
     SCH_SCREEN( EDA_ITEM* aParent = nullptr );
     SCH_SCREEN( const SCH_SCREEN& ) = delete;
 

@@ -910,6 +910,7 @@ set( COMMON_SRCS
     eda_base_frame.cpp
     eda_draw_frame.cpp
     eda_group.cpp
+    backplane_document_metadata.cpp
     eda_item.cpp
     eda_shape.cpp
     eda_text.cpp

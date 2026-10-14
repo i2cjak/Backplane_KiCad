@@ -20,6 +20,7 @@
 
 #pragma once
 
+#include <backplane_document_metadata.h>
 #include <atomic>
 #include <functional>
 #include <board_item_container.h>
@@ -409,6 +410,14 @@ enum class BOARD_USE
 class BOARD : public BOARD_ITEM_CONTAINER, public EMBEDDED_FILES, public PROJECT::_ELEM
 {
 public:
+    BACKPLANE_DOCUMENT_METADATA& BackplaneMetadata() { return m_backplaneMetadata; }
+    const BACKPLANE_DOCUMENT_METADATA& BackplaneMetadata() const { return m_backplaneMetadata; }
+
+private:
+    BACKPLANE_DOCUMENT_METADATA m_backplaneMetadata;
+
+public:
+
     static inline bool ClassOf( const EDA_ITEM* aItem )
     {
         return aItem && PCB_T == aItem->Type();
