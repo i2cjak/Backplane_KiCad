@@ -355,13 +355,6 @@ def main():
                     print(f"KNOWN GAP {prefix}{key}: created sheet makes the schematic unsaveable",
                           flush=True)
                     continue
-                if key in ("Field", "Pad") and kind == types.DOCTYPE_PCB:
-                    # KNOWN GAP (upstream fe761fb867): a pad or user field created in a footprint
-                    # keeps the client UUID and reports ISC_OK, but GetItemsById cannot find it
-                    # after the commit. Investigated on impl/pcb-field-crud.
-                    print(f"KNOWN GAP {prefix}{key}: footprint-child create is not found afterwards",
-                          flush=True)
-                    continue
                 uuid_value = item_id(item).value
                 dropped = transaction(editor.CMA_DROP, lambda: write_item(item, True))
                 assert fetch(uuid_value) is None, f"{key}: create rollback left an item"
