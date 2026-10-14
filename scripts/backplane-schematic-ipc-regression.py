@@ -80,7 +80,7 @@ def symbol_snapshot(symbol):
              tuple(sorted(variant.fields.items())),
              variant.attributes.exclude_from_simulation,
              variant.attributes.do_not_populate)
-            for variant in symbol.variants
+            for variant in symbol.variants.variants
         ),
         "custom": tuple((prop.key, prop.value) for prop in symbol.custom_properties),
     }

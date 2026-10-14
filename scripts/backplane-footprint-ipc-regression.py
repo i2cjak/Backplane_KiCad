@@ -104,7 +104,9 @@ def main():
         pad = pads[0]
 
         # Upstream master keeps no selection, visible or active layer in a headless
-        # footprint context; those commands report it rather than faking success.
+        # footprint context; those commands report it rather than faking success,
+        # and must leave the document's modified state alone.
+        baseline = document_modified(api, editor, footprint_doc)
         api.expect_headless_unavailable(
             editor.GetSelection(header=header),
             editor.AddToSelection(header=header, items=[pad.id]),
@@ -115,7 +117,7 @@ def main():
             board_commands.SetActiveLayer(board=footprint_doc, layer=board_types.BL_F_Cu),
             board_commands.GetActiveLayer(board=footprint_doc),
         )
-        assert document_modified(api, editor, footprint_doc) == editor.DMS_UNMODIFIED
+        assert document_modified(api, editor, footprint_doc) == baseline
 
         # A normal save clears the headless dirty state before later mutation
         # and SaveCopy checks.
