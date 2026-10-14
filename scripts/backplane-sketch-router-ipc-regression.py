@@ -88,11 +88,10 @@ def main():
         silk = api.request_raw(sketch_route_commands.SketchRoute(board=document, items=parts,
                                                     preferred_layer=board.BL_F_SilkS))
         assert silk.status.status == api.envelope.AS_BAD_REQUEST, silk
-        api.request(editor.ClearSelection(header=header), Empty)
         nothing = api.request_raw(sketch_route_commands.SketchRoute(board=document))
         assert nothing.status.status == api.envelope.AS_BAD_REQUEST, nothing
         assert not copper_ids()
-        print("PASS SketchRoute rejects unknown items, non-copper layers and an empty selection",
+        print("PASS SketchRoute rejects unknown items, non-copper layers and no items headless",
               flush=True)
 
         # Guided: the right-hand balls to the right-hand pins, along a path around the right
@@ -125,14 +124,13 @@ def main():
               "90 degree, no vias",
               flush=True)
 
-        # The rest from the headless selection, committed straight away
-        api.request(editor.AddToSelection(header=header, items=parts), editor.SelectionResponse)
-        rest = sketch_route()
+        # The rest, committed straight away (master has no headless selection, so name the parts)
+        rest = sketch_route(items=parts)
         assert rest.connections == 30 - len(guided_nets), rest
         assert rest.routed == rest.connections, rest
         created |= {item.value for item in rest.created_items}
         assert copper_ids() == created
-        print(f"PASS SketchRoute from the selection: {rest.routed}/{rest.connections} routed, "
+        print(f"PASS SketchRoute outside a commit: {rest.routed}/{rest.connections} routed, "
               f"{rest.vias} vias", flush=True)
 
         api.request(project.SaveDocument(document=document), Empty)

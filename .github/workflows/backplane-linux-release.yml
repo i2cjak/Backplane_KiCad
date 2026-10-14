@@ -363,9 +363,19 @@ jobs:
           "release/${archive_root}/bin/kicad-cli" api-server --describe
           "release/${archive_root}/bin/kicad-cli" project downgrade --help
           "$RUNNER_TEMP/ipc-smoke-venv/bin/python" scripts/backplane-ipc-smoke.py "release/${archive_root}/bin/kicad-cli"
+          # Run every regression, then fail once with the full list.
+          failed=()
           for regression in scripts/backplane-*-regression.py; do
-            "$RUNNER_TEMP/ipc-smoke-venv/bin/python" "$regression" "release/${archive_root}/bin/kicad-cli"
+            echo "::group::${regression}"
+            if ! "$RUNNER_TEMP/ipc-smoke-venv/bin/python" "$regression" "release/${archive_root}/bin/kicad-cli"; then
+              failed+=("$regression")
+            fi
+            echo "::endgroup::"
           done
+          if [ "${#failed[@]}" -ne 0 ]; then
+            printf '::error::IPC regression failed: %s\n' "${failed[@]}"
+            exit 1
+          fi
           /usr/bin/python3 scripts/backplane-library-smoke.py "release/${archive_root}"
           du -sh "release/${archive_root}/share/kicad/3dmodels" "release/${archive_root}"
           (cd release && tar -czf "${archive_root}.tar.gz" "${archive_root}")

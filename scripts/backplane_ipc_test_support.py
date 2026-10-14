@@ -111,6 +111,20 @@ class IpcSession:
                                  f"{response.message.type_url}")
         return result
 
+    def expect_headless_unavailable(self, *commands):
+        """Upstream master's headless server has no editor selection, view layers or actions."""
+        for command in commands:
+            response = self.request_raw(command)
+            assert response.status.status == self.envelope.AS_UNIMPLEMENTED, (
+                f"{command.DESCRIPTOR.name} should be unavailable headless: {response.status}")
+
+    def expect_headless_unavailable(self, command):
+        """Upstream refuses editor-state commands (selection, view layers, revert) without a GUI frame."""
+        response = self.request_raw(command)
+        assert response.status.status == self.envelope.AS_UNIMPLEMENTED, response.status
+        assert "headless" in response.status.error_message, response.status
+        return response
+
     def stock_v10_check(self, stock_cli, path):
         """Export a KiCad 10 copy of a saved file and make stock KiCad 10.0.x re-save it.
 

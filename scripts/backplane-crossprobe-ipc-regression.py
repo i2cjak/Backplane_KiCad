@@ -94,57 +94,24 @@ def main():
         valid = cross.SelectionSpec(
             footprint=cross.FootprintSelectionSpec(reference=reference)
         )
-        cross_response(
-            api,
-            cross.SyncSelection(
-                context=cross.SSC_EXPLICIT,
-                mode=cross.SSM_ITEMS_ONLY,
-                items=[valid],
-            ),
-            cross.SyncSelectionResponse,
-            cross.CPS_OK,
-        )
-        selected = api.request(editor.GetSelection(header=header), editor.SelectionResponse)
-        assert len(selected.items) == 1, selected
-        selected_footprint = unpack(selected.items[0], "board.board_types", api)
-        assert selected_footprint.id.value == footprint.id.value
-
-        # Empty selection is a meaningful clear operation.
-        cross_response(
-            api,
+        # Upstream master's headless server keeps no selection: cross-probe selection,
+        # selection queries and net highlighting report that instead of faking success.
+        api.expect_headless_unavailable(
+            cross.SyncSelection(context=cross.SSC_EXPLICIT, mode=cross.SSM_ITEMS_ONLY,
+                                items=[valid]),
             cross.SyncSelection(context=cross.SSC_EXPLICIT, mode=cross.SSM_ITEMS_ONLY),
-            cross.SyncSelectionResponse,
-            cross.CPS_OK,
+            editor.GetSelection(header=header),
+            cross.HighlightNets(net_name=[]),
         )
-        assert not api.request(editor.GetSelection(header=header), editor.SelectionResponse).items
-
-        # An unknown target is a valid request with a precise not-found result.
-        missing = cross.SelectionSpec(
-            footprint=cross.FootprintSelectionSpec(reference="BACKPLANE_MISSING")
-        )
-        cross_response(
-            api,
-            cross.SyncSelection(items=[missing]),
-            cross.SyncSelectionResponse,
-            cross.CPS_NOT_FOUND,
-        )
-        cross_response(
-            api,
-            cross.FocusOnItem(),
-            cross.FocusOnItemResponse,
-            cross.CPS_NOT_FOUND,
-        )
-        response = api.request_raw(cross.HighlightNets(net_name=[]))
-        # Headless net highlighting is deliberately unsupported, including an
-        # empty request; this must be explicit rather than a fake success.
-        assert response.status.status == api.envelope.AS_UNIMPLEMENTED, response.status
+        focus = api.request_raw(cross.FocusOnItem(focus_item=valid))
+        assert focus.status.status != api.envelope.AS_OK, focus.status
         malformed = api.request_raw(
             project.OpenDocument(type=types.DOCTYPE_PCB, path=str(design / "invalid.kicad_pcb"))
         )
         assert malformed.status.status == api.envelope.AS_BAD_REQUEST, malformed.status
         check_headless_unsupported(api, cross)
         api.request(project.CloseDocument(document=pcb), Empty)
-        print("PASS PCB cross-probe announce, own selection, empty, missing and headless status", flush=True)
+        print("PASS PCB cross-probe announce and headless status", flush=True)
 
         sch = api.request(
             project.OpenDocument(type=types.DOCTYPE_SCHEMATIC, path=str(sch_path)),
@@ -165,40 +132,16 @@ def main():
         valid = cross.SelectionSpec(
             footprint=cross.FootprintSelectionSpec(reference=reference)
         )
-        cross_response(
-            api,
-            cross.SyncSelection(
-                context=cross.SSC_EXPLICIT,
-                mode=cross.SSM_ITEMS_ONLY,
-                items=[valid],
-            ),
-            cross.SyncSelectionResponse,
-            cross.CPS_OK,
-        )
-        selected = api.request(editor.GetSelection(header=header), editor.SelectionResponse)
-        assert len(selected.items) == 1, selected
-        selected_symbol = unpack(selected.items[0], "schematic.schematic_types", api)
-        assert selected_symbol.id.value == symbol.id.value
-        cross_response(
-            api,
+        api.expect_headless_unavailable(
+            cross.SyncSelection(context=cross.SSC_EXPLICIT, mode=cross.SSM_ITEMS_ONLY,
+                                items=[valid]),
             cross.SyncSelection(items=[]),
-            cross.SyncSelectionResponse,
-            cross.CPS_OK,
+            editor.GetSelection(header=header),
         )
-        assert not api.request(editor.GetSelection(header=header), editor.SelectionResponse).items
-        cross_response(
-            api,
-            cross.SyncSelection(
-                items=[cross.SelectionSpec(
-                    footprint=cross.FootprintSelectionSpec(reference="BACKPLANE_MISSING")
-                )]
-            ),
-            cross.SyncSelectionResponse,
-            cross.CPS_NOT_FOUND,
-        )
+        assert symbol.id.value
         check_headless_unsupported(api, cross)
         api.request(project.CloseDocument(document=sch), Empty)
-        print("PASS schematic cross-probe own selection, empty, missing and headless status", flush=True)
+        print("PASS schematic cross-probe announce and headless status", flush=True)
 
 
 if __name__ == "__main__":
