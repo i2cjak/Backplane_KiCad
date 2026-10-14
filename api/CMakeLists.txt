@@ -44,6 +44,8 @@ set( KIAPI_PROTO_SRCS
     board/board_types.proto
     board/board_rules.proto
 
+    backplane/sketch_route.proto
+
     schematic/schematic_types.proto
     schematic/schematic_commands.proto
     schematic/schematic_jobs.proto

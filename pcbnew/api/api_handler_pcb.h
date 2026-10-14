@@ -23,6 +23,7 @@
 
 #include <api/api_handler_board.h>
 #include <api/pcb_context.h>
+#include <api/backplane/sketch_route.pb.h>
 #include <api/board/board_jobs.pb.h>
 #include <api/common/commands/cross_probe_commands.pb.h>
 #include <api/common/commands/project_commands.pb.h>
@@ -120,6 +121,9 @@ private:
             const HANDLER_CONTEXT<GetNetClassForNets>& aCtx );
 
     HANDLER_RESULT<Empty> handleRefillZones( const HANDLER_CONTEXT<RefillZones>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::SketchRouteResponse> handleSketchRoute(
+            const HANDLER_CONTEXT<kiapi::backplane::SketchRoute>& aCtx );
 
     HANDLER_RESULT<ImportNetlistResponse> handleImportNetlist(
             const HANDLER_CONTEXT<ImportNetlist>& aCtx );

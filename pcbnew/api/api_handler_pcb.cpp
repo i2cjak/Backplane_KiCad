@@ -149,6 +149,8 @@ API_HANDLER_PCB::API_HANDLER_PCB( std::shared_ptr<PCB_CONTEXT> aContext, PCB_EDI
     registerHandler<GetNetClassForNets, NetClassForNetsResponse>(
             &API_HANDLER_PCB::handleGetNetClassForNets );
     registerHandler<RefillZones, Empty>( &API_HANDLER_PCB::handleRefillZones );
+    registerHandler<kiapi::backplane::SketchRoute, kiapi::backplane::SketchRouteResponse>(
+            &API_HANDLER_PCB::handleSketchRoute );
     registerHandler<ImportNetlist, ImportNetlistResponse>( &API_HANDLER_PCB::handleImportNetlist );
 
     registerHandler<GetBoardEditorAppearanceSettings, BoardEditorAppearanceSettings>(
