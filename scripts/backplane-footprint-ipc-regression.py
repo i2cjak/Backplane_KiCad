@@ -138,8 +138,8 @@ def main():
         )
         assert document_modified(api, editor, footprint_doc) == editor.DMS_MODIFIED
 
-        # Headless RevertDocument reloads the saved library item and restores
-        # a clean state just as the interactive editor does.
+        # Headless RevertDocument is refused upstream; restore the saved pad with an
+        # ordinary update and save instead.
         api.request(project_commands.SaveDocument(document=footprint_doc), Empty)
         baseline_x = pad.position.x_nm
         changed = type(pad)()
@@ -158,7 +158,19 @@ def main():
             editor.EndCommitResponse,
         )
         assert document_modified(api, editor, footprint_doc) == editor.DMS_MODIFIED
-        api.request(editor.RevertDocument(document=footprint_doc), Empty)
+        api.expect_headless_unavailable(editor.RevertDocument(document=footprint_doc))
+        transaction = api.request(
+            editor.BeginCommit(header=update_header), editor.BeginCommitResponse
+        )
+        restore = editor.UpdateItems(header=update_header)
+        restore.items.add().Pack(pad)
+        assert api.request(restore, editor.UpdateItemsResponse).status == types.IRS_OK
+        api.request(
+            editor.EndCommit(header=update_header, id=transaction.id,
+                             action=editor.CMA_COMMIT, message="footprint restore"),
+            editor.EndCommitResponse,
+        )
+        api.request(project_commands.SaveDocument(document=footprint_doc), Empty)
         restored_items = api.request(
             editor.GetItems(
                 header=types.ItemHeader(document=footprint_doc),
