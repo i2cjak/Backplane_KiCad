@@ -7,6 +7,8 @@
 - Native files follow upstream master's format. Do not add fork-only tokens to `.kicad_pcb`/`.kicad_sch`; store fork-only data in adjacent `.backplane.json` / `.backplane-assembly.json` companions and preserve them through save, copy, export, and `kicad-cli ... downgrade`. Stock KiCad 10 users get a copy via `kicad-cli project downgrade --target 10.0`.
 - Fork-only IPC messages live in proto package `kiapi.backplane`, never in upstream's packages.
 - Heavy builds run on `h@backplane` under `systemd-run --user -p MemoryMax=20G`, -j8, ccache. Never run a full KiCad build on the user's desktop.
+- Full builds currently run in GitHub Actions (`backplane-linux-release.yml`, ubuntu:26.04 container, ccache); `h@backplane` is for light work until its hardware is checked (2026-10-14).
+- Only the fork lead pushes `backplane/master` and `port/*`. Implementers push only to their own `impl/*` branches.
 - This repository and corresponding source for distributed binaries must remain public. Preserve upstream licenses, authorship, and third-party notices. Ship licenses and matching source with release binaries.
 - Coordinate the runtime archive layout, handshake, and supported platforms with the sibling Backplane app (`bp-coord/kicad-fork/CONTRACT.md`). Validate the packaged runtime on a host without a separate KiCad installation.
 - Never add OpenAI copyright or ownership notices.
