@@ -170,18 +170,13 @@ def main(cli, stock_cli=None):
             editor.GetDocumentModifiedStateResponse,
         ).state
 
-        # Selection is editor state and must round-trip through a headless
-        # schematic context without making the native document dirty.
-        assert api.request(editor.GetSelection(header=header),
-                           editor.SelectionResponse).items == []
-        selected = api.request(
+        # Upstream master keeps no selection in a headless schematic context.
+        api.expect_headless_unavailable(
+            editor.GetSelection(header=header),
             editor.AddToSelection(header=header, items=[symbol.id]),
-            editor.SelectionResponse,
+            editor.RemoveFromSelection(header=header, items=[symbol.id]),
+            editor.ClearSelection(header=header),
         )
-        assert len(selected.items) == 1
-        selected_symbol = schematic.SchematicSymbolInstance()
-        assert selected.items[0].Unpack(selected_symbol)
-        assert selected_symbol.id.value == symbol.id.value
         assert api.request(editor.GetDocumentModifiedState(document=document),
                            editor.GetDocumentModifiedStateResponse).state == selection_baseline
         removed = api.request(

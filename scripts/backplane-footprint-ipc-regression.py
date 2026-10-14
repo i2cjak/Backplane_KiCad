@@ -100,58 +100,19 @@ def main():
 
         pad = pads[0]
 
-        # Selection is available in a headless footprint context through
-        # BOARD_ITEM flags rather than a GUI selection tool.  It is transient
-        # editor state, so selection mutations must leave the document clean.
-        assert len(api.request(
-            editor.GetSelection(header=header), editor.SelectionResponse
-        ).items) == 0
-        selected = api.request(
+        # Upstream master keeps no selection, visible or active layer in a headless
+        # footprint context; those commands report it rather than faking success.
+        api.expect_headless_unavailable(
+            editor.GetSelection(header=header),
             editor.AddToSelection(header=header, items=[pad.id]),
-            editor.SelectionResponse,
-        )
-        assert len(selected.items) == 1
-        assert unpack(selected.items[0]).id.value == pad.id.value
-        assert api.request(
-            editor.GetSelection(header=header), editor.SelectionResponse
-        ).items
-        assert len(api.request(
             editor.RemoveFromSelection(header=header, items=[pad.id]),
-            editor.SelectionResponse,
-        ).items) == 0
-        api.request(editor.AddToSelection(header=header, items=[pad.id]),
-                    editor.SelectionResponse)
-        api.request(editor.ClearSelection(header=header), Empty)
-        assert len(api.request(
-            editor.GetSelection(header=header), editor.SelectionResponse
-        ).items) == 0
-        assert document_modified(api, editor, footprint_doc) == editor.DMS_UNMODIFIED
-
-        # Layer visibility and active-layer state are also available without a
-        # frame.  Restrict the state to F.Cu, then restore it through the same
-        # API path so the test exercises both getters and setters.
-        api.request(
-            board_commands.SetVisibleLayers(
-                board=footprint_doc, layers=[board_types.BL_F_Cu]
-            ),
-            Empty,
-        )
-        visible = api.request(
+            editor.ClearSelection(header=header),
+            board_commands.SetVisibleLayers(board=footprint_doc, layers=[board_types.BL_F_Cu]),
             board_commands.GetVisibleLayers(board=footprint_doc),
-            board_commands.BoardLayers,
-        )
-        assert list(visible.layers) == [board_types.BL_F_Cu]
-        api.request(
-            board_commands.SetActiveLayer(
-                board=footprint_doc, layer=board_types.BL_F_Cu
-            ),
-            Empty,
-        )
-        active = api.request(
+            board_commands.SetActiveLayer(board=footprint_doc, layer=board_types.BL_F_Cu),
             board_commands.GetActiveLayer(board=footprint_doc),
-            board_commands.BoardLayerResponse,
         )
-        assert active.layer == board_types.BL_F_Cu
+        assert document_modified(api, editor, footprint_doc) == editor.DMS_UNMODIFIED
 
         # A normal save clears the headless dirty state before later mutation
         # and SaveCopy checks.

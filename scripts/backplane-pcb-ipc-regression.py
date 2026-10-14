@@ -105,15 +105,15 @@ def main():
         by_class = track_ids(commands.GetItemsByNetClass(header=header, net_classes=["Default"],
                                                        types=[enums.KOT_PCB_TRACE]))
         assert by_class, "Default netclass query returned no tracks"
-        api.request(editor.AddToSelection(header=header, items=[track.id for track in tracks]),
-                    editor.SelectionResponse)
-        assert len(api.request(editor.GetSelection(header=header), editor.SelectionResponse).items) == 2
-        api.request(editor.ClearSelection(header=header), Empty)
-        assert not api.request(editor.GetSelection(header=header), editor.SelectionResponse).items
+        api.expect_headless_unavailable(
+            editor.AddToSelection(header=header, items=[track.id for track in tracks]),
+            editor.GetSelection(header=header),
+            editor.ClearSelection(header=header),
+        )
         invalid_types = api.request_raw(commands.GetConnectedItems(
             header=header, items=[tracks[0].id], types=[enums.KOT_SCH_SYMBOL]))
         assert invalid_types.status.status == api.envelope.AS_BAD_REQUEST, invalid_types
-        print("PASS PCB connectivity, net/netclass queries, headless selection", flush=True)
+        print("PASS PCB connectivity, net/netclass queries; headless selection reported unavailable", flush=True)
 
         design_rules = request(commands.GetBoardDesignRules, commands.BoardDesignRulesResponse).rules
         design_rules.constraints.min_clearance.value_nm = 230000
