@@ -4580,6 +4580,20 @@ void BOARD::SaveToHistory( const wxString& aProjectPath, std::vector<HISTORY_FIL
 
         aFileData.push_back( std::move( entry ) );
 
+        // Master history/autosave serializes through a formatter, bypassing
+        // SaveBoard.  Capture live construction alongside that native stage.
+        auto& metadata = BackplaneMetadata();
+        metadata.CaptureExtension( wxS( "root" ), "board_structure",
+                                   GetBoardStructure().Empty() ? nlohmann::json()
+                                                               : GetBoardStructure().ToJson() );
+        if( metadata.HasExtensionHistory() )
+        {
+            HISTORY_FILE_DATA companion;
+            companion.relativePath = rel + wxS( ".backplane.json" );
+            companion.content = metadata.ToJson().dump( 2 ) + "\n";
+            aFileData.push_back( std::move( companion ) );
+        }
+
         wxLogTrace( traceAutoSave, wxS( "[history] pcb saver serialized %zu bytes for '%s'" ),
                     aFileData.back().content.size(), rel );
     }

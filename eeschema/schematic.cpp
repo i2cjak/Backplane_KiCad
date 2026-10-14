@@ -3294,6 +3294,15 @@ void SCHEMATIC::SaveToHistory( const wxString& aProjectPath, std::vector<HISTORY
             entry.formatMode = mode;
             aFileData.push_back( std::move( entry ) );
 
+            const auto& metadata = screen->BackplaneMetadata();
+            if( metadata.HasExtensionHistory() )
+            {
+                HISTORY_FILE_DATA companion;
+                companion.relativePath = rel + wxS( ".backplane.json" );
+                companion.content = metadata.ToJson().dump( 2 ) + "\n";
+                aFileData.push_back( std::move( companion ) );
+            }
+
             wxLogTrace( traceAutoSave,
                         wxS( "[history] sch saver serialized %zu bytes for '%s' -> '%s'" ),
                         aFileData.back().content.size(), absPath, rel );

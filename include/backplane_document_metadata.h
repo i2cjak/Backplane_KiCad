@@ -23,6 +23,11 @@ class BACKPLANE_DOCUMENT_METADATA
 public:
     void Load( const wxString& aDocumentPath );
     void Save( const wxString& aDocumentPath ) const;
+    nlohmann::json ToJson() const;
+
+    // History needs an empty wrapper after the last extension is removed, so
+    // restoring an older companion cannot resurrect deleted construction.
+    bool HasExtensionHistory() const { return m_hadExtensions; }
 
     void Apply( const wxString& aKey, EDA_ITEM& aItem ) const;
 
@@ -38,6 +43,7 @@ public:
     static wxString CompanionPath( const wxString& aDocumentPath );
 
 private:
+    bool m_hadExtensions = false;
     nlohmann::json m_extensions = nlohmann::json::object();
     nlohmann::json m_items = nlohmann::json::object();
 };

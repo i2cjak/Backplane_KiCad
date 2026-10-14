@@ -74,6 +74,8 @@ BOOST_AUTO_TEST_CASE( NativeValuesWinAndLegacyItemsAreNotWritten )
     reopened.Load( path );
     BOOST_CHECK( reopened.ReadExtension( wxS( "root" ), "board_structure" ) == extension );
     reopened.CaptureExtension( wxS( "root" ), "board_structure", nullptr );
+    BOOST_CHECK( reopened.HasExtensionHistory() );
+    BOOST_CHECK( reopened.ToJson().at( "extensions" ).empty() );
     reopened.Save( path );
     BOOST_CHECK( !wxFileExists( BACKPLANE_DOCUMENT_METADATA::CompanionPath( path ) ) );
 }

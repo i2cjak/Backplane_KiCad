@@ -47,6 +47,7 @@ wxString BACKPLANE_DOCUMENT_METADATA::CompanionPath( const wxString& aDocumentPa
 
 void BACKPLANE_DOCUMENT_METADATA::Load( const wxString& aDocumentPath )
 {
+    m_hadExtensions = false;
     m_items = nlohmann::json::object();
     m_extensions = nlohmann::json::object();
     const wxString path = CompanionPath( aDocumentPath );
@@ -110,12 +111,20 @@ void BACKPLANE_DOCUMENT_METADATA::Load( const wxString& aDocumentPath )
             else
                 ++entry;
         }
+        m_hadExtensions = !m_extensions.empty();
     }
     catch( const nlohmann::json::exception& error )
     {
         THROW_IO_ERROR( wxString::Format( "Invalid Backplane companion metadata %s: %s", path,
                                          wxString::FromUTF8( error.what() ) ) );
     }
+}
+
+
+nlohmann::json BACKPLANE_DOCUMENT_METADATA::ToJson() const
+{
+    return { { "format", "backplane-kicad-metadata" }, { "version", 2 },
+             { "extensions", m_extensions } };
 }
 
 
@@ -131,9 +140,7 @@ void BACKPLANE_DOCUMENT_METADATA::Save( const wxString& aDocumentPath ) const
         return;
     }
 
-    const nlohmann::json data = { { "format", "backplane-kicad-metadata" }, { "version", 2 },
-                                  { "extensions", m_extensions } };
-    const std::string contents = data.dump( 2 ) + "\n";
+    const std::string contents = ToJson().dump( 2 ) + "\n";
     wxFile file;
     const wxString temporary = wxFileName::CreateTempFileName( path + wxS( ".tmp-" ), &file );
 
@@ -232,6 +239,7 @@ void BACKPLANE_DOCUMENT_METADATA::CaptureExtension( const wxString& aKey,
 {
     if( !aData.empty() )
     {
+        m_hadExtensions = true;
         m_extensions[aKey.ToStdString()][aName] = aData;
     }
     else if( auto entry = m_extensions.find( aKey.ToStdString() ); entry != m_extensions.end() )
