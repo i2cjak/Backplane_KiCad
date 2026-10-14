@@ -38,6 +38,8 @@ with pynng.Req0(dial="ipc:///run/user/1000/backplane/kicad/<hash>/api.sock") as 
   closed with `force`.
 - Edit inside a commit: `BeginCommit`, then `CreateItems` / `UpdateItems` / `DeleteItems`, then
   `EndCommit` with `CMA_COMMIT` or `CMA_DROP`. Read with `GetItems`, `GetItemsById`.
+  A document counts as modified only once a commit ends with `CMA_COMMIT`, and `CloseDocument`
+  does not wait for open commits: end yours first.
 - Schematic: all item types are serialized (wires, junctions, labels, symbols and pins, sheets,
   tables, rule areas, groups ...); `GetSchematicHierarchy`, `GetSchematicNetlist`.
 - Board: nets and connectivity, design rules (`board_rules.proto`), stackup (read only),
