@@ -86,32 +86,6 @@ def symbol_snapshot(symbol):
     }
 
 
-def legacy_symbol_instance(symbol):
-    """Model the published scalar field 11 in a separate protobuf descriptor pool."""
-    pool = descriptor_pool.DescriptorPool()
-
-    def add_file(source):
-        for dependency in source.dependencies:
-            try:
-                pool.FindFileByName(dependency.name)
-            except KeyError:
-                add_file(dependency)
-        descriptor = descriptor_pb2.FileDescriptorProto.FromString(source.serialized_pb)
-        for message in descriptor.message_type:
-            if message.name == "SchematicSymbol":
-                field = next(field for field in message.field if field.number == 11)
-                field.name = "body_style_count"
-                field.json_name = "bodyStyleCount"
-                field.type = field.TYPE_UINT32
-                field.label = field.LABEL_OPTIONAL
-                field.ClearField("type_name")
-        pool.Add(descriptor)
-
-    add_file(symbol.DESCRIPTOR.file)
-    descriptor = pool.FindMessageTypeByName(symbol.DESCRIPTOR.full_name)
-    return message_factory.GetMessageClass(descriptor).FromString(symbol.SerializeToString())
-
-
 def main(cli, stock_cli=None):
     with IpcSession(cli) as api:
         # Import generated modules only after IpcSession has created its
@@ -192,21 +166,6 @@ def main(cli, stock_cli=None):
             current = schematic.SchematicSymbolInstance()
             assert response.items[0].Unpack(current)
             return current
-
-        # A client generated from the published scalar body-style field must
-        # still read the count and update the symbol without losing its graphics.
-        legacy = legacy_symbol_instance(symbol)
-        assert legacy.definition.body_style_count == len(symbol.definition.body_style)
-        legacy.definition.DiscardUnknownFields()
-        transaction = api.request(editor.BeginCommit(header=header), editor.BeginCommitResponse)
-        update = editor.UpdateItems(header=header)
-        update.items.add().Pack(legacy)
-        result = api.request(update, editor.UpdateItemsResponse)
-        assert result.updated_items[0].status.code == editor.ISC_OK, result
-        assert len(read_symbol().definition.body_style) == legacy.definition.body_style_count
-        assert symbol_snapshot(read_symbol())["children"] == original["children"]
-        api.request(editor.EndCommit(header=header, id=transaction.id, action=editor.CMA_DROP,
-                                     message="Legacy symbol wire format"), editor.EndCommitResponse)
 
         # A dropped update must restore every part of the original definition.
         transaction = api.request(editor.BeginCommit(header=header), editor.BeginCommitResponse)

@@ -67,9 +67,13 @@ def main():
         cases.extend([
             (types.DOCTYPE_SCHEMATIC, sch.RunSchematicJobExportNetlist(
                 format=sch.SNF_KICAD_XML), "xml"),
+            # Explicit fields: upstream fe761fb867's "Grouped By Value" field preset throws
+            # std::bad_alloc in the BOM job (kicad-cli and IPC alike).
             (types.DOCTYPE_SCHEMATIC, sch.RunSchematicJobExportBOM(
                 format=sch.BOMFormatSettings(preset_name="CSV"),
-                fields=sch.BOMFieldSettings(preset_name="Grouped By Value")), "csv"),
+                fields=sch.BOMFieldSettings(fields=[
+                    sch.BOMField(name="Reference", label="Reference"),
+                    sch.BOMField(name="Value", label="Value", group_by=True)])), "csv"),
         ])
         plot = pcb.BoardPlotSettings(
             layers=[board.BL_F_Cu, board.BL_Edge_Cuts], scale=1.0,
