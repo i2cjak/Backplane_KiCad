@@ -17,7 +17,7 @@ import time
 from backplane_ipc_test_support import IpcSession
 
 CAPABILITIES = {"api-server", "headless-pcb", "headless-sch", "export-v10", "parent-pid",
-                "capabilities", "sketch-route", "assembly"}
+                "capabilities", "sketch-route", "board-structure", "assembly"}
 
 
 def check_describe(cli, env):
