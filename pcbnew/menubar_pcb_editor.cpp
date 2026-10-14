@@ -391,6 +391,8 @@ void PCB_EDIT_FRAME::doReCreateMenuBar()
     routeMenu->AppendSeparator();
     routeMenu->Add( PCB_ACTIONS::routeSingleTrack );
     routeMenu->Add( PCB_ACTIONS::routeDiffPair );
+    routeMenu->Add( PCB_ACTIONS::routerSketchRoute );
+    routeMenu->Add( PCB_ACTIONS::routerSketchAutoroute );
 
     routeMenu->AppendSeparator();
     routeMenu->Add( PCB_ACTIONS::tuneSingleTrack );

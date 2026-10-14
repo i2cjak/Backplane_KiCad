@@ -292,6 +292,8 @@ public:
     static TOOL_ACTION routerRouteSelected;
     static TOOL_ACTION routerRouteSelectedFromEnd;
     static TOOL_ACTION routerAutorouteSelected;
+    static TOOL_ACTION routerSketchRoute;
+    static TOOL_ACTION routerSketchAutoroute;
     static TOOL_ACTION routerOptimizeSelected;
     static TOOL_ACTION cancelCurrentItem;
 
