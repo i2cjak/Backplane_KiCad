@@ -42,9 +42,14 @@ with pynng.Req0(dial="ipc:///run/user/1000/backplane/kicad/<hash>/api.sock") as 
   tables, rule areas, groups ...); `GetSchematicHierarchy`, `GetSchematicNetlist`.
 - Board: nets and connectivity, design rules (`board_rules.proto`), stackup (read only),
   layers, plot settings, embedded files, zones, `RunBoardJob*` exports.
-- Headless limits: commands that need an interactive canvas (moves, net highlighting) return
-  `AS_UNIMPLEMENTED`. ERC and DRC are not IPC commands: use `kicad-cli sch erc` and
-  `kicad-cli pcb drc`.
+- Headless limits: upstream keeps editor state only in the GUI. A headless server returns
+  `AS_UNIMPLEMENTED` ("... is not available in headless mode") for selection (`GetSelection`,
+  `AddToSelection`, `RemoveFromSelection`, `ClearSelection`, `SaveSelectionToString`,
+  `SyncSelection`, `FocusOnItems`), view state (`Get/SetVisibleLayers`, `Get/SetActiveLayer`,
+  `Get/SetBoardEditorAppearanceSettings`), `HighlightNets`, `RunAction`, `RevertDocument`,
+  `OpenLibraryItem` and `InteractiveMoveItems`. Name items by ID instead of selecting them; to
+  undo unsaved work, drop the commit or close the document with `force` and reopen it.
+- ERC and DRC are not IPC commands: use `kicad-cli sch erc` and `kicad-cli pcb drc`.
 
 Full command list and what master lacks: `bp-coord/kicad-fork/IPC-MAP.md` (coordination repo),
 or read `api/proto/` directly.
@@ -54,7 +59,7 @@ or read `api/proto/` directly.
 | Command | Proto | Notes |
 |---|---|---|
 | `GetCapabilities` | `backplane/capabilities.proto` | Fork version, upstream commit, API level, capability names, every registered command, native file versions. |
-| `SketchRoute` | `backplane/sketch_route.proto` | Routes a bundle of connections (item IDs or the selection, optional guide polyline, layer, corner mode, vias, time limit); new items join the open commit. Works headless. |
+| `SketchRoute` | `backplane/sketch_route.proto` | Routes a bundle of connections (item IDs, optional guide polyline, layer, corner mode, vias, time limit); new items join the open commit. Works headless with explicit item IDs; an empty list means "the selection" and only works in the GUI. |
 
 Board-structure (rigid-flex) and assembly commands are added by the phase-2 port (PR #6) in
 `backplane/structure.proto` and `backplane/assembly.proto`; check `GetCapabilities` for
@@ -81,6 +86,8 @@ Gate features on capability or command names, not on version numbers.
 - The old `kiapi.schematic.types.GetSchematicHierarchy/Netlist` type URLs are no longer accepted;
   use `kiapi.schematic.commands.*`.
 - `SketchRoute` moved from `kiapi.board.commands` to `kiapi.backplane`.
+- Headless selection, view layers and `RevertDocument` worked in the 10.0.6-based runtime; upstream
+  master refuses them headless (see "Headless limits").
 - Native files are no longer readable by stock KiCad 10.0.x; use the export above.
 - The SWIG `pcbnew` Python module no longer exists upstream; use IPC or `kicad-cli`.
 
