@@ -69,6 +69,7 @@ Tests print `KNOWN GAP ...` for these instead of failing; each needs a focused p
 |---|---|---|
 | `CloseAllDocuments(force=False)` ignores `force` and discards unsaved changes | data loss risk for agents | candidate patch |
 | Footprint/pad children created in a footprint are not found after commit | footprint editing over IPC | impl/pcb-field-crud |
+| Sheet symbol created over IPC (reusing a sheet file) makes the next save fail | schematic becomes unsaveable | candidate patch |
 | Placed-symbol update detaches its library link (`ecc83-pp:R` → `:R_1`) | silent library-link loss | candidate patch |
 | Headless footprint modified state reflects the board context | wrong dirty flag | candidate patch |
 | Footprint `SaveCopyOfDocument` writes no file | export of footprints | candidate patch |
