@@ -1,0 +1,51 @@
+# Backplane_KiCad patch triage: backplane/10.0.6 → upstream master
+
+Base for the new branch: upstream master `fe761fb867` (2026-10-14, KiCad 10.99.0).
+Old base: tag 10.0.6 `caf7377e9c`. 18 commits on backplane/10.0.6 plus 4 on origin/main.
+
+Classes: **DROP-UPSTREAM** = master has it; **DROP-OBSOLETE** = only meaningful on 10.0.6;
+**PORT** = still needed; **PKG** = release packaging, port with changes.
+
+| # | Commit | Subject | Class | Evidence / notes |
+|---|---|---|---|---|
+| 1 | e424a264fa | backport headless PCB/SCH IPC | DROP-UPSTREAM | `kicad-cli api-server` is upstream (caf1bcc455); master has `headless_sch_context`, `headless_pcb_context` (replaces our `headless_board_context`). |
+| 2 | 25348df972 | build deps, provenance | DROP-OBSOLETE | Workflow text only; apt list folded into new CI. |
+| 3 | c303bad718 | build prerequisites | DROP-OBSOLETE | Same. |
+| 4 | 313b85c6e3 | schematic IPC items + save | DROP-UPSTREAM | All proto fields match master; `sch_api_save`, `schematic_jobs.proto` upstream. Smoke script → #T. |
+| 5 | a9ab802ba9 | protocol backports, relocatable runtime | DROP-UPSTREAM + **PORT** | Protos upstream. **Port** `KICAD_KIFACE_HOME` / `KICAD_STOCK_PLUGIN_HOME` hooks (common/paths.cpp, kiway.cpp): needed for the relocatable archive. |
+| 6 | b8690cd037 | CI lexer order | DROP-OBSOLETE | 10.0.6 build fix. |
+| 7 | 926b6776e9 | stable PCB loader | DROP-OBSOLETE | 10.0.6 loader fix. |
+| 8 | 29c379cb6d | PCB job + metadata | DROP-UPSTREAM | upstream 46da153141. |
+| 9 | 727005a6f7 | bundle libraries + runtimes | PKG | Repin libraries/template for 10.99 (master libs), drop python3.12 hardcode. |
+| 10 | ba40a26602 | template pin | DROP-OBSOLETE | Stable-tag pin; redo for master. |
+| 11 | b18ad732b1 | template install layout | PKG | Ports as-is. |
+| 12 | 233601cd13 | notice collection | PKG | Ports as-is. |
+| 13 | 7c4ecf24c5 | smoke: legacy geometry | PKG | Ports as-is. |
+| 14 | c4ca95e57a | smoke: model mesh | PKG | Ports as-is. |
+| 15 | 77d957b7f9 | bundle module deps | PKG | Ports; re-validate ELF closure. |
+| 16 | d0727c2036 | materialize Python links | PKG | Ports; Python version follows CI image. |
+| 17 | 75e38b910c | reject broken links | PKG | Ports as-is. |
+| 18 | 1c193606ed | expand editor APIs + 10.0.6 file compat | mostly DROP-UPSTREAM | 1089/1116 proto additions identical on master (adapted from master 2f18d95be7). `FocusOnItem` → upstream `FocusOnItems`; `RuleCheckerMarker` → upstream `DrcMarker`/`ErcMarker`. Line endings + custom properties are **native tokens on master** → the `.backplane.json` sidecar for them is DROP-OBSOLETE. Keep a **reduced** sidecar for fork-only data (board_structure, assembly). Regression scripts → #T. |
+| — | e1309bcd6f | QA build fix | DROP-OBSOLETE | Test replaced by upstream `test_headless_pcb_context`. |
+| — | 688a0c8229 | sketch router | **PORT** | Fork-only. 4 standalone router files + test; UI hooks (router_tool, pcb_actions, edit_tool, menubar) need hand-merge (heavy upstream churn). |
+| — | d5b38b21fa | SketchRoute IPC | **PORT** | Register in master's `api_handler_board.cpp`. Proto in a separate fork file to avoid upstream field collisions. |
+| — | 6c8feb7b9f | AGENTS.md | rewrite | New AGENTS.md for master base (2026-10-14 decision). |
+| — | (uncommitted) | rigid-flex, structure canvas/validation, assembly IPC | **PORT (phase 2)** | Was never committed; snapshotted to local branch `backplane/wip-structure-2026-09-12` (139 files, +17.8k). Data lives in `.kicad_pcb.backplane.json` sidecars and `.backplane-assembly.json`, no native tokens. Touches 3D viewer, router, STEP exporter, `api_handler_pcb.cpp` (split upstream): hard conflicts expected. |
+
+## New fork patches (not in the old branch)
+| ID | Patch | Why |
+|---|---|---|
+| N1 | `kicad-cli version --format json` | Cheap version + capability handshake without starting a server. |
+| N2 | `kiapi.backplane.GetCapabilities` IPC command (own proto package) | Lists fork version, upstream commit, registered API commands, file-format versions. |
+| N3 | `api-server --parent-pid PID` | Server exits when the Backplane hub dies; no orphan servers. |
+| N4 | downgrade carries `.backplane.json` companions | `project downgrade --target 10.0` copies fork sidecars beside the output and reports them as preserved-but-ignored by stock KiCad. |
+
+## Target commit order on backplane/master
+1. docs: AGENTS.md, BACKPLANE_IPC.md, PATCHES.md, FORK-STATUS pointer
+2. feat(runtime): relocatable kiface/plugin homes (from a9ab802ba9)
+3. feat(cli): version JSON (N1); feat(ipc): GetCapabilities (N2); feat(cli): api-server --parent-pid (N3)
+4. feat(pcbnew): sketch router core; feat(pcbnew): router UI hooks; feat(ipc): SketchRoute
+5. feat(metadata): reduced sidecar + downgrade companions (N4)
+6. test(ipc): regression/smoke scripts adapted to master names
+7. ci(release): Linux runtime workflow for the master base
+8. phase 2: structure / rigid-flex / assembly from the WIP snapshot
