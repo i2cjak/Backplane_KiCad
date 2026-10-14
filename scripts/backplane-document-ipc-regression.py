@@ -211,11 +211,11 @@ def main():
         wrong_pcb = types.DocumentSpecifier(
             type=types.DOCTYPE_PCB, board_filename="unrelated.kicad_pcb"
         )
-        expect_status(
-            session,
-            editor.GetDocumentModifiedState(document=wrong_pcb),
-            session.envelope.AS_UNHANDLED,
-        )
+        # The 10.0.6 runtime declined with AS_UNHANDLED; upstream answers AS_BAD_REQUEST.
+        # Either way the unrelated document must not be reported as ours.
+        wrong = session.request_raw(editor.GetDocumentModifiedState(document=wrong_pcb))
+        assert wrong.status.status in (session.envelope.AS_UNHANDLED,
+                                       session.envelope.AS_BAD_REQUEST), wrong.status
 
         assert document_modified(session, editor, pcb_a_document) == editor.DMS_UNMODIFIED
         header, transaction_id, _ = create_track(

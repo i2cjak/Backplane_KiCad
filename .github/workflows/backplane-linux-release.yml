@@ -362,6 +362,38 @@ jobs:
           "release/${archive_root}/bin/kicad-cli" api-server --help
           "release/${archive_root}/bin/kicad-cli" api-server --describe
           "release/${archive_root}/bin/kicad-cli" project downgrade --help
+          /usr/bin/python3 scripts/backplane-library-smoke.py "release/${archive_root}"
+          du -sh "release/${archive_root}/share/kicad/3dmodels" "release/${archive_root}"
+          (cd release && tar -czf "${archive_root}.tar.gz" "${archive_root}")
+          for archive in release/*.tar.gz; do
+            size_bytes="$(stat -c '%s' "$archive")"
+            test "$size_bytes" -lt 2147483648 || {
+              echo "GitHub release asset exceeds the 2 GiB limit: $archive ($size_bytes bytes)" >&2
+              exit 1
+            }
+          done
+          (cd release && sha256sum ./*.tar.gz > SHA256SUMS)
+          echo "archive_root=${archive_root}" >> "$GITHUB_ENV"
+
+      - name: Upload runtime archive
+        if: always() && env.archive_root != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: backplane-kicad-linux-x86_64
+          compression-level: 0
+          retention-days: 1
+          path: |
+            release/*.tar.gz
+            release/SHA256SUMS
+          if-no-files-found: error
+
+      # Separate from packaging so the archive is uploaded even when a regression
+      # fails; failing runs can then be reproduced from the artifact.
+      - name: Run IPC regressions against the relocated runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset LD_LIBRARY_PATH
           "$RUNNER_TEMP/ipc-smoke-venv/bin/python" scripts/backplane-ipc-smoke.py "release/${archive_root}/bin/kicad-cli"
           # Run every regression, then fail once with the full list.
           failed=()
@@ -376,28 +408,6 @@ jobs:
             printf '::error::IPC regression failed: %s\n' "${failed[@]}"
             exit 1
           fi
-          /usr/bin/python3 scripts/backplane-library-smoke.py "release/${archive_root}"
-          du -sh "release/${archive_root}/share/kicad/3dmodels" "release/${archive_root}"
-          (cd release && tar -czf "${archive_root}.tar.gz" "${archive_root}")
-          for archive in release/*.tar.gz; do
-            size_bytes="$(stat -c '%s' "$archive")"
-            test "$size_bytes" -lt 2147483648 || {
-              echo "GitHub release asset exceeds the 2 GiB limit: $archive ($size_bytes bytes)" >&2
-              exit 1
-            }
-          done
-          (cd release && sha256sum ./*.tar.gz > SHA256SUMS)
-
-      - name: Upload runtime archive
-        uses: actions/upload-artifact@v4
-        with:
-          name: backplane-kicad-linux-x86_64
-          compression-level: 0
-          retention-days: 1
-          path: |
-            release/*.tar.gz
-            release/SHA256SUMS
-          if-no-files-found: error
 
   draft-release:
     if: startsWith(github.ref, 'refs/tags/backplane-kicad-v')
