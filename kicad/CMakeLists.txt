@@ -68,6 +68,7 @@ set( KICAD_CLI_SRCS
     cli/command_pcb_diff.cpp
     cli/command_pcb_structure.cpp
     cli/command_pcb_drc.cpp
+    cli/command_pcb_assembly.cpp
     cli/command_mergetool.cpp
     cli/command_git_mergedriver.cpp
     cli/command_fp_diff.cpp

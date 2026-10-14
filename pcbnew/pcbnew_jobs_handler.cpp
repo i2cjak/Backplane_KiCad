@@ -72,6 +72,7 @@
 #include <jobs/job_export_pcb_stackup.h>
 #include <jobs/job_export_pcb_svg.h>
 #include <jobs/job_export_pcb_3d.h>
+#include <jobs/job_pcb_assembly.h>
 #include <jobs/job_pcb_render.h>
 #include <jobs/job_pcb_drc.h>
 #include <jobs/job_pcb_import.h>
@@ -87,6 +88,8 @@
 #include <cli/exit_codes.h>
 #include <exporters/place_file_exporter.h>
 #include <exporters/step/exporter_step.h>
+#include <assembly/assembly_exporter.h>
+#include <assembly/assembly_model.h>
 #include <plotters/plotter_dxf.h>
 #include <plotters/plotter_gerber.h>
 #include <plotters/plotters_pslike.h>
@@ -118,6 +121,7 @@
 #include <3d_rendering/track_ball.h>
 #include <project_pcb.h>
 #include <pcb_io/kicad_sexpr/pcb_io_kicad_sexpr.h>
+#include <pcb_io/pcb_io_mgr.h>
 #include <pcb_io/common/plugin_common_layer_mapping.h>
 #include <reporter.h>
 #include <scoped_set_reset.h>
@@ -170,6 +174,10 @@ PCBNEW_JOBS_HANDLER::PCBNEW_JOBS_HANDLER( KIWAY* aKiway ) :
         m_cliBoard( nullptr ),
         m_toolManager( nullptr )
 {
+    Register( "pcb_assembly", std::bind( &PCBNEW_JOBS_HANDLER::JobBoardAssembly, this,
+                                           std::placeholders::_1 ),
+              []( JOB*, wxWindow* ) { return true; } );
+
     Register( "bom", std::bind( &PCBNEW_JOBS_HANDLER::JobExportBom, this, std::placeholders::_1 ),
               [aKiway]( JOB* job, wxWindow* aParent ) -> bool
               {
@@ -1080,6 +1088,82 @@ int PCBNEW_JOBS_HANDLER::JobExportBom( JOB* aJob )
     }
 
     return CLI::EXIT_CODES::OK;
+}
+
+
+int PCBNEW_JOBS_HANDLER::JobBoardAssembly( JOB* aJob )
+{
+    auto* job = dynamic_cast<JOB_PCB_ASSEMBLY*>( aJob );
+
+    if( !job )
+        return CLI::EXIT_CODES::ERR_UNKNOWN;
+
+    ASSEMBLY_MANIFEST manifest;
+
+    try
+    {
+        manifest = ASSEMBLY_MANIFEST::Load( job->filename.ToStdString() );
+    }
+    catch( const std::exception& e )
+    {
+        m_reporter->Report( wxString::FromUTF8( e.what() ), RPT_SEVERITY_ERROR );
+        return CLI::EXIT_CODES::ERR_INVALID_INPUT_FILE;
+    }
+
+    auto boardExporter = [this, &manifest]( const ASSEMBLY_INSTANCE& aInstance,
+                                            const std::string& aOutput, REPORTER* aReporter )
+    {
+        if( aInstance.kind != "board" )
+            return true;
+
+        const auto path = manifest.base_directory / aInstance.source;
+        std::unique_ptr<BOARD> board = PCB_IO_MGR::Load(
+                PCB_IO_MGR::FindPluginTypeFromBoardPath( wxString::FromUTF8( path.string() ) ),
+                wxString::FromUTF8( path.string() ) );
+
+        if( !board )
+            return false;
+
+        EXPORTER_STEP_PARAMS params;
+        // TODO(assembly): pass folded rigid-flex state after the separate
+        // STEP exporter implementation lands. This port is unfolded.
+        EXPORTER_STEP exporter( board.get(), params, aReporter );
+        exporter.m_outputFile = wxString::FromUTF8( aOutput );
+        const bool result = exporter.Export();
+        return result;
+    };
+
+    try
+    {
+        if( job->check )
+        {
+            const auto collisions = ASSEMBLY_EXPORTER::CheckCollisions(
+                    manifest, &NULL_REPORTER::GetInstance(), boardExporter );
+
+            for( const auto& collision : collisions )
+            {
+                m_reporter->Report( wxString::Format(
+                        _( "Assembly collision: %s / %s (%.6f mm)\n" ),
+                        wxString::FromUTF8( collision.first ),
+                        wxString::FromUTF8( collision.second ), collision.clearance_mm ),
+                                    RPT_SEVERITY_ERROR );
+            }
+
+            return collisions.empty() ? CLI::EXIT_CODES::OK : CLI::EXIT_CODES::ERR_RC_VIOLATIONS;
+        }
+
+        if( job->output.IsEmpty()
+            || !ASSEMBLY_EXPORTER::Export( manifest, job->output.ToStdString(),
+                                           &NULL_REPORTER::GetInstance(), boardExporter ) )
+            return CLI::EXIT_CODES::ERR_INVALID_OUTPUT_CONFLICT;
+
+        return CLI::EXIT_CODES::OK;
+    }
+    catch( const std::exception& e )
+    {
+        m_reporter->Report( wxString::FromUTF8( e.what() ), RPT_SEVERITY_ERROR );
+        return CLI::EXIT_CODES::ERR_INVALID_INPUT_FILE;
+    }
 }
 
 

@@ -30,6 +30,7 @@ include_directories(
     )
 
 set( PCBNEW_DIALOGS
+    assembly/dialog_assembly.cpp
     dialogs/dialog_constraint_value.cpp
     dialogs/dialog_constraint_value_base.cpp
     dialogs/dialog_constraint_list.cpp
@@ -289,6 +290,9 @@ set( PCBNEW_IMPORT_GFX
 
 
 set( PCBNEW_EXPORTERS
+    assembly/assembly_exporter.cpp
+    assembly/assembly_model.cpp
+    assembly/assembly_board_ops.cpp
     exporters/export_hyperlynx.cpp
     exporters/export_d356.cpp
     exporters/export_footprint_associations.cpp
@@ -506,6 +510,7 @@ set( PCBNEW_CLASS_SRCS
     api/api_handler_footprint.cpp
     api/api_pcb_structure.cpp
     api/api_handler_pcb.cpp
+    api/api_pcb_assembly.cpp
     api/api_pcb_sketch_route.cpp
     api/footprint_context.cpp
     api/headless_pcb_context.cpp

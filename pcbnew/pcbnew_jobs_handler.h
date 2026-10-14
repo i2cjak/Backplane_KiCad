@@ -47,6 +47,7 @@ public:
     int JobExportBom( JOB* aJob );
     int JobExportStep( JOB* aJob );
     int JobBoardStructure( JOB* aJob );
+    int JobBoardAssembly( JOB* aJob );
     int JobExportRender( JOB* aJob );
     int JobExportSvg( JOB* aJob );
     int JobExportDxf( JOB* aJob );

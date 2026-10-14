@@ -52,6 +52,7 @@
 #include "cli/command_jobset_run.h"
 #include "cli/command_pcb.h"
 #include "cli/command_pcb_structure.h"
+#include "cli/command_pcb_assembly.h"
 #include "cli/command_pcb_export.h"
 #include "cli/command_export_bom.h"
 #include "cli/command_fp_diff.h"
@@ -149,6 +150,7 @@ struct COMMAND_ENTRY
 static CLI::JOBSET_COMMAND               jobsetCmd{};
 static CLI::JOBSET_RUN_COMMAND           jobsetRunCmd{};
 static CLI::PCB_COMMAND                  pcbCmd{};
+static CLI::PCB_ASSEMBLY_COMMAND         pcbAssemblyCmd{};
 static CLI::PCB_DIFF_COMMAND             pcbDiffCmd{};
 static CLI::PCB_STRUCTURE_COMMAND        pcbStructureCmd{};
 static CLI::PCB_DRC_COMMAND              pcbDrcCmd{};
@@ -277,6 +279,9 @@ static std::vector<COMMAND_ENTRY> commandStack = {
             },
             {
                 &pcbStructureCmd
+            },
+            {
+                &pcbAssemblyCmd
             },
             {
                 &pcbImportCmd
