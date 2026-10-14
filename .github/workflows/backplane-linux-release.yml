@@ -22,7 +22,7 @@ permissions:
 jobs:
   linux-runtime:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 330
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -157,7 +157,7 @@ jobs:
 
       - name: Configure
         run: |
-          ccache --max-size=2G
+          ccache --max-size=4G
           fork_version="10.99.0-bp.0"
           case "${GITHUB_REF_NAME}" in backplane-kicad-v*) fork_version="${GITHUB_REF_NAME#backplane-kicad-v}" ;; esac
           upstream_commit="$(cat BACKPLANE_UPSTREAM)"
