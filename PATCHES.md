@@ -58,6 +58,26 @@ Classes: **DROP-UPSTREAM** = master has it; **DROP-OBSOLETE** = only meaningful 
 | feat(pcbnew) | Sketch Route / Autoroute Selected in the router tool | 688a0c8229 |
 | feat(ipc) | `kiapi.backplane.SketchRoute` | d5b38b21fa |
 | test(ipc) | runtime handshake regression | new |
+| fix(pcbnew) | copy teardrop settings in `BOARD_DESIGN_SETTINGS::initFromOther` (SetBoardDesignRules dropped them) | from 1c193606ed; upstream candidate |
+| fix(api) | reply `AS_INTERNAL_ERROR` when a handler throws (clients hung forever) | new; upstream candidate |
+| fix(eeschema) | parse `custom_property` on schematic graphic polylines (saved files failed to load) | new; upstream candidate |
+| docs | BACKPLANE_IPC.md agent guide for master | new |
+
+## Upstream gaps found by the IPC regressions (fork-patch candidates)
+Tests print `KNOWN GAP ...` for these instead of failing; each needs a focused patch (and an upstream report).
+| Gap | Impact for Backplane | Status |
+|---|---|---|
+| `CloseAllDocuments(force=False)` ignores `force` and discards unsaved changes | data loss risk for agents | candidate patch |
+| Footprint/pad children created in a footprint are not found after commit | footprint editing over IPC | impl/pcb-field-crud |
+| Placed-symbol update detaches its library link (`ecc83-pp:R` → `:R_1`) | silent library-link loss | candidate patch |
+| Headless footprint modified state reflects the board context | wrong dirty flag | candidate patch |
+| Footprint `SaveCopyOfDocument` writes no file | export of footprints | candidate patch |
+| Footprints open by library ID only (10.0.6 fork also opened `.kicad_mod` by path) | fork feature not carried | decide |
+| PCB table cell direct update not applied; standalone cell create/delete not rejected | table editing | candidate patch |
+| Schematic line ending set over IPC lost on save | fidelity | candidate patch |
+| Schematic graphic shapes do not write custom properties | fidelity (writer change would add tokens upstream can't read: needs upstream) | report upstream |
+| Bus-to-bus entry conversion on save gets a new UUID | ID stability | report upstream |
+| BOM "Grouped By Value" field preset throws `std::bad_alloc` (kicad-cli too) | BOM preset unusable | report upstream |
 
 Not yet ported: rigid-flex, structure canvas/validation, assembly IPC (phase 2, from
 `backplane/wip-structure-2026-09-12`).
