@@ -114,7 +114,7 @@ static int printBackplaneDescription()
 
     wxString text = wxString::FromUTF8( description.dump() );
     wxPrintf( "%s\n", text );
-    return EXIT_CODES::OK;
+    return CLI::EXIT_CODES::OK;
 }
 
 
