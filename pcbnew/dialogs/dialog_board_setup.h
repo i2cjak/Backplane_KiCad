@@ -50,7 +50,6 @@ protected:
     // event handlers
     void onPageChanged( wxBookCtrlEvent& aEvent ) override;
     void onAuxiliaryAction( wxCommandEvent& aEvent ) override;
-    bool TransferDataFromWindow() override;
 
     bool TransferDataFromWindow() override;
 
