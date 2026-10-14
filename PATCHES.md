@@ -40,12 +40,24 @@ Classes: **DROP-UPSTREAM** = master has it; **DROP-OBSOLETE** = only meaningful 
 | N3 | `api-server --parent-pid PID` | Server exits when the Backplane hub dies; no orphan servers. |
 | N4 | downgrade carries `.backplane.json` companions | `project downgrade --target 10.0` copies fork sidecars beside the output and reports them as preserved-but-ignored by stock KiCad. |
 
-## Target commit order on backplane/master
-1. docs: AGENTS.md, BACKPLANE_IPC.md, PATCHES.md, FORK-STATUS pointer
-2. feat(runtime): relocatable kiface/plugin homes (from a9ab802ba9)
-3. feat(cli): version JSON (N1); feat(ipc): GetCapabilities (N2); feat(cli): api-server --parent-pid (N3)
-4. feat(pcbnew): sketch router core; feat(pcbnew): router UI hooks; feat(ipc): SketchRoute
-5. feat(metadata): reduced sidecar + downgrade companions (N4)
-6. test(ipc): regression/smoke scripts adapted to master names
-7. ci(release): Linux runtime workflow for the master base
-8. phase 2: structure / rigid-flex / assembly from the WIP snapshot
+## Patch set on backplane/master (base fe761fb867; see `git log $(cat BACKPLANE_UPSTREAM)..backplane/master`)
+| Commit | Patch | Source |
+|---|---|---|
+| docs | AGENTS.md (master base, 2026-10-14), PATCHES.md | new |
+| ci(release) | Linux runtime workflow for master; removes upstream lockdown.yml | 727005a6f7 … 75e38b910c |
+| ci | weekly upstream merge on a sync branch | new |
+| test(ipc) | regressions ported to master protos; `--stock-cli` checks `downgrade --target 10.0` copies | scripts from 6c8feb7b9f |
+| feat(runtime) | `KICAD_KIFACE_HOME`, `KICAD_STOCK_PLUGIN_HOME` | a9ab802ba9 |
+| feat(build) | fork identity + file-format versions in `backplane_build_version.h` | N1/N2 |
+| feat(cli) | `api-server --describe` (manifest v2) | N1 |
+| feat(cli) | `api-server --parent-pid` | N3 |
+| feat(ipc) | `kiapi.backplane.GetCapabilities` | N2 |
+| feat(cli) | project downgrade carries `*.backplane.json` / `*.backplane-assembly.json` | N4 |
+| docs | BACKPLANE_RUNTIME.md | new |
+| feat(pcbnew) | sketch router core | 688a0c8229 |
+| feat(pcbnew) | Sketch Route / Autoroute Selected in the router tool | 688a0c8229 |
+| feat(ipc) | `kiapi.backplane.SketchRoute` | d5b38b21fa |
+| test(ipc) | runtime handshake regression | new |
+
+Not yet ported: rigid-flex, structure canvas/validation, assembly IPC (phase 2, from
+`backplane/wip-structure-2026-09-12`).
