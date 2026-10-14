@@ -22,8 +22,20 @@ permissions:
 jobs:
   linux-runtime:
     runs-on: ubuntu-24.04
+    # Ubuntu 24.04's GCC 13 hits internal compiler errors on upstream master
+    # (pcbnew/constraints, Eigen); build with Ubuntu 26.04's GCC 15 instead.
+    container:
+      image: ubuntu:26.04
+    env:
+      DEBIAN_FRONTEND: noninteractive
     timeout-minutes: 330
     steps:
+      - name: Prepare the build container
+        run: |
+          apt-get update
+          apt-get install --no-install-recommends -y sudo ca-certificates git git-lfs zstd file xz-utils
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Check out source
         uses: actions/checkout@v4
         with:
@@ -130,7 +142,7 @@ jobs:
           sudo apt-get install --no-install-recommends -y \
             build-essential cmake ninja-build pkg-config ccache \
             libboost-all-dev libbz2-dev libcairo2-dev libcurl4-openssl-dev \
-            libeigen3-dev libfontconfig1-dev libfreetype6-dev libgl-dev \
+            libeigen3-dev libfontconfig1-dev libfreetype-dev libgl-dev \
             libglm-dev \
             libgl1-mesa-dev libglew-dev libglu1-mesa-dev libglib2.0-dev \
             libgtk-3-dev libharfbuzz-dev libgit2-dev libssl-dev \
@@ -177,7 +189,8 @@ jobs:
 
       - name: Build and install KiCad runtime
         run: |
-          cmake --build build/backplane-linux --parallel 4
+          # -k 0: report every compile error in one run instead of stopping at the first.
+          cmake --build build/backplane-linux --parallel 4 -- -k 0
           cmake --install build/backplane-linux
 
       - name: Preserve compiler cache after build attempts
