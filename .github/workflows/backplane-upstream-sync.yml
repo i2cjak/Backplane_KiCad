@@ -1,0 +1,83 @@
+name: Backplane weekly upstream sync
+
+# Merge upstream KiCad master into backplane/master on a new branch, open a
+# pull request, and build and test the runtime on it. Never force-pushes: the
+# patch set stays visible as the diff between BACKPLANE_UPSTREAM and the branch
+# (see PATCHES.md). A release pins the last green upstream commit.
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: Upstream commit or branch to merge
+        required: false
+        default: master
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out backplane/master
+        uses: actions/checkout@v4
+        with:
+          ref: backplane/master
+          fetch-depth: 0
+
+      - name: Merge upstream master
+        id: merge
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_REF: ${{ inputs.upstream_ref || 'master' }}
+        run: |
+          set -euo pipefail
+          git config user.name i2cjak
+          git config user.email build@amemb.com
+          git remote add upstream https://gitlab.com/kicad/code/kicad.git
+          git fetch --no-tags upstream "$UPSTREAM_REF"
+          upstream_commit="$(git rev-parse FETCH_HEAD)"
+          if [ "$upstream_commit" = "$(cat BACKPLANE_UPSTREAM)" ]; then
+            echo "Already at upstream $upstream_commit"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          branch="sync/upstream-$(date -u +%Y%m%d)-${upstream_commit:0:10}"
+          git switch -c "$branch"
+          if ! git merge --no-ff --no-edit -m "Merge upstream KiCad master ${upstream_commit:0:10}" "$upstream_commit"; then
+            conflicts="$(git diff --name-only --diff-filter=U)"
+            git merge --abort
+            body="$(printf 'Merging upstream %s into backplane/master conflicts in:\n\n```\n%s\n```\n\nResolve by hand on a sync branch.' "$upstream_commit" "$conflicts")"
+            gh issue create --title "Upstream sync conflicts (${upstream_commit:0:10})" --body "$body"
+            exit 1
+          fi
+          echo "$upstream_commit" > BACKPLANE_UPSTREAM
+          git add BACKPLANE_UPSTREAM
+          git commit -m "chore: pin upstream KiCad master ${upstream_commit:0:10}"
+          git push origin "$branch"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "upstream=$upstream_commit" >> "$GITHUB_OUTPUT"
+
+      - name: Open pull request and build it
+        if: steps.merge.outputs.changed == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.merge.outputs.branch }}
+          UPSTREAM: ${{ steps.merge.outputs.upstream }}
+        run: |
+          set -euo pipefail
+          gh pr create --base backplane/master --head "$BRANCH" \
+            --title "Sync upstream KiCad master ${UPSTREAM:0:10}" \
+            --body "Weekly merge of upstream master ${UPSTREAM}. The runtime build and IPC regressions run on this branch; merge only when they pass."
+          # Pull requests opened with the workflow token do not trigger workflows; dispatch the build.
+          gh workflow run backplane-linux-release.yml --ref "$BRANCH"
