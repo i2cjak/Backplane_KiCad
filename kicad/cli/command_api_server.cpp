@@ -21,6 +21,7 @@
 #include <csignal>
 #include <atomic>
 #include <algorithm>
+#include <nlohmann/json.hpp>
 #include <vector>
 
 #include <api/api_handler_common.h>
@@ -28,7 +29,11 @@
 #include <libraries/library_table.h>
 #include <api/api_utils.h>
 #include <api/api_server.h>
+#include <api/backplane_capabilities.h>
+#include <backplane_build_version.h>
 #include <cli/exit_codes.h>
+#include <build_version.h>
+#include <downgrade_target.h>
 #include <lib_id.h>
 #include <settings/settings_manager.h>
 #include <wildcards_and_files_ext.h>
@@ -40,6 +45,7 @@
 
 #define ARG_PATH "path"
 #define ARG_SOCKET "--socket"
+#define ARG_DESCRIBE "--describe"
 
 
 std::atomic_bool g_apiServerExitRequested{ false };
@@ -47,6 +53,61 @@ std::atomic_bool g_apiServerExitRequested{ false };
 void apiServerSignalHandler( int )
 {
     g_apiServerExitRequested.store( true );
+}
+
+
+static const char* backplanePlatform()
+{
+#if defined( __linux__ ) && ( defined( __x86_64__ ) || defined( _M_X64 ) )
+    return "linux-x86_64";
+#elif defined( __linux__ ) && ( defined( __aarch64__ ) || defined( _M_ARM64 ) )
+    return "linux-aarch64";
+#elif defined( __APPLE__ ) && defined( __x86_64__ )
+    return "macos-x86_64";
+#elif defined( __APPLE__ ) && defined( __aarch64__ )
+    return "macos-aarch64";
+#elif defined( _WIN32 ) && ( defined( _M_X64 ) || defined( __x86_64__ ) )
+    return "windows-x86_64";
+#elif defined( _WIN32 ) && ( defined( _M_ARM64 ) || defined( __aarch64__ ) )
+    return "windows-aarch64";
+#else
+    return nullptr;
+#endif
+}
+
+
+static int printBackplaneDescription()
+{
+    nlohmann::json description = {
+        { "manifestVersion", 2 },
+        { "sourceRepository", "https://github.com/i2cjak/Backplane_KiCad" },
+        { "sourceCommit", GetCommitHash().ToStdString() },
+        { "upstreamCommit", BACKPLANE_UPSTREAM_COMMIT },
+        { "version", BACKPLANE_FORK_VERSION },
+        { "kicadVersion", GetMajorMinorPatchVersion().ToStdString() },
+        { "apiVersion", BACKPLANE_API_VERSION },
+        { "fileFormats", { { "board", BACKPLANE_BOARD_FILE_VERSION },
+                           { "schematic", BACKPLANE_SCHEMATIC_FILE_VERSION } } },
+        { "license", "GPL-3.0-or-later" },
+    };
+
+    nlohmann::json capabilities = nlohmann::json::array();
+
+    for( const char* capability : BACKPLANE::CAPABILITIES )
+        capabilities.push_back( capability );
+
+    description["capabilities"] = capabilities;
+    description["downgradeTargets"] = nlohmann::json::array();
+
+    for( const DOWNGRADE_TARGET& target : GetDowngradeTargets() )
+        description["downgradeTargets"].push_back( target.m_id.ToStdString() );
+
+    if( const char* platform = backplanePlatform() )
+        description["platform"] = platform;
+
+    wxString text = wxString::FromUTF8( description.dump() );
+    wxPrintf( "%s\n", text );
+    return EXIT_CODES::OK;
 }
 
 
@@ -65,12 +126,20 @@ CLI::API_SERVER_COMMAND::API_SERVER_COMMAND() :
             .default_value( std::string() )
             .help( UTF8STDSTR( _( "Override API socket path" ) ) )
             .metavar( "SOCKET_PATH" );
+
+    m_argParser.add_argument( ARG_DESCRIBE )
+            .help( UTF8STDSTR( _( "Print the Backplane runtime manifest and exit" ) ) )
+            .flag();
+
 }
 
 
 int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
 {
     using namespace kiapi::common;
+
+    if( m_argParser.get<bool>( ARG_DESCRIBE ) )
+        return printBackplaneDescription();
 
     std::unique_ptr<KICAD_API_SERVER> server = std::make_unique<KICAD_API_SERVER>( false );
     API_HANDLER_COMMON                commonHandler;
