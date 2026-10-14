@@ -348,6 +348,13 @@ def main():
                     member = clone_with_new_ids(prototypes[member_key])
                     transaction(editor.CMA_COMMIT, lambda: write_item(member, True))
                     item.items.add().CopyFrom(item_id(member))
+                if key == "SheetSymbol" and kind == types.DOCTYPE_SCHEMATIC:
+                    # KNOWN GAP (upstream fe761fb867): a sheet symbol created over IPC that reuses an
+                    # existing sheet file reports ISC_OK, but the next SaveDocument fails
+                    # ("Directory '<root>.kicad_sch' couldn't be created"). Fork patch candidate.
+                    print(f"KNOWN GAP {prefix}{key}: created sheet makes the schematic unsaveable",
+                          flush=True)
+                    continue
                 if key in ("Field", "Pad") and kind == types.DOCTYPE_PCB:
                     # KNOWN GAP (upstream fe761fb867): a pad or user field created in a footprint
                     # keeps the client UUID and reports ISC_OK, but GetItemsById cannot find it
