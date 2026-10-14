@@ -21,6 +21,8 @@
 #include <csignal>
 #include <atomic>
 #include <algorithm>
+#include <cerrno>
+#include <cstdlib>
 #include <nlohmann/json.hpp>
 #include <vector>
 
@@ -41,11 +43,16 @@
 #include <wx/crt.h>
 #include <wx/filename.h>
 
+#if defined( __unix__ ) || defined( __APPLE__ )
+#include <unistd.h>
+#endif
+
 #include "command_api_server.h"
 
 #define ARG_PATH "path"
 #define ARG_SOCKET "--socket"
 #define ARG_DESCRIBE "--describe"
+#define ARG_PARENT_PID "--parent-pid"
 
 
 std::atomic_bool g_apiServerExitRequested{ false };
@@ -131,6 +138,11 @@ CLI::API_SERVER_COMMAND::API_SERVER_COMMAND() :
             .help( UTF8STDSTR( _( "Print the Backplane runtime manifest and exit" ) ) )
             .flag();
 
+    m_argParser.add_argument( ARG_PARENT_PID )
+            .default_value( std::string() )
+            .help( UTF8STDSTR( _( "Exit when this parent process ID disappears" ) ) )
+            .metavar( "PID" );
+
 }
 
 
@@ -140,6 +152,21 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
 
     if( m_argParser.get<bool>( ARG_DESCRIBE ) )
         return printBackplaneDescription();
+
+    long long parentPid = 0;
+    std::string parentPidText = m_argParser.get<std::string>( ARG_PARENT_PID );
+
+    if( !parentPidText.empty() )
+    {
+        char* end = nullptr;
+        parentPid = std::strtoll( parentPidText.c_str(), &end, 10 );
+
+        if( end == parentPidText.c_str() || *end != '\0' || parentPid <= 0 )
+        {
+            wxFprintf( stderr, _( "Invalid parent process ID\n" ) );
+            return EXIT_CODES::ERR_ARGS;
+        }
+    }
 
     std::unique_ptr<KICAD_API_SERVER> server = std::make_unique<KICAD_API_SERVER>( false );
     API_HANDLER_COMMON                commonHandler;
@@ -761,9 +788,24 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
 
     g_apiServerExitRequested.store( false );
 
+    int parentPollTicks = 0;
+
     while( !g_apiServerExitRequested.load() )
     {
         wxTheApp->ProcessPendingEvents();
+
+        if( parentPid > 0 && ++parentPollTicks >= 50 )
+        {
+            parentPollTicks = 0;
+
+#if defined( __unix__ ) || defined( __APPLE__ )
+            if( ::kill( static_cast<pid_t>( parentPid ), 0 ) == -1 && errno == ESRCH )
+                g_apiServerExitRequested.store( true );
+#else
+            // TODO: use OpenProcess/WaitForSingleObject for Windows parent supervision.
+#endif
+        }
+
         wxMilliSleep( 10 );
     }
 
