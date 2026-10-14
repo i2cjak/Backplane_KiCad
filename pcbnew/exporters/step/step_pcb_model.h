@@ -63,6 +63,7 @@ static constexpr double ARC_TO_SEGMENT_MAX_ERROR_MM = 0.005;
 
 class FOOTPRINT;
 class PAD;
+class BOARD_STRUCTURE;
 
 class TDocStd_Document;
 class XCAFApp_Application;
@@ -106,7 +107,7 @@ public:
     // add a pad hole or slot (must be in final position)
     bool AddHole( const SHAPE_SEGMENT& aShape, int aPlatingThickness, PCB_LAYER_ID aLayerTop,
                   PCB_LAYER_ID aLayerBot, bool aVia, const VECTOR2D& aOrigin, bool aCutCopper,
-                  bool aCutBody );
+                  bool aCutBody, bool aFoldCutout = true );
 
     // add a plated hole shape (without the hole)
     bool AddBarrel( const SHAPE_SEGMENT& aShape, PCB_LAYER_ID aLayerTop, PCB_LAYER_ID aLayerBot,
@@ -197,6 +198,9 @@ public:
     void SetStackup( const BOARD_STACKUP& aStackup );
     void SetNetFilter( const wxString& aFilter );
     void SetExtraPadThickness( bool aValue );
+    void SetBoardStructure( const BOARD_STRUCTURE* aStructure ) { m_structure = aStructure; }
+    void SetFolded( bool aFolded ) { m_folded = aFolded; }
+    void SetFoldOrigin( const VECTOR2D& aOrigin ) { m_foldOrigin = aOrigin; }
 
     // Set the max distance (in mm) to consider 2 points have the same coordinates
     // and can be merged
@@ -374,6 +378,9 @@ private:
     Handle( XCAFDoc_ShapeTool )     m_assy;
     TDF_Label                       m_assy_label;
     bool                            m_hasPCB;           // set true if CreatePCB() has been invoked
+    const BOARD_STRUCTURE*          m_structure = nullptr;
+    bool                            m_folded = false;
+    VECTOR2D                        m_foldOrigin;
     bool                            m_simplifyShapes;   // convert parts of outlines to arcs where possible
     bool                            m_fuseShapes;       // fuse geometry together
     bool                            m_extraPadThickness; // add extra thickness to pads
@@ -395,6 +402,12 @@ private:
     // Holes in copper and main outlines
     std::vector<TopoDS_Shape> m_copperCutouts;
     std::vector<TopoDS_Shape> m_boardCutouts;
+
+    // Through-drill footprints in the flat board coordinate system.  Folded
+    // structured bodies subtract these polygons before mapping their faces;
+    // the corresponding 3D tools remain available for the ordinary flat
+    // boolean path.
+    SHAPE_POLY_SET                  m_foldCutouts;
 
     // Main outlines (more than one board)
     std::vector<TopoDS_Shape> m_board_outlines;

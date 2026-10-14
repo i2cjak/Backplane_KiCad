@@ -55,6 +55,7 @@ class DIALOG_EXPORT_STEP_BASE : public DIALOG_SHIM
 		STD_BITMAP_BUTTON* m_browseButton;
 		wxCheckBox* m_cbExportCompound_hidden;
 		wxCheckBox* m_cbExportBody;
+		wxCheckBox* m_cbFolded;
 		wxCheckBox* m_cbCutViasInBody;
 		wxCheckBox* m_cbExportSilkscreen;
 		wxCheckBox* m_cbExportSoldermask;
@@ -110,4 +111,3 @@ class DIALOG_EXPORT_STEP_BASE : public DIALOG_SHIM
 		~DIALOG_EXPORT_STEP_BASE();
 
 };
-

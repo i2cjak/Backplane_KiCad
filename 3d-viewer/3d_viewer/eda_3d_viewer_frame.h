@@ -79,7 +79,12 @@ public:
 
     PCB_BASE_FRAME* Parent() const { return (PCB_BASE_FRAME*)GetParent(); }
 
-    BOARD* GetBoard() { return Parent()->GetBoard(); }
+    BOARD* GetBoard() { return m_boardOverride ? m_boardOverride.get() : Parent()->GetBoard(); }
+
+    // Used by the modeless assembly workspace to display an independently
+    // generated board/STEP staging board without changing the PCB editor's
+    // active board. Shared ownership keeps the board alive until the viewer is destroyed.
+    void SetBoardOverride( std::shared_ptr<BOARD> aBoard );
 
     wxWindow* GetToolCanvas() const override { return m_canvas; }
 
@@ -275,6 +280,7 @@ private:
     wxPanel*                       m_canvasHolder;
     EDA_3D_CANVAS*                 m_canvas;
     BOARD_ADAPTER                  m_boardAdapter;
+    std::shared_ptr<BOARD>          m_boardOverride;
     CAMERA&                        m_currentCamera;
     TRACK_BALL                     m_trackBallCamera;
 

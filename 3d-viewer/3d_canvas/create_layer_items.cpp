@@ -353,7 +353,7 @@ void BOARD_ADAPTER::createLayers( std::shared_ptr<REPORTER> aStatusReporter, std
         BVH_CONTAINER_2D *layerContainer = new BVH_CONTAINER_2D;
         m_layerMap[layer] = layerContainer;
 
-        if( cfg.opengl_copper_thickness && cfg.engine == RENDER_ENGINE::OPENGL )
+        if( ( cfg.opengl_copper_thickness || GetConstructionView() ) && cfg.engine == RENDER_ENGINE::OPENGL )
         {
             SHAPE_POLY_SET* layerPoly = new SHAPE_POLY_SET;
             m_layers_poly[layer] = layerPoly;
@@ -775,7 +775,7 @@ void BOARD_ADAPTER::createLayers( std::shared_ptr<REPORTER> aStatusReporter, std
     }
 
     // Creates vertical outline contours of the tracks and add it to the poly of the layer
-    if( cfg.opengl_copper_thickness && cfg.engine == RENDER_ENGINE::OPENGL )
+    if( ( cfg.opengl_copper_thickness || GetConstructionView() ) && cfg.engine == RENDER_ENGINE::OPENGL )
     {
         for( PCB_LAYER_ID layer : layer_ids )
         {
@@ -1087,7 +1087,7 @@ void BOARD_ADAPTER::createLayers( std::shared_ptr<REPORTER> aStatusReporter, std
             }
 
             // Add copper item to poly contours (vertical outlines) if required
-            if( cfg.opengl_copper_thickness && cfg.engine == RENDER_ENGINE::OPENGL )
+            if( ( cfg.opengl_copper_thickness || GetConstructionView() ) && cfg.engine == RENDER_ENGINE::OPENGL )
             {
                 wxASSERT( m_layers_poly.contains( layer ) );
 
@@ -1182,7 +1182,7 @@ void BOARD_ADAPTER::createLayers( std::shared_ptr<REPORTER> aStatusReporter, std
             }
 
             // Add copper item to poly contours (vertical outlines) if required
-            if( cfg.opengl_copper_thickness && cfg.engine == RENDER_ENGINE::OPENGL )
+            if( ( cfg.opengl_copper_thickness || GetConstructionView() ) && cfg.engine == RENDER_ENGINE::OPENGL )
             {
                 wxASSERT( m_layers_poly.contains( layer ) );
 
@@ -1326,7 +1326,7 @@ void BOARD_ADAPTER::createLayers( std::shared_ptr<REPORTER> aStatusReporter, std
                     if( m_layerMap.contains( layer ) )
                         addSolidAreasShapes( zone, m_layerMap[layer], layer );
 
-                    if( cfg.opengl_copper_thickness && cfg.engine == RENDER_ENGINE::OPENGL
+                    if( ( cfg.opengl_copper_thickness || GetConstructionView() ) && cfg.engine == RENDER_ENGINE::OPENGL
                             && m_layers_poly.contains( layer ) )
                     {
                         auto mut_it = layer_lock.find( layer );
@@ -1595,7 +1595,7 @@ void BOARD_ADAPTER::createLayers( std::shared_ptr<REPORTER> aStatusReporter, std
 
         // Add item contours.  We need these if we're building vertical walls or if this is a
         // mask layer and we're differentiating copper from plated copper.
-        if( ( cfg.engine == RENDER_ENGINE::OPENGL && cfg.opengl_copper_thickness )
+        if( ( cfg.engine == RENDER_ENGINE::OPENGL && ( cfg.opengl_copper_thickness || GetConstructionView() ) )
                 || ( cfg.DifferentiatePlatedCopper() && IsSolderMaskLayer( layer ) ) )
         {
             // DRAWINGS
@@ -1820,7 +1820,7 @@ void BOARD_ADAPTER::createLayers( std::shared_ptr<REPORTER> aStatusReporter, std
             return;
     }
 
-    if( cfg.opengl_copper_thickness && cfg.engine == RENDER_ENGINE::OPENGL )
+    if( ( cfg.opengl_copper_thickness || GetConstructionView() ) && cfg.engine == RENDER_ENGINE::OPENGL )
     {
         std::vector<PCB_LAYER_ID> &selected_layer_id = layer_ids;
         std::vector<PCB_LAYER_ID> layer_id_without_F_and_B;

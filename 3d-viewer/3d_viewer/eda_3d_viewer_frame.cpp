@@ -239,6 +239,16 @@ EDA_3D_VIEWER_FRAME::~EDA_3D_VIEWER_FRAME()
 }
 
 
+void EDA_3D_VIEWER_FRAME::SetBoardOverride( std::shared_ptr<BOARD> aBoard )
+{
+    auto previous = std::move( m_boardOverride );
+    m_boardOverride = std::move( aBoard );
+    m_boardAdapter.SetModelsOnly( bool( m_boardOverride ) );
+    m_boardAdapter.SetBoard( GetBoard() );
+    ReloadRequest();
+}
+
+
 APP_SETTINGS_BASE* EDA_3D_VIEWER_FRAME::config() const
 {
     return GetAppSettings<EDA_3D_VIEWER_SETTINGS>( "3d_viewer" );

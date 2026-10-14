@@ -192,4 +192,6 @@ private:
     GRID_BITMAP_TOGGLE_RENDERER*   m_toggleGridRenderer;
     wxCheckBox*                    m_cbUseBoardStackupColors;
     wxCheckBox*                    m_cbUseBoardEditorCopperColors;
+    wxCheckBox*                    m_cbConstructionView;
+    wxCheckBox*                    m_cbFoldedView;
 };

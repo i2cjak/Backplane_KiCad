@@ -95,6 +95,8 @@ BOARD_ADAPTER::BOARD_ADAPTER() :
         m_IsPreviewer( false ),
         m_board( nullptr ),
         m_3dModelManager( nullptr ),
+        m_foldedView( false ),
+        m_constructionView( false ),
         m_layerZcoordTop(),
         m_layerZcoordBottom()
 {
@@ -229,6 +231,22 @@ BOARD_ADAPTER::BOARD_ADAPTER() :
         g_ColorsLoaded = true;
     }
 #undef ADD_COLOR
+}
+
+
+void BOARD_ADAPTER::SetBoard( BOARD* aBoard ) noexcept
+{
+    // ReloadRequest() reapplies the current board pointer after an appearance
+    // change.  Keep the transient presentation flags across that refresh;
+    // reset them only when the adapter is actually switched to another board.
+    const bool boardChanged = m_board != aBoard;
+    m_board = aBoard;
+
+    if( boardChanged )
+    {
+        m_constructionView = m_board && !m_board->GetBoardStructure().Empty();
+        m_foldedView = false;
+    }
 }
 
 
@@ -842,6 +860,17 @@ std::bitset<LAYER_3D_END> BOARD_ADAPTER::GetVisibleLayers() const
 
     std::bitset<LAYER_3D_END> ret;
 
+    if( m_modelsOnly )
+    {
+        ret.set( LAYER_3D_TH_MODELS );
+        ret.set( LAYER_3D_SMD_MODELS );
+        ret.set( LAYER_3D_VIRTUAL_MODELS );
+        ret.set( LAYER_3D_MODELS_NOT_IN_POS );
+        ret.set( LAYER_3D_MODELS_MARKED_DNP );
+        ret.set( LAYER_3D_NAVIGATOR, m_Cfg->m_Render.show_navigator );
+        return ret;
+    }
+
     if( m_IsPreviewer )
     {
         // The preview has one board-body button and no layer controls, so it cannot follow
@@ -1001,6 +1030,17 @@ std::bitset<LAYER_3D_END> BOARD_ADAPTER::GetDefaultVisibleLayers() const
 {
     std::bitset<LAYER_3D_END> ret;
 
+    if( m_modelsOnly )
+    {
+        ret.set( LAYER_3D_TH_MODELS );
+        ret.set( LAYER_3D_SMD_MODELS );
+        ret.set( LAYER_3D_VIRTUAL_MODELS );
+        ret.set( LAYER_3D_MODELS_NOT_IN_POS );
+        ret.set( LAYER_3D_MODELS_MARKED_DNP );
+        ret.set( LAYER_3D_NAVIGATOR, m_Cfg->m_Render.show_navigator );
+        return ret;
+    }
+
     ret.set( LAYER_3D_BOARD,             true );
     ret.set( LAYER_3D_PLATED_BARRELS,    true );
     ret.set( LAYER_3D_COPPER_TOP,        true );
@@ -1091,9 +1131,117 @@ bool BOARD_ADAPTER::createBoardPolygon( wxString* aErrorMsg )
     return success;
 }
 
+VECTOR3D BOARD_ADAPTER::GetFoldedPoint( const VECTOR3D& aFlatPoint, double aThicknessMm,
+                                        int aThroughSequence ) const
+{
+    VECTOR3D point = aFlatPoint;
+    if( !m_board )
+        return point;
+
+    std::vector<BOARD_STRUCTURE_BEND> bends;
+    for( const BOARD_STRUCTURE_BEND& bend : m_board->GetBoardStructure().bends )
+        if( bend.sequence <= aThroughSequence )
+            bends.push_back( bend );
+    std::stable_sort( bends.begin(), bends.end(),
+                      []( const auto& a, const auto& b ) { return a.sequence < b.sequence; } );
+
+    if( !bends.empty() )
+        point = BOARD_STRUCTURE::FoldPointMm( bends, point, aThicknessMm,
+                                             m_board->GetBoardStructure().BendDatumZMm() );
+
+    return point;
+}
+
+double BOARD_ADAPTER::GetRegionalThicknessMm( const VECTOR2I& aPoint ) const
+{
+    if( !m_board )
+        return 0.0;
+    const BOARD_STRUCTURE& structure = m_board->GetBoardStructure();
+    const BOARD_STRUCTURE_REGION* region = structure.RegionAt( aPoint );
+    if( !region )
+        return 0.0;
+    const BOARD_STRUCTURE_STACK* stack = structure.StackForRegion( *region );
+    double thickness = 0.0;
+    if( stack )
+        for( const BOARD_STRUCTURE_MATERIAL& material : stack->materials )
+            thickness += material.thickness_nm * 1e-6;
+    for( const BOARD_STRUCTURE_STIFFENER& stiffener : structure.stiffeners )
+        if( stiffener.region_id == region->id )
+        {
+            // The point query is intentionally conservative: a stiffener is
+            // added only when its authoritative outline contains the point.
+            bool inside = false;
+            if( stiffener.shape.outline.size() >= 3 )
+            {
+                for( size_t i = 0, j = stiffener.shape.outline.size() - 1;
+                     i < stiffener.shape.outline.size(); j = i++ )
+                {
+                    const VECTOR2I& a = stiffener.shape.outline[i];
+                    const VECTOR2I& b = stiffener.shape.outline[j];
+                    if( ( ( a.y > aPoint.y ) != ( b.y > aPoint.y ) )
+                        && static_cast<double>( aPoint.x )
+                               < ( b.x - a.x ) * static_cast<double>( aPoint.y - a.y )
+                                     / static_cast<double>( b.y - a.y ) + a.x )
+                        inside = !inside;
+                }
+            }
+            if( inside )
+                thickness += ( stiffener.thickness_nm > 0 ? stiffener.thickness_nm
+                                                            : stiffener.max_thickness_nm ) * 1e-6;
+        }
+    return thickness;
+}
+
+
+std::pair<float, float> BOARD_ADAPTER::GetRegionalBodyZPos( const VECTOR2I& aPoint ) const
+{
+    const float defaultTop = GetLayerBottomZPos( F_Cu );
+    const float defaultBot = GetLayerBottomZPos( B_Cu );
+    if( !m_board )
+        return { defaultTop, defaultBot };
+
+    const BOARD_STRUCTURE& structure = m_board->GetBoardStructure();
+    const BOARD_STRUCTURE_REGION* region = structure.RegionAt( aPoint );
+    const BOARD_STRUCTURE_STACK* stack = region ? structure.StackForRegion( *region ) : nullptr;
+    if( !stack || stack->layers.empty() )
+        return { defaultTop, defaultBot };
+
+    double bottom = 0.0;
+    double top = 0.0;
+    bool haveZ = false;
+    for( const auto& layer : stack->layers )
+    {
+        double thickness = 0.0;
+        for( const auto& material : stack->materials )
+            if( material.id == layer.material_id )
+            {
+                thickness = material.thickness_nm * 1e-6;
+                break;
+            }
+
+        const double layerBottom = layer.z_offset_nm * 1e-6;
+        const double layerTop = layerBottom + thickness;
+        if( !haveZ )
+        {
+            bottom = layerBottom;
+            top = layerTop;
+            haveZ = true;
+        }
+        else
+        {
+            bottom = std::min( bottom, layerBottom );
+            top = std::max( top, layerTop );
+        }
+    }
+
+    const float scale = static_cast<float>( pcbIUScale.IU_PER_MM * BiuTo3dUnits() );
+    return { static_cast<float>( top * scale ), static_cast<float>( bottom * scale ) };
+}
+
 
 float BOARD_ADAPTER::GetFootprintZPos( bool aIsFlipped ) const
 {
+    if( m_modelsOnly ) return 0.0f;
     if( aIsFlipped )
     {
         if( auto it = m_layerZcoordBottom.find( B_Paste ); it != m_layerZcoordBottom.end() )

@@ -261,6 +261,65 @@ void RENDER_3D_RAYTRACE_BASE::createItemsFromContainer( const BVH_CONTAINER_2D* 
     if( listObject2d.size() == 0 )
         return;
 
+    auto regionalLayerBounds = [&]( const OBJECT_2D* aObject )
+    {
+        float zMin = m_boardAdapter.GetLayerBottomZPos( aLayer_id ) - aLayerZOffset;
+        float zMax = m_boardAdapter.GetLayerTopZPos( aLayer_id ) + aLayerZOffset;
+
+        const BOARD* board = m_boardAdapter.GetBoard();
+        if( !board || board->GetBoardStructure().regions.empty() )
+            return std::pair<float, float>( zMin, zMax );
+
+        const SFVEC2F& centroid = aObject->GetCentroid();
+        const VECTOR2I point( KiROUND( centroid.x / m_boardAdapter.BiuTo3dUnits() ),
+                              KiROUND( -centroid.y / m_boardAdapter.BiuTo3dUnits() ) );
+        const auto body = m_boardAdapter.GetRegionalBodyZPos( point );
+        if( IsCopperLayer( aLayer_id ) )
+        {
+            const auto& structure = board->GetBoardStructure();
+            if( const auto* region = structure.RegionAt( point ) )
+                if( const auto* stack = structure.StackForRegion( *region ) )
+                    for( const auto& layer : stack->layers )
+                        if( layer.global_copper_layer == static_cast<int>( aLayer_id ) )
+                            for( const auto& material : stack->materials )
+                                if( material.id == layer.material_id )
+                                {
+                                    const float scale = 1e-6 * pcbIUScale.IU_PER_MM * m_boardAdapter.BiuTo3dUnits();
+                                    return std::pair<float, float>{
+                                        layer.z_offset_nm * scale - aLayerZOffset,
+                                        ( layer.z_offset_nm + material.thickness_nm ) * scale + aLayerZOffset };
+                                }
+            return std::pair<float, float>( zMin, zMax );
+        }
+        if( body.first == m_boardAdapter.GetLayerBottomZPos( F_Cu )
+            && body.second == m_boardAdapter.GetLayerBottomZPos( B_Cu ) )
+            return std::pair<float, float>( zMin, zMax );
+
+        const float copperThickness = aLayer_id == F_Cu ? m_boardAdapter.GetFrontCopperThickness()
+                                   : aLayer_id == B_Cu ? m_boardAdapter.GetBackCopperThickness()
+                                   : 0.0f;
+        if( aLayer_id == F_Cu )
+            return std::pair<float, float>{ body.first - copperThickness - aLayerZOffset,
+                                            body.first + aLayerZOffset };
+        if( aLayer_id == B_Cu )
+            return std::pair<float, float>{ body.second - aLayerZOffset,
+                                            body.second + copperThickness + aLayerZOffset };
+
+        const bool front = aLayer_id == F_Mask || aLayer_id == F_SilkS || aLayer_id == F_Paste;
+        const bool back = aLayer_id == B_Mask || aLayer_id == B_SilkS || aLayer_id == B_Paste;
+        if( front || back )
+        {
+            const float thickness = std::abs( zMax - zMin );
+            if( front )
+                return std::pair<float, float>{ body.first - thickness * 0.05f,
+                                                body.first + thickness };
+            return std::pair<float, float>{ body.second - thickness,
+                                            body.second + thickness * 0.05f };
+        }
+
+        return std::pair<float, float>{ zMin, zMax };
+    };
+
     for( const OBJECT_2D* object2d_A : listObject2d )
     {
         // not yet used / implemented (can be used in future to clip the objects in the
@@ -374,9 +433,9 @@ void RENDER_3D_RAYTRACE_BASE::createItemsFromContainer( const BVH_CONTAINER_2D* 
 
         if( ( object2d_B == CSGITEM_EMPTY ) && ( object2d_C == CSGITEM_FULL ) )
         {
+            const auto [regionalMin, regionalMax] = regionalLayerBounds( object2d_A );
             LAYER_ITEM* objPtr = new LAYER_ITEM( object2d_A,
-                                    m_boardAdapter.GetLayerBottomZPos( aLayer_id ) - aLayerZOffset,
-                                    m_boardAdapter.GetLayerTopZPos( aLayer_id ) + aLayerZOffset );
+                                    regionalMin, regionalMax );
             objPtr->SetMaterial( aMaterialLayer );
             objPtr->SetColor( ConvertSRGBToLinear( aLayerColor ) );
             m_objectContainer.Add( objPtr );
@@ -387,9 +446,9 @@ void RENDER_3D_RAYTRACE_BASE::createItemsFromContainer( const BVH_CONTAINER_2D* 
                                                           object2d_A->GetBoardItem() );
             m_containerWithObjectsToDelete.Add( itemCSG2d );
 
+            const auto [regionalMin, regionalMax] = regionalLayerBounds( object2d_A );
             LAYER_ITEM* objPtr = new LAYER_ITEM( itemCSG2d,
-                                    m_boardAdapter.GetLayerBottomZPos( aLayer_id ) - aLayerZOffset,
-                                    m_boardAdapter.GetLayerTopZPos( aLayer_id ) + aLayerZOffset );
+                                    regionalMin, regionalMax );
 
             objPtr->SetMaterial( aMaterialLayer );
             objPtr->SetColor( ConvertSRGBToLinear( aLayerColor ) );
@@ -432,6 +491,7 @@ void RENDER_3D_RAYTRACE_BASE::Reload( bool aOnlyLoadCopperAndShapes, std::stop_t
     m_objectContainer.Clear();
     m_containerWithObjectsToDelete.Clear();
     m_extrusionMaterials.clear();
+    m_structuralContainers.clear();
 
     setupMaterials();
 
@@ -469,6 +529,77 @@ void RENDER_3D_RAYTRACE_BASE::Reload( bool aOnlyLoadCopperAndShapes, std::stop_t
                 divFactor = m_boardAdapter.GetAverageHoleDiameter() * 8.0f;
 
             SHAPE_POLY_SET boardPolyCopy = m_boardAdapter.GetBoardPoly();
+
+            // Partition the body by mechanical regions before converting it to
+            // 2D blocks.  This keeps each block wholly within one local stack;
+            // GetRegionalThicknessMm() can therefore be applied without a
+            // centroid approximation crossing a region boundary.
+            const BOARD_STRUCTURE& structure = m_boardAdapter.GetBoard()->GetBoardStructure();
+            auto regionalZ = [&]( const VECTOR2I& aPoint )
+            {
+                float top = m_boardAdapter.GetLayerBottomZPos( F_Cu );
+                float bot = m_boardAdapter.GetLayerBottomZPos( B_Cu );
+                const BOARD_STRUCTURE_REGION* region = structure.RegionAt( aPoint );
+                if( !region )
+                    return std::pair<float, float>( top, bot );
+
+                const BOARD_STRUCTURE_STACK* stack = structure.StackForRegion( *region );
+                if( !stack || stack->layers.empty() )
+                    return std::pair<float, float>( top, bot );
+
+                double botMm = 0.0;
+                double topMm = 0.0;
+                bool haveZ = false;
+                for( const auto& layer : stack->layers )
+                {
+                    double materialThickness = 0.0;
+                    for( const auto& material : stack->materials )
+                        if( material.id == layer.material_id )
+                        {
+                            materialThickness = material.thickness_nm * 1e-6;
+                            break;
+                        }
+                    const double layerBot = layer.z_offset_nm * 1e-6;
+                    const double layerTop = layerBot + materialThickness;
+                    if( !haveZ )
+                    {
+                        botMm = layerBot;
+                        topMm = layerTop;
+                        haveZ = true;
+                    }
+                    else
+                    {
+                        botMm = std::min( botMm, layerBot );
+                        topMm = std::max( topMm, layerTop );
+                    }
+                }
+
+                const float scale = pcbIUScale.IU_PER_MM * m_boardAdapter.BiuTo3dUnits();
+                return std::pair<float, float>( static_cast<float>( topMm * scale ),
+                                                static_cast<float>( botMm * scale ) );
+            };
+            if( !structure.regions.empty() )
+            {
+                boardPolyCopy.RemoveAllContours();
+                for( const BOARD_STRUCTURE_REGION& region : structure.regions )
+                {
+                    if( region.shape.outline.size() < 3 )
+                        continue;
+                    SHAPE_LINE_CHAIN outline;
+                    for( const VECTOR2I& p : region.shape.outline )
+                        outline.Append( p );
+                    outline.SetClosed( true );
+                    boardPolyCopy.AddOutline( outline );
+                    for( const auto& holePoints : region.shape.holes )
+                    {
+                        SHAPE_LINE_CHAIN hole;
+                        for( const VECTOR2I& p : holePoints )
+                            hole.Append( p );
+                        hole.SetClosed( true );
+                        boardPolyCopy.AddHole( hole );
+                    }
+                }
+            }
 
             // Calculate an antiboard outline
             SHAPE_POLY_SET antiboardPoly;
@@ -592,9 +723,12 @@ void RENDER_3D_RAYTRACE_BASE::Reload( bool aOnlyLoadCopperAndShapes, std::stop_t
 
                     if( object2d_B == CSGITEM_EMPTY )
                     {
+                        const SFVEC2F& centroid = object2d_A->GetCentroid();
+                        VECTOR2I ci( KiROUND( centroid.x / m_boardAdapter.BiuTo3dUnits() ),
+                                     KiROUND( -centroid.y / m_boardAdapter.BiuTo3dUnits() ) );
+                        auto [regionalTop, regionalBot] = regionalZ( ci );
                         LAYER_ITEM* objPtr = new LAYER_ITEM( object2d_A,
-                                                        m_boardAdapter.GetLayerBottomZPos( F_Cu ),
-                                                        m_boardAdapter.GetLayerBottomZPos( B_Cu ) );
+                                                        regionalTop, regionalBot );
 
                         objPtr->SetMaterial( &m_materials.m_EpoxyBoard );
                         objPtr->SetColor( ConvertSRGBToLinear( m_boardAdapter.m_BoardBodyColor ) );
@@ -609,14 +743,119 @@ void RENDER_3D_RAYTRACE_BASE::Reload( bool aOnlyLoadCopperAndShapes, std::stop_t
 
                         m_containerWithObjectsToDelete.Add( itemCSG2d );
 
-                        LAYER_ITEM* objPtr = new LAYER_ITEM( itemCSG2d,
-                                                        m_boardAdapter.GetLayerBottomZPos( F_Cu ),
-                                                        m_boardAdapter.GetLayerBottomZPos( B_Cu ) );
+                        const SFVEC2F& centroid = object2d_A->GetCentroid();
+                        VECTOR2I ci( KiROUND( centroid.x / m_boardAdapter.BiuTo3dUnits() ),
+                                     KiROUND( -centroid.y / m_boardAdapter.BiuTo3dUnits() ) );
+                        auto [regionalTop, regionalBot] = regionalZ( ci );
+                        LAYER_ITEM* objPtr = new LAYER_ITEM( itemCSG2d, regionalTop, regionalBot );
 
                         objPtr->SetMaterial( &m_materials.m_EpoxyBoard );
                         objPtr->SetColor( ConvertSRGBToLinear( m_boardAdapter.m_BoardBodyColor ) );
                         m_objectContainer.Add( objPtr );
                     }
+                }
+
+                // Reinforcements are independent board-material solids.  Keep
+                // their outlines separate so they are not lost when regional
+                // body blocks are partitioned.
+                const BOARD_STRUCTURE& mechanical = m_boardAdapter.GetBoard()->GetBoardStructure();
+                auto physicalPolygon = []( const BOARD_STRUCTURE_POLYGON& shape )
+                {
+                    SHAPE_POLY_SET poly;
+                    SHAPE_LINE_CHAIN outline;
+                    for( const auto& p : shape.outline ) outline.Append( p );
+                    outline.SetClosed( true );
+                    poly.AddOutline( outline );
+                    for( const auto& points : shape.holes )
+                    {
+                        SHAPE_LINE_CHAIN hole;
+                        for( const auto& p : points ) hole.Append( p );
+                        hole.SetClosed( true );
+                        poly.AddHole( hole, 0 );
+                    }
+                    return poly;
+                };
+                auto materialSolid = [&]( SHAPE_POLY_SET poly, float bottom, float top,
+                                          const SFVEC3F& color )
+                {
+                    if( top <= bottom || poly.IsEmpty() ) return;
+                    auto objects = std::make_unique<CONTAINER_2D>();
+                    poly.Fracture();
+                    for( int i = 0; i < poly.OutlineCount(); ++i )
+                        ConvertPolygonToBlocks( poly, *objects, m_boardAdapter.BiuTo3dUnits(),
+                                                0.0f, *m_boardAdapter.GetBoard(), i );
+                    for( const OBJECT_2D* object : objects->GetList() )
+                    {
+                        const OBJECT_2D* solid = object;
+                        CONST_LIST_OBJECT2D intersecting;
+                        m_boardAdapter.GetTH_IDs().GetIntersectingObjects( object->GetBBox(),
+                                                                         intersecting );
+                        if( !intersecting.empty() )
+                        {
+                            auto* holes = new std::vector<const OBJECT_2D*>( intersecting.begin(),
+                                                                            intersecting.end() );
+                            auto* clipped = new LAYER_ITEM_2D( object, holes, CSGITEM_FULL,
+                                                              *m_boardAdapter.GetBoard() );
+                            m_containerWithObjectsToDelete.Add( clipped );
+                            solid = clipped;
+                        }
+                        LAYER_ITEM* item = new LAYER_ITEM( solid, bottom, top );
+                        item->SetMaterial( &m_materials.m_EpoxyBoard );
+                        item->SetColor( ConvertSRGBToLinear( color ) );
+                        m_objectContainer.Add( item );
+                    }
+                    m_structuralContainers.push_back( std::move( objects ) );
+                };
+                const float nmScale = 1e-6 * pcbIUScale.IU_PER_MM * m_boardAdapter.BiuTo3dUnits();
+                auto parentBounds = [&]( const std::string& id )
+                {
+                    float top = 0, bottom = 0;
+                    bool found = false;
+                    for( const auto& region : mechanical.regions )
+                        if( region.id == id )
+                            if( const auto* stack = mechanical.StackForRegion( region ) )
+                                for( const auto& layer : stack->layers )
+                                    for( const auto& material : stack->materials )
+                                        if( material.id == layer.material_id )
+                                        {
+                                            const float lo = layer.z_offset_nm * nmScale;
+                                            const float hi = ( layer.z_offset_nm + material.thickness_nm ) * nmScale;
+                                            if( !found ) bottom = lo, top = hi, found = true;
+                                            else bottom = std::min( bottom, lo ), top = std::max( top, hi );
+                                        }
+                    return std::pair<float, float>( top, bottom );
+                };
+                for( const auto& stiffener : mechanical.stiffeners )
+                {
+                    if( stiffener.shape.outline.empty() ) continue;
+                    const auto body = parentBounds( stiffener.region_id );
+                    const float t = stiffener.thickness_nm * nmScale;
+                    const float adhesive = stiffener.adhesive_thickness_nm * nmScale;
+                    const float surface = stiffener.top ? body.first : body.second;
+                    SHAPE_POLY_SET poly = physicalPolygon( stiffener.shape );
+                    materialSolid( poly, stiffener.top ? surface : surface - adhesive,
+                                   stiffener.top ? surface + adhesive : surface,
+                                   SFVEC3F( .7f, .6f, .35f ) );
+                    materialSolid( poly, stiffener.top ? surface + adhesive : surface - adhesive - t,
+                                   stiffener.top ? surface + adhesive + t : surface - adhesive,
+                                   SFVEC3F( .45f, .5f, .52f ) );
+                }
+                for( const auto& coverlay : mechanical.coverlays )
+                {
+                    if( coverlay.coverage.outline.empty() ) continue;
+                    const auto body = parentBounds( coverlay.region_id );
+                    const float t = coverlay.thickness_nm * nmScale;
+                    const float adhesive = coverlay.adhesive_thickness_nm * nmScale;
+                    const float surface = coverlay.top ? body.first : body.second;
+                    SHAPE_POLY_SET poly = physicalPolygon( coverlay.coverage );
+                    for( const auto& opening : coverlay.openings )
+                        poly.BooleanSubtract( physicalPolygon( opening ) );
+                    materialSolid( poly, coverlay.top ? surface : surface - adhesive,
+                                   coverlay.top ? surface + adhesive : surface,
+                                   SFVEC3F( .72f, .55f, .2f ) );
+                    materialSolid( poly, coverlay.top ? surface + adhesive : surface - adhesive - t,
+                                   coverlay.top ? surface + adhesive + t : surface - adhesive,
+                                   SFVEC3F( .8f, .56f, .18f ) );
                 }
 
                 // Add cylinders of the board body to container
@@ -649,10 +888,12 @@ void RENDER_3D_RAYTRACE_BASE::Reload( bool aOnlyLoadCopperAndShapes, std::stop_t
                         {
                             const float radius = hole2d->GetBBox().GetExtent().x * 0.5f * 0.999f;
 
-                             CYLINDER* objPtr = new CYLINDER( hole2d->GetCentroid(),
-                                    NextFloatDown( m_boardAdapter.GetLayerBottomZPos( F_Cu ) ),
-                                    NextFloatUp( m_boardAdapter.GetLayerBottomZPos( B_Cu ) ),
-                                    radius );
+                            const auto& center = hole2d->GetCentroid();
+                            const VECTOR2I position( KiROUND( center.x / m_boardAdapter.BiuTo3dUnits() ),
+                                                     KiROUND( -center.y / m_boardAdapter.BiuTo3dUnits() ) );
+                            const auto body = m_boardAdapter.GetRegionalBodyZPos( position );
+                            CYLINDER* objPtr = new CYLINDER( center, NextFloatDown( body.first ),
+                                                            NextFloatUp( body.second ), radius );
 
                             objPtr->SetMaterial( &m_materials.m_EpoxyBoard );
                             objPtr->SetColor(
@@ -843,10 +1084,35 @@ void RENDER_3D_RAYTRACE_BASE::Reload( bool aOnlyLoadCopperAndShapes, std::stop_t
 
                 const float zLayerMin = m_boardAdapter.GetLayerBottomZPos( layer_id );
                 const float zLayerMax = m_boardAdapter.GetLayerTopZPos( layer_id );
+                auto regionalMaskBounds = [&]( const OBJECT_2D* aObject )
+                {
+                    const SFVEC2F& centroid = aObject->GetCentroid();
+                    const VECTOR2I point( KiROUND( centroid.x / m_boardAdapter.BiuTo3dUnits() ),
+                                          KiROUND( -centroid.y / m_boardAdapter.BiuTo3dUnits() ) );
+                    const auto body = m_boardAdapter.GetRegionalBodyZPos( point );
+                    if( body.first == m_boardAdapter.GetLayerBottomZPos( F_Cu )
+                        && body.second == m_boardAdapter.GetLayerBottomZPos( B_Cu ) )
+                        return std::pair<float, float>( zLayerMin, zLayerMax );
+
+                    const float thickness = std::abs( zLayerMax - zLayerMin );
+                    if( layer_id == F_Mask )
+                        return std::pair<float, float>( body.first - thickness * 0.05f,
+                                                        body.first + thickness );
+                    return std::pair<float, float>( body.second - thickness,
+                                                    body.second + thickness * 0.05f );
+                };
 
                 // Get the outline board objects
                 for( const OBJECT_2D* object2d_A : m_outlineBoard2dObjects->GetList() )
                 {
+                    const auto& construction = m_boardAdapter.GetBoard()->GetBoardStructure();
+                    const auto& c = object2d_A->GetCentroid();
+                    const VECTOR2I position( KiROUND( c.x / m_boardAdapter.BiuTo3dUnits() ),
+                                             KiROUND( -c.y / m_boardAdapter.BiuTo3dUnits() ) );
+                    if( const auto* region = construction.RegionAt( position ) )
+                        if( const auto* stack = construction.StackForRegion( *region );
+                            stack && stack->kind == BOARD_STRUCTURE_STACK_KIND::FLEX )
+                            continue;
                     std::vector<const OBJECT_2D*>* object2d_B = new std::vector<const OBJECT_2D*>();
 
                     // Check if there are any THT that intersects this outline object part
@@ -888,7 +1154,8 @@ void RENDER_3D_RAYTRACE_BASE::Reload( bool aOnlyLoadCopperAndShapes, std::stop_t
                        createObject( m_objectContainer, object2d_A, zLayerMin, zLayerMax,
                                      materialLayer, layerColor );
 #else
-                        LAYER_ITEM* objPtr = new LAYER_ITEM( object2d_A, zLayerMin, zLayerMax );
+                        const auto [regionalMin, regionalMax] = regionalMaskBounds( object2d_A );
+                        LAYER_ITEM* objPtr = new LAYER_ITEM( object2d_A, regionalMin, regionalMax );
 
                         objPtr->SetMaterial( materialLayer );
                         objPtr->SetColor( ConvertSRGBToLinear( layerColor ) );
@@ -904,7 +1171,8 @@ void RENDER_3D_RAYTRACE_BASE::Reload( bool aOnlyLoadCopperAndShapes, std::stop_t
 
                         m_containerWithObjectsToDelete.Add( itemCSG2d );
 
-                        LAYER_ITEM* objPtr = new LAYER_ITEM( itemCSG2d, zLayerMin, zLayerMax );
+                        const auto [regionalMin, regionalMax] = regionalMaskBounds( object2d_A );
+                        LAYER_ITEM* objPtr = new LAYER_ITEM( itemCSG2d, regionalMin, regionalMax );
                         objPtr->SetMaterial( materialLayer );
                         objPtr->SetColor( ConvertSRGBToLinear( layerColor ) );
 
@@ -1655,6 +1923,18 @@ void RENDER_3D_RAYTRACE_BASE::insertHole( const PCB_VIA* aVia )
                  - m_boardAdapter.GetBackCopperThickness() + backDepth;
 
     const float unitScale = m_boardAdapter.BiuTo3dUnits();
+    const auto& structure = m_boardAdapter.GetBoard()->GetBoardStructure();
+    if( const auto* region = structure.RegionAt( aVia->GetStart() ) )
+        if( const auto* stack = structure.StackForRegion( *region ) )
+            for( const auto& layer : stack->layers )
+                for( const auto& material : stack->materials )
+                    if( material.id == layer.material_id )
+                    {
+                        if( layer.global_copper_layer == static_cast<int>( top_layer ) )
+                            topZ = ( layer.z_offset_nm + material.thickness_nm ) * 1e-6 * pcbIUScale.IU_PER_MM * unitScale - frontDepth;
+                        if( layer.global_copper_layer == static_cast<int>( bottom_layer ) )
+                            botZ = layer.z_offset_nm * 1e-6 * pcbIUScale.IU_PER_MM * unitScale + backDepth;
+                    }
     const SFVEC2F center = SFVEC2F( aVia->GetStart().x * unitScale, -aVia->GetStart().y * unitScale );
 
     RING_2D* ring = new RING_2D( center, radiusBUI * unitScale,
@@ -1738,11 +2018,16 @@ void RENDER_3D_RAYTRACE_BASE::insertHole( const PAD* aPad )
     if( aPad->GetBackPostMachining() != PAD_DRILL_POST_MACHINING_MODE::NOT_POST_MACHINED )
         backDepth = aPad->GetBackPostMachiningDepth() * m_boardAdapter.BiuTo3dUnits();
 
-    const float topZ = m_boardAdapter.GetLayerBottomZPos( F_Cu )
+    float topZ = m_boardAdapter.GetLayerBottomZPos( F_Cu )
                        + m_boardAdapter.GetFrontCopperThickness() * 0.99f - frontDepth;
-
-    const float botZ = m_boardAdapter.GetLayerBottomZPos( B_Cu )
+    float botZ = m_boardAdapter.GetLayerBottomZPos( B_Cu )
                        - m_boardAdapter.GetBackCopperThickness() * 0.99f + backDepth;
+    if( !m_boardAdapter.GetBoard()->GetBoardStructure().regions.empty() )
+    {
+        const auto body = m_boardAdapter.GetRegionalBodyZPos( aPad->GetPosition() );
+        topZ = body.first - frontDepth;
+        botZ = body.second + backDepth;
+    }
 
     if( isRoundHole ) // usual round hole
     {

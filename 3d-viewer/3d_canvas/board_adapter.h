@@ -24,6 +24,8 @@
 
 #include <array>
 #include <optional>
+#include <limits>
+#include <utility>
 #include <vector>
 #include "../3d_rendering/raytracing/accelerators/container_2d.h"
 #include "../3d_rendering/raytracing/accelerators/container_3d.h"
@@ -41,6 +43,7 @@
 #include <pcb_table.h>
 #include <pcb_shape.h>
 #include <pcb_dimension.h>
+#include <board_structure.h>
 #include <reporter.h>
 #include <dialogs/dialog_color_picker.h>
 #include <stop_token>
@@ -73,6 +76,10 @@ class BOARD_ADAPTER
 public:
     BOARD_ADAPTER();
 
+    // Assembly staging boards contribute only models, with world-space origins.
+    void SetModelsOnly( bool aEnabled ) { m_modelsOnly = aEnabled; }
+    bool GetModelsOnly() const { return m_modelsOnly; }
+
     ~BOARD_ADAPTER();
 
     /**
@@ -102,8 +109,15 @@ public:
      *
      * @param aBoard board to process.
      */
-    void SetBoard( BOARD* aBoard ) noexcept { m_board = aBoard; }
+    void SetBoard( BOARD* aBoard ) noexcept;
     const BOARD* GetBoard() const noexcept { return m_board; }
+
+    /** Transient 3D-viewer-only rigid-flex presentation mode. */
+    void SetFoldedView( bool aFolded ) noexcept { m_foldedView = aFolded; }
+    bool GetFoldedView() const noexcept { return m_foldedView; }
+    /** Transient construction-solid presentation mode for structured boards. */
+    void SetConstructionView( bool aConstruction ) noexcept { m_constructionView = aConstruction; }
+    bool GetConstructionView() const noexcept { return m_constructionView; }
 
     void ReloadColorSettings() noexcept;
 
@@ -221,6 +235,18 @@ public:
      * @return the shape polygon
      */
     const SHAPE_POLY_SET& GetBoardPoly() const noexcept { return m_board_poly; }
+
+    /** Transform a flat mechanical point through the board's bend sequence.
+     * This is shared by the 3D viewer and folded mechanical exporters. */
+    VECTOR3D GetFoldedPoint( const VECTOR3D& aFlatPoint, double aThicknessMm = 0.0,
+                             int aThroughSequence = std::numeric_limits<int>::max() ) const;
+
+    /** Return the material stack thickness at a flat point, including local
+     * stiffener overlays.  Values are in millimetres. */
+    double GetRegionalThicknessMm( const VECTOR2I& aPoint ) const;
+
+    /** Return the local structural body bottom/top in viewer units. */
+    std::pair<float, float> GetRegionalBodyZPos( const VECTOR2I& aPoint ) const;
 
     /**
      * Get the technical color of a layer.
@@ -466,6 +492,7 @@ public:
     const MAP_POLY& GetHoleOdPolysMap() const noexcept { return m_layerHoleOdPolys; }
 
 private:
+    bool m_modelsOnly = false;
     /**
      * Create the board outline polygon.
      *
@@ -569,6 +596,8 @@ private:
     S3D_CACHE*              m_3dModelManager;
 
     std::optional<std::bitset<LAYER_3D_END>> m_visibilityOverride;
+    bool m_foldedView;
+    bool m_constructionView;
 
     VECTOR2I                m_boardPos;             ///< Board center position in board internal units.
     VECTOR2I                m_boardSize;            ///< Board size in board internal units.

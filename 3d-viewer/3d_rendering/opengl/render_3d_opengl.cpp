@@ -43,6 +43,103 @@
 
 #include <wx/log.h>
 #include <wx/utils.h>
+#include <base_units.h>
+#include <board_structure.h>
+
+
+namespace
+{
+
+// The bend evaluator uses PCB coordinates (positive Y down the board), while
+// the OpenGL scene uses the mirrored viewer Y axis.  Build an affine frame at
+// a footprint anchor so a rigid model keeps its existing local offset,
+// orientation, scale, and flip while the whole model follows the folded
+// island.  The evaluator is nonlinear only in the bend strip itself; models
+// seated on either rigid side therefore receive the exact local rigid frame.
+static glm::mat4 foldedModelFrame( BOARD_ADAPTER& aAdapter, const VECTOR2I& aAnchor,
+                                   float aAnchorZ, double aFoldThicknessMm )
+{
+    const double sceneUnitsPerMm = pcbIUScale.IU_PER_MM * aAdapter.BiuTo3dUnits();
+    const VECTOR3D flatAnchor( pcbIUScale.IUTomm( aAnchor.x ),
+                               pcbIUScale.IUTomm( aAnchor.y ),
+                               aAnchorZ / sceneUnitsPerMm );
+
+    auto fold = [&]( const VECTOR3D& aPoint )
+    {
+        const VECTOR3D folded = aAdapter.GetFoldedPoint( aPoint, aFoldThicknessMm );
+        return SFVEC3F( folded.x * sceneUnitsPerMm,
+                        -folded.y * sceneUnitsPerMm,
+                        folded.z * sceneUnitsPerMm );
+    };
+
+    const SFVEC3F flatWorld( flatAnchor.x * sceneUnitsPerMm,
+                             -flatAnchor.y * sceneUnitsPerMm,
+                             flatAnchor.z * sceneUnitsPerMm );
+    const SFVEC3F foldedWorld = fold( flatAnchor );
+    const SFVEC3F foldedX = fold( VECTOR3D( flatAnchor.x + 1.0, flatAnchor.y,
+                                            flatAnchor.z ) );
+    // OpenGL +Y is PCB -Y, so sample the negative PCB-Y basis for the viewer
+    // positive-Y column and mirror the mapped result back into scene space.
+    const SFVEC3F foldedY = fold( VECTOR3D( flatAnchor.x, flatAnchor.y - 1.0,
+                                            flatAnchor.z ) );
+    const SFVEC3F foldedZ = fold( VECTOR3D( flatAnchor.x, flatAnchor.y,
+                                            flatAnchor.z + 1.0 ) );
+
+    // The samples above are one millimetre apart, so convert their scene-unit
+    // differences back to unitless affine columns before applying them to the
+    // model matrix's scene-unit coordinates.
+    const float inverseSceneUnitsPerMm = static_cast<float>( 1.0 / sceneUnitsPerMm );
+    const SFVEC3F colX = ( foldedX - foldedWorld ) * inverseSceneUnitsPerMm;
+    const SFVEC3F colY = ( foldedY - foldedWorld ) * inverseSceneUnitsPerMm;
+    const SFVEC3F colZ = ( foldedZ - foldedWorld ) * inverseSceneUnitsPerMm;
+    const SFVEC3F translation = foldedWorld
+                              - colX * flatWorld.x
+                              - colY * flatWorld.y
+                              - colZ * flatWorld.z;
+
+    glm::mat4 frame( 1.0f );
+    frame[0] = glm::vec4( colX, 0.0f );
+    frame[1] = glm::vec4( colY, 0.0f );
+    frame[2] = glm::vec4( colZ, 0.0f );
+    frame[3] = glm::vec4( translation, 1.0f );
+    return frame;
+}
+
+
+static double foldedParentThicknessMm( const BOARD_ADAPTER& aAdapter )
+{
+    const BOARD* board = aAdapter.GetBoard();
+    if( board )
+    {
+        const BOARD_STRUCTURE& structure = board->GetBoardStructure();
+        if( !structure.bends.empty() )
+        {
+            for( const BOARD_STRUCTURE_REGION& region : structure.regions )
+            {
+                if( region.id != structure.bends.front().region_id )
+                    continue;
+
+                if( const BOARD_STRUCTURE_STACK* stack = structure.StackForRegion( region ) )
+                {
+                    double thickness = 0.0;
+                    for( const BOARD_STRUCTURE_MATERIAL& material : stack->materials )
+                        thickness += material.thickness_nm * 1e-6;
+
+                    if( thickness > 0.0 )
+                        return thickness;
+                }
+            }
+        }
+    }
+
+    return aAdapter.GetBoardBodyThickness()
+         / ( pcbIUScale.IU_PER_MM * aAdapter.BiuTo3dUnits() );
+}
+
+
+static constexpr double CONSTRUCTION_MODEL_CLEARANCE_MM = 0.05;
+
+} // namespace
 
 
 RENDER_3D_OPENGL::RENDER_3D_OPENGL( EDA_3D_CANVAS* aCanvas, BOARD_ADAPTER& aAdapter, CAMERA& aCamera ) :
@@ -491,10 +588,11 @@ void RENDER_3D_OPENGL::unsetDepthOffset()
 
 void RENDER_3D_OPENGL::renderBoardBody( bool aSkipRenderHoles )
 {
+    const bool constructionView = m_boardAdapter.GetConstructionView();
     m_materials.m_EpoxyBoard.m_Diffuse   = m_boardAdapter.m_BoardBodyColor;
 
     // opacity to transparency
-    m_materials.m_EpoxyBoard.m_Transparency = 1.0f - m_boardAdapter.m_BoardBodyColor.a;
+    m_materials.m_EpoxyBoard.m_Transparency = constructionView ? 0.0f : 1.0f - m_boardAdapter.m_BoardBodyColor.a;
 
     OglSetMaterial( m_materials.m_EpoxyBoard, 1.0f );
 
@@ -505,7 +603,7 @@ void RENDER_3D_OPENGL::renderBoardBody( bool aSkipRenderHoles )
     else
         board_disp_list_def = m_boardWithHoles;
 
-    if( board_disp_list_def )
+    if( board_disp_list_def && ( !constructionView || m_structuredBodies.empty() ) )
     {
         // Constructs the actual OpenGL render list with correct GL context we're in
         if( std::shared_ptr<OPENGL_RENDER_LIST> ogl_disp_list = board_disp_list_def->MakeOrGet() )
@@ -517,6 +615,36 @@ void RENDER_3D_OPENGL::renderBoardBody( bool aSkipRenderHoles )
             ogl_disp_list->DrawAll();
         }
     }
+
+    if( !constructionView )
+        return;
+
+    // Folded construction bodies are independent solids with arbitrary
+    // contour winding after cylindrical mapping.  Draw both faces while
+    // presenting the physical model so a reversed hole/outline winding cannot
+    // erase a boundary wall at a rigid-flex transition.
+    const GLboolean cullingEnabled = glIsEnabled( GL_CULL_FACE );
+    glDisable( GL_CULL_FACE );
+
+    for( auto& entry : m_structuredBodies )
+    {
+        auto list = entry.list->MakeOrGet();
+        if( !list ) continue;
+        if( entry.kind == STRUCTURED_BODY::KIND::COVERLAY
+            || entry.kind == STRUCTURED_BODY::KIND::ADHESIVE )
+            continue;
+
+        if( entry.physicalCoordinates )
+            list->ApplyScalePosition( 0.0f, 1.0f );
+        else
+            list->ApplyScalePosition( entry.zBot, entry.zTop - entry.zBot );
+
+        list->SetItIsTransparent( true );
+        list->DrawAll();
+    }
+
+    if( cullingEnabled )
+        glEnable( GL_CULL_FACE );
 
     // Also render post-machining plugs (board material that remains after backdrill/counterbore/countersink)
     if( !aSkipRenderHoles && m_postMachinePlugs )
@@ -649,25 +777,28 @@ bool RENDER_3D_OPENGL::Redraw( bool aIsMoving )
     bool skipRenderHoles = aIsMoving && cfg.opengl_holes_disableOnMove;
     bool skipRenderMicroVias = aIsMoving && cfg.opengl_microvias_disableOnMove;
     bool showThickness = !skipThickness;
+    const bool constructionView = m_boardAdapter.GetConstructionView()
+                               && cfg.engine == RENDER_ENGINE::OPENGL;
 
     std::bitset<LAYER_3D_END> layerFlags = m_boardAdapter.GetVisibleLayers();
 
     setLayerMaterial( B_Cu );
 
-    if( !( skipRenderMicroVias || skipRenderHoles ) && m_microviaHoles )
+    if( !constructionView && !( skipRenderMicroVias || skipRenderHoles ) && m_microviaHoles )
     {
         if( std::shared_ptr<OPENGL_RENDER_LIST> ogl_disp_list = m_microviaHoles->MakeOrGet() )
             ogl_disp_list->DrawAll();
     }
 
-    if( !skipRenderHoles && m_padHoles )
+    if( !constructionView && !skipRenderHoles && m_padHoles )
     {
         if( std::shared_ptr<OPENGL_RENDER_LIST> ogl_disp_list = m_padHoles->MakeOrGet() )
             ogl_disp_list->DrawAll();
     }
 
     // Display copper and tech layers
-    for( MAP_OGL_DISP_LISTS::const_iterator ii = m_layers.begin(); ii != m_layers.end(); ++ii )
+    for( MAP_OGL_DISP_LISTS::const_iterator ii = m_layers.begin();
+         ii != m_layers.end() && !constructionView; ++ii )
     {
         const PCB_LAYER_ID layer = ( PCB_LAYER_ID )( ii->first );
         bool  isSilkLayer = layer == F_SilkS || layer == B_SilkS;
@@ -812,7 +943,9 @@ bool RENDER_3D_OPENGL::Redraw( bool aIsMoving )
 
     glGetFloatv( GL_MODELVIEW_MATRIX, glm::value_ptr( cameraViewMatrix ) );
 
-    // Render 3D Models (Non-transparent)
+    // Render 3D models in both electrical and construction views.  In the
+    // latter, get3dModelsFromFootprint seats models on their regional stack
+    // and applies the same rigid folded frame as the structural solids.
     renderOpaqueModels( cameraViewMatrix );
 
     // Render extruded 3D bodies
@@ -869,9 +1002,87 @@ bool RENDER_3D_OPENGL::Redraw( bool aIsMoving )
         glPolygonOffset( 0.0f, 0.0f );
     }
 
+    if( constructionView )
+    {
+        // Folded artwork lists contain already mapped physical coordinates;
+        // applying the ordinary normalized Z transform here would flatten
+        // them back onto the board plane.  Region clipping was done while
+        // constructing the lists, so the existing layer visibility flags can
+        // be honored without a second flat overlay.
+        const GLboolean cullingEnabled = glIsEnabled( GL_CULL_FACE );
+        glDisable( GL_CULL_FACE );
+        for( const STRUCTURED_ARTWORK& artwork : m_structuredArtwork )
+        {
+            auto list = artwork.list->MakeOrGet();
+            if( !list ) continue;
+            if( !m_boardAdapter.Is3dLayerEnabled( artwork.layer, layerFlags ) )
+                continue;
+
+            setLayerMaterial( artwork.layer );
+            if( artwork.transparent )
+            {
+                glEnable( GL_BLEND );
+                glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+            }
+            list->ApplyScalePosition( artwork.physical ? 0.0f : artwork.zBot,
+                                               artwork.physical ? 1.0f : artwork.zTop - artwork.zBot );
+            list->DrawAll();
+            if( artwork.transparent )
+                glDisable( GL_BLEND );
+        }
+        if( cullingEnabled )
+            glEnable( GL_CULL_FACE );
+
+        // Coverlays and their adhesive are thin translucent sheets.  Draw
+        // them after copper so the physical flex traces remain legible while
+        // still retaining a depth-tested, folded surface.  Depth writes are
+        // disabled for this pass to avoid the first translucent sheet hiding
+        // the later one or the component models.
+        const auto savedBodyMaterial = m_materials.m_EpoxyBoard;
+        glEnable( GL_BLEND );
+        glBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+        glDepthMask( GL_FALSE );
+        glDisable( GL_CULL_FACE );
+        for( const STRUCTURED_BODY& entry : m_structuredBodies )
+        {
+            auto list = entry.list->MakeOrGet();
+            if( !list ) continue;
+            if( !layerFlags.test( LAYER_3D_BOARD )
+                || ( entry.kind != STRUCTURED_BODY::KIND::COVERLAY
+                     && entry.kind != STRUCTURED_BODY::KIND::ADHESIVE ) )
+                continue;
+
+            if( entry.kind == STRUCTURED_BODY::KIND::COVERLAY )
+            {
+                m_materials.m_EpoxyBoard.m_Diffuse = SFVEC3F( 0.95f, 0.42f, 0.08f );
+                m_materials.m_EpoxyBoard.m_Ambient = SFVEC3F( 0.30f, 0.10f, 0.02f );
+                m_materials.m_EpoxyBoard.m_Transparency = 0.68f;
+            }
+            else
+            {
+                m_materials.m_EpoxyBoard.m_Diffuse = SFVEC3F( 1.0f, 0.78f, 0.40f );
+                m_materials.m_EpoxyBoard.m_Ambient = SFVEC3F( 0.32f, 0.22f, 0.08f );
+                m_materials.m_EpoxyBoard.m_Transparency = 0.82f;
+            }
+            OglSetMaterial( m_materials.m_EpoxyBoard, 1.0f );
+
+            if( entry.physicalCoordinates )
+                list->ApplyScalePosition( 0.0f, 1.0f );
+            else
+                list->ApplyScalePosition( entry.zBot, entry.zTop - entry.zBot );
+            list->DrawAll();
+        }
+        m_materials.m_EpoxyBoard = savedBodyMaterial;
+        glDepthMask( GL_TRUE );
+        glDisable( GL_BLEND );
+        if( cullingEnabled )
+            glEnable( GL_CULL_FACE );
+    }
+
     // Display transparent mask layers
-    if( layerFlags.test( LAYER_3D_SOLDERMASK_TOP )
+    if( !constructionView && ( layerFlags.test( LAYER_3D_SOLDERMASK_TOP )
       || layerFlags.test( LAYER_3D_SOLDERMASK_BOTTOM ) )
+      )
     {
         // Make the soldermask appear closer to the screen
         // to avoid Z-fighting with copper items
@@ -1080,6 +1291,12 @@ void RENDER_3D_OPENGL::freeAllLists()
 
     DELETE_AND_FREE( m_board )
     DELETE_AND_FREE( m_boardWithHoles )
+    for( auto& entry : m_structuredBodies )
+        retireRenderPtr( entry.list );
+    m_structuredBodies.clear();
+    for( auto& entry : m_structuredArtwork )
+        retireRenderPtr( entry.list );
+    m_structuredArtwork.clear();
     DELETE_AND_FREE( m_postMachinePlugs )
     DELETE_AND_FREE( m_antiBoard )
 
@@ -1204,7 +1421,40 @@ void RENDER_3D_OPENGL::get3dModelsFromFootprint( std::list<MODELTORENDER> &aDstR
 {
     if( !aFootprint->Models().empty() )
     {
-        const glm::mat4 fpMatrix = m_boardAdapter.GetFootprintMatrix( *aFootprint );
+        const bool constructionView = m_boardAdapter.GetConstructionView();
+        const bool foldedView = constructionView && m_boardAdapter.GetFoldedView()
+                              && m_boardAdapter.m_Cfg->m_Render.engine == RENDER_ENGINE::OPENGL;
+        const bool flipped = aFootprint->IsFlipped();
+        double zpos = m_boardAdapter.GetFootprintZPos( flipped );
+
+        VECTOR2I pos = aFootprint->GetPosition();
+
+        // A structural stack can have a different datum and total thickness
+        // from the ordinary board stack.  Seat construction-view models on
+        // the parent region face before applying any fold frame, matching the
+        // physical solids and the STEP exporter.
+        if( constructionView )
+        {
+            if( const BOARD* board = m_boardAdapter.GetBoard() )
+            {
+                const BOARD_STRUCTURE& structure = board->GetBoardStructure();
+                if( const BOARD_STRUCTURE_REGION* region = structure.RegionAt( pos ) )
+                    if( structure.StackForRegion( *region ) )
+                    {
+                        const auto regionalZ = m_boardAdapter.GetRegionalBodyZPos( pos );
+                        const float clearance = static_cast<float>(
+                                CONSTRUCTION_MODEL_CLEARANCE_MM * pcbIUScale.IU_PER_MM
+                                * m_boardAdapter.BiuTo3dUnits() );
+                        zpos = flipped ? regionalZ.second - clearance : regionalZ.first + clearance;
+                    }
+            }
+        }
+
+        glm::mat4 fpMatrix = m_boardAdapter.GetFootprintMatrix( *aFootprint );
+        fpMatrix[3].z = static_cast<float>( zpos );
+        if( foldedView )
+            fpMatrix = foldedModelFrame( m_boardAdapter, pos, static_cast<float>( zpos ),
+                                         foldedParentThicknessMm( m_boardAdapter ) ) * fpMatrix;
 
         // The placeholder stands in for the whole footprint, so several missing models share one.
         bool placeholderAdded = false;

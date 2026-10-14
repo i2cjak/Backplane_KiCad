@@ -164,6 +164,8 @@ JOB_EXPORT_PCB_3D::JOB_EXPORT_PCB_3D() :
                                                 m_3dparams.m_FillAllVias ) );
     m_params.emplace_back( new JOB_PARAM<bool>( "extra_pad_thickness", &m_3dparams.m_ExtraPadThickness,
                                                 m_3dparams.m_ExtraPadThickness ) );
+    m_params.emplace_back( new JOB_PARAM<bool>( "folded", &m_3dparams.m_Folded,
+                                                m_3dparams.m_Folded ) );
     m_params.emplace_back( new JOB_PARAM<wxString>( "net_filter", &m_3dparams.m_NetFilter,
                                                     m_3dparams.m_NetFilter ) );
     m_params.emplace_back( new JOB_PARAM<wxString>( "component_filter", &m_3dparams.m_ComponentFilter,

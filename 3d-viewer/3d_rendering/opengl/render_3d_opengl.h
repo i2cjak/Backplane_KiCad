@@ -38,6 +38,8 @@
 
 #include "3d_cache/3d_info.h"
 
+struct BOARD_STRUCTURE_BEND;
+
 #include <geometry/eda_angle.h>
 #include <pad.h> // For PAD_DRILL_POST_MACHINING_MODE
 
@@ -247,10 +249,12 @@ private:
     void setLayerMaterial( PCB_LAYER_ID aLayerID );
 
     bool initializeOpenGL();
-
-    std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> createBoard( const SHAPE_POLY_SET&   aBoardPoly,
-                                                              const BVH_CONTAINER_2D* aThroughHoles = nullptr,
-                                                              bool                    aTransparent = false );
+    std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> createBoard( const SHAPE_POLY_SET& aBoardPoly,
+                                     const BVH_CONTAINER_2D* aThroughHoles = nullptr,
+                                     bool aTransparent = false,
+                                     const BOARD_STRUCTURE_BEND* aBend = nullptr,
+                                     float aZtop = 1.0f, float aZbot = 0.0f,
+                                     double aFoldThicknessMm = 0.0 );
 
     /**
      * Create ring-shaped plugs for holes that have backdrill or post-machining.
@@ -341,6 +345,28 @@ private:
     std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> m_outerViaThroughHoles;
     std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> m_outerThroughHoleRings;
     std::vector<std::shared_ptr<void>>           m_retiredRenderPtrs;
+    struct STRUCTURED_BODY
+    {
+        enum class KIND { SUBSTRATE, STIFFENER, COVERLAY, ADHESIVE };
+        std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> list;
+        float zBot;
+        float zTop;
+        bool physicalCoordinates;
+        KIND kind;
+    };
+
+    std::vector<STRUCTURED_BODY> m_structuredBodies;
+    struct STRUCTURED_ARTWORK
+    {
+        PCB_LAYER_ID layer;
+        std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> list;
+        bool transparent;
+        float zBot;
+        float zTop;
+        bool physical;
+    };
+
+    std::vector<STRUCTURED_ARTWORK> m_structuredArtwork;
 
     LIST_TRIANGLES      m_triangles;       ///< store pointers so can be deleted latter
     GLuint              m_circleTexture;

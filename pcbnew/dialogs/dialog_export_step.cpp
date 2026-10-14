@@ -233,6 +233,7 @@ bool DIALOG_EXPORT_STEP::TransferDataToWindow()
         m_txtNetFilter->SetValue( m_job->m_3dparams.m_NetFilter );
         m_cbOptimizeStep->SetValue( m_job->m_3dparams.m_OptimizeStep );
         m_cbExportBody->SetValue( m_job->m_3dparams.m_ExportBoardBody );
+        m_cbFolded->SetValue( m_job->m_3dparams.m_Folded );
         m_cbExportComponents->SetValue( m_job->m_3dparams.m_ExportComponents );
         m_cbExportTracks->SetValue( m_job->m_3dparams.m_ExportTracksVias );
         m_cbExportPads->SetValue( m_job->m_3dparams.m_ExportPads );
@@ -627,6 +628,9 @@ void DIALOG_EXPORT_STEP::onExportButton( wxCommandEvent& aEvent )
         if( !m_cbOptimizeStep->GetValue() )
             cmdK2S.Append( wxT( " --no-optimize-step" ) );
 
+        if( m_cbFolded->GetValue() )
+            cmdK2S.Append( wxT( " --folded" ) );
+
         if( !m_cbExportBody->GetValue() )
             cmdK2S.Append( wxT( " --no-board-body" ) );
 
@@ -758,6 +762,7 @@ void DIALOG_EXPORT_STEP::onExportButton( wxCommandEvent& aEvent )
         m_job->m_3dparams.m_NetFilter = m_txtNetFilter->GetValue();
         m_job->m_3dparams.m_ComponentFilter = getComponentFilter();
         m_job->m_3dparams.m_ExportBoardBody = m_cbExportBody->GetValue();
+        m_job->m_3dparams.m_Folded = m_cbFolded->GetValue();
         m_job->m_3dparams.m_ExportComponents = m_cbExportComponents->GetValue();
         m_job->m_3dparams.m_ExportTracksVias = m_cbExportTracks->GetValue();
         m_job->m_3dparams.m_ExportPads = m_cbExportPads->GetValue();

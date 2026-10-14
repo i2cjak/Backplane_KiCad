@@ -187,6 +187,11 @@ protected:
     /*GLuint m_pboId;
     GLuint m_pboDataSize;*/
 
+    // Source containers for structural 2D objects referenced by LAYER_ITEMs.
+    // They must outlive the 3D scene because LAYER_ITEM stores a non-owning
+    // OBJECT_2D pointer.
+    std::vector<std::unique_ptr<CONTAINER_2D>> m_structuralContainers;
+
     CONTAINER_3D m_objectContainer;
 
     /// Store the list of created objects special for RT that will be clear in the end.

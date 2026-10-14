@@ -57,6 +57,7 @@ public:
             m_FillAllVias( false ),
             m_OptimizeStep( true ),
             m_ExtraPadThickness( true ),
+            m_Folded( false ),
             m_Format( FORMAT::STEP ),
             m_OutputFile()
     {};
@@ -102,6 +103,8 @@ public:
     bool     m_FillAllVias;
     bool     m_OptimizeStep;
     bool     m_ExtraPadThickness;
+    // Export structural regions in their named folded state when available.
+    bool     m_Folded;
     FORMAT   m_Format;
     wxString m_OutputFile;
 

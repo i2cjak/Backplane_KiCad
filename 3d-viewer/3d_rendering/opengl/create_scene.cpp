@@ -34,6 +34,7 @@
 #include <project_pcb.h>
 #include <geometry/shape_poly_set.h>
 #include <thread_pool.h>
+#include <board_structure.h>
 
 
 void RENDER_3D_OPENGL::addObjectTriangles( const FILLED_CIRCLE_2D*                aCircle,
@@ -365,9 +366,12 @@ std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> RENDER_3D_OPENGL::generateEmptyLaye
 }
 
 
-std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> RENDER_3D_OPENGL::createBoard( const SHAPE_POLY_SET&   aBoardPoly,
-                                                                            const BVH_CONTAINER_2D* aThroughHoles,
-                                                                            bool                    aTransparent )
+std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> RENDER_3D_OPENGL::createBoard( const SHAPE_POLY_SET& aBoardPoly,
+                                                   const BVH_CONTAINER_2D* aThroughHoles,
+                                                   bool aTransparent,
+                                                   const BOARD_STRUCTURE_BEND* aBend,
+                                                   float aZtop, float aZbot,
+                                                   double aFoldThicknessMm )
 {
     std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> dispLists;
     CONTAINER_2D                                 boardContainer;
@@ -379,12 +383,51 @@ std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> RENDER_3D_OPENGL::createBoard( cons
 
     if( listBoardObject2d.size() > 0 )
     {
-        // We will set a unitary Z so it will in future used with transformations since the
-        // board poly will be used not only to draw itself but also the solder mask layers.
-        const float layer_z_top = 1.0f;
-        const float layer_z_bot = 0.0f;
+        auto layerTriangles = std::make_shared<TRIANGLE_DISPLAY_LIST>(
+                listBoardObject2d.size() * ( aBend ? 512 : 1 ) );
 
-        auto layerTriangles = std::make_shared<TRIANGLE_DISPLAY_LIST>( listBoardObject2d.size() );
+        // A folded list is emitted in physical 3D units.  Display-list Z
+        // scaling is deliberately bypassed for these lists; applying the
+        // usual normalized 0..1 transform after folding would bend the
+        // already transformed Z coordinates a second time.
+        const float layer_z_top = aBend ? aZtop : 1.0f;
+        const float layer_z_bot = aBend ? aZbot : 0.0f;
+
+        const double unitsPerMm = m_boardAdapter.BiuTo3dUnits() * pcbIUScale.IU_PER_MM;
+        auto mapFolded = [&]( const SFVEC2F& aPoint, float aZ )
+        {
+            VECTOR3D flat( aPoint.x / unitsPerMm, -aPoint.y / unitsPerMm,
+                           aZ / unitsPerMm );
+            VECTOR3D folded = m_boardAdapter.GetFoldedPoint( flat, aFoldThicknessMm );
+            return SFVEC3F( folded.x * unitsPerMm, -folded.y * unitsPerMm,
+                            folded.z * unitsPerMm );
+        };
+
+        auto emitFoldedTriangle = [&]( const SFVEC2F& a, const SFVEC2F& b,
+                                       const SFVEC2F& c )
+        {
+            const SFVEC3F b1 = mapFolded( a, layer_z_bot );
+            const SFVEC3F b2 = mapFolded( b, layer_z_bot );
+            const SFVEC3F b3 = mapFolded( c, layer_z_bot );
+            const SFVEC3F t1 = mapFolded( a, layer_z_top );
+            const SFVEC3F t2 = mapFolded( b, layer_z_top );
+            const SFVEC3F t3 = mapFolded( c, layer_z_top );
+
+            // Folded faces have arbitrary normals; the ordinary top/bottom
+            // buffers assume a constant +/-Z normal and cannot shade them.
+            auto addFace = [&]( const SFVEC3F& p, const SFVEC3F& q, const SFVEC3F& r )
+            {
+                SFVEC3F normal = glm::cross( q - p, r - p );
+                const float length = glm::length( normal );
+                if( length <= 1e-12f )
+                    return;
+                normal /= length;
+                layerTriangles->m_layer_middle_contours_quads->AddTriangle( p, q, r );
+                layerTriangles->m_layer_middle_contours_quads->AddNormal( normal, normal, normal );
+            };
+            addFace( b1, b2, b3 );
+            addFace( t3, t2, t1 );
+        };
 
         // Convert the list of objects(triangles) to triangle layer structure
         for( const OBJECT_2D* itemOnLayer : listBoardObject2d )
@@ -399,18 +442,97 @@ std::shared_ptr<OPENGL_RENDER_LIST_DEFERRED> RENDER_3D_OPENGL::createBoard( cons
             const SFVEC2F& v2 = tri->GetP2();
             const SFVEC2F& v3 = tri->GetP3();
 
-            addTopAndBottomTriangles( layerTriangles, v1, v2, v3, layer_z_top, layer_z_bot );
+            if( !aBend )
+                addTopAndBottomTriangles( layerTriangles, v1, v2, v3, layer_z_top, layer_z_bot );
+            else
+            {
+                // Subdivide by developed distance, not total bend angle:
+                // a triangle can be much longer than the curved strip.
+                const double longestMm = std::max( { glm::length( v2 - v1 ),
+                        glm::length( v3 - v2 ), glm::length( v1 - v3 ) } ) / unitsPerMm;
+                const int subdivisions = std::max( 1,
+                        static_cast<int>( std::ceil( longestMm / 0.25 ) ) );
+                for( int row = 0; row < subdivisions; ++row )
+                    for( int col = 0; col < subdivisions - row; ++col )
+                    {
+                        const float u0 = static_cast<float>( row ) / subdivisions;
+                        const float u1 = static_cast<float>( row + 1 ) / subdivisions;
+                        const float v0 = static_cast<float>( col ) / subdivisions;
+                        const float v1f = static_cast<float>( col + 1 ) / subdivisions;
+                        const SFVEC2F p0 = v1 + ( v2 - v1 ) * u0 + ( v3 - v1 ) * v0;
+                        const SFVEC2F p1 = v1 + ( v2 - v1 ) * u1 + ( v3 - v1 ) * v0;
+                        const SFVEC2F p2 = v1 + ( v2 - v1 ) * u0 + ( v3 - v1 ) * v1f;
+                        emitFoldedTriangle( p0, p1, p2 );
+
+                        if( col < subdivisions - row - 1 )
+                        {
+                            const SFVEC2F p3 = v1 + ( v2 - v1 ) * u1 + ( v3 - v1 ) * v1f;
+                            emitFoldedTriangle( p1, p3, p2 );
+                        }
+                    }
+            }
+
         }
 
-        if( aBoardPoly.OutlineCount() > 0 )
+        if( aBend )
+        {
+            // The triangulator's edges include internal diagonals.  Close the
+            // physical solid only along the source polygon perimeter so the
+            // folded display has no internal walls or seams.
+            auto addFoldedContour = [&]( const SHAPE_LINE_CHAIN& aContour )
+            {
+                for( int i = 0; i < aContour.PointCount(); ++i )
+                {
+                    const VECTOR2I& p0 = aContour.CPoint( i );
+                    const VECTOR2I& p1 = aContour.CPoint( ( i + 1 ) % aContour.PointCount() );
+                    if( p0 == p1 )
+                        continue;
+
+                    const SFVEC2F q0( p0.x * m_boardAdapter.BiuTo3dUnits(),
+                                      -p0.y * m_boardAdapter.BiuTo3dUnits() );
+                    const SFVEC2F q1( p1.x * m_boardAdapter.BiuTo3dUnits(),
+                                      -p1.y * m_boardAdapter.BiuTo3dUnits() );
+                    const int segments = std::max( 1, static_cast<int>( std::ceil(
+                            glm::length( q1 - q0 ) / unitsPerMm / 0.25 ) ) );
+                    for( int segment = 0; segment < segments; ++segment )
+                    {
+                        const SFVEC2F start = q0 + ( q1 - q0 ) * ( float( segment ) / segments );
+                        const SFVEC2F end = q0 + ( q1 - q0 ) * ( float( segment + 1 ) / segments );
+                        const SFVEC3F b0 = mapFolded( start, layer_z_bot );
+                        const SFVEC3F b1 = mapFolded( end, layer_z_bot );
+                        const SFVEC3F t0 = mapFolded( start, layer_z_top );
+                        const SFVEC3F t1 = mapFolded( end, layer_z_top );
+                        SFVEC3F normal = glm::cross( b1 - b0, t0 - b0 );
+                        const float length = glm::length( normal );
+                        if( length <= 1e-12f )
+                            continue;
+                        normal /= length;
+                        layerTriangles->m_layer_middle_contours_quads->AddQuad( b0, b1, t1, t0 );
+                        layerTriangles->m_layer_middle_contours_quads->AddNormal(
+                                normal, normal, normal, normal );
+                    }
+                }
+            };
+
+            for( int i = 0; i < aBoardPoly.OutlineCount(); ++i )
+            {
+                addFoldedContour( aBoardPoly.COutline( i ) );
+                for( int h = 0; h < aBoardPoly.HoleCount( i ); ++h )
+                    addFoldedContour( aBoardPoly.CHole( i, h ) );
+            }
+        }
+
+        if( aBoardPoly.OutlineCount() > 0 && !aBend )
         {
             layerTriangles->AddToMiddleContours( aBoardPoly, layer_z_bot, layer_z_top,
                                                  m_boardAdapter.BiuTo3dUnits(), false,
                                                  aThroughHoles );
 
-            dispLists = std::make_shared<OPENGL_RENDER_LIST_DEFERRED>( layerTriangles, m_circleTexture, layer_z_top,
-                                                                       layer_z_top, aTransparent );
         }
+
+        if( aBoardPoly.OutlineCount() > 0 )
+            dispLists = std::make_shared<OPENGL_RENDER_LIST_DEFERRED>(
+                    layerTriangles, m_circleTexture, layer_z_bot, layer_z_top, aTransparent );
     }
 
     return dispLists;
@@ -871,6 +993,458 @@ void RENDER_3D_OPENGL::bgWorker( std::stop_token aStop )
         return;
 
     sendRefreshView();
+
+    // Structural regions get independent render lists so local stack and
+    // stiffener thicknesses are represented by their own Z extents.
+    std::vector<STRUCTURED_BODY> structuredBodies;
+    std::vector<STRUCTURED_ARTWORK> structuredArtwork;
+    const BOARD_STRUCTURE& structure = m_boardAdapter.GetBoard()->GetBoardStructure();
+    const bool foldedView = m_boardAdapter.GetConstructionView()
+                         && m_boardAdapter.GetFoldedView()
+                         && m_boardAdapter.m_Cfg->m_Render.engine == RENDER_ENGINE::OPENGL;
+    const BOARD_STRUCTURE_BEND* globalBend = foldedView && !structure.bends.empty()
+                                           ? &structure.bends.front() : nullptr;
+    double foldThicknessMm = m_boardAdapter.GetBoardBodyThickness()
+                           / m_boardAdapter.BiuTo3dUnits() / pcbIUScale.IU_PER_MM;
+    if( globalBend )
+        for( const BOARD_STRUCTURE_REGION& parent : structure.regions )
+            if( parent.id == globalBend->region_id )
+                if( const BOARD_STRUCTURE_STACK* stack = structure.StackForRegion( parent ) )
+                {
+                    double candidate = 0.0;
+                    for( const auto& material : stack->materials )
+                        candidate += material.thickness_nm * 1e-6;
+                    if( candidate > 0.0 )
+                        foldThicknessMm = candidate;
+                }
+
+    if( !structure.regions.empty() )
+    {
+        auto subtractConstructionVoids = [&]( SHAPE_POLY_SET& aPoly )
+        {
+            // Depth-specific counterbores, countersinks, and backdrills are
+            // intentionally omitted here.  Their enlarged openings cannot be
+            // subtracted from a full-height construction solid without also
+            // removing material below/above the specified machining depth.
+            const SHAPE_POLY_SET* voids[] = {
+                &m_boardAdapter.GetTH_ODPolys(), &m_boardAdapter.GetNPTH_ODPolys(),
+            };
+            for( const SHAPE_POLY_SET* cutout : voids )
+                if( cutout->OutlineCount() > 0 )
+                    aPoly.BooleanSubtract( *cutout );
+        };
+
+        for( const BOARD_STRUCTURE_REGION& region : structure.regions )
+        {
+            SHAPE_POLY_SET poly;
+            if( region.shape.outline.size() < 3 )
+                continue;
+            SHAPE_LINE_CHAIN outline;
+            for( const VECTOR2I& p : region.shape.outline ) outline.Append( p );
+            outline.SetClosed( true );
+            poly.AddOutline( outline );
+            for( const auto& points : region.shape.holes )
+            {
+                SHAPE_LINE_CHAIN hole;
+                for( const VECTOR2I& p : points ) hole.Append( p );
+                hole.SetClosed( true );
+                poly.AddHole( hole );
+            }
+            subtractConstructionVoids( poly );
+            double thicknessMm = m_boardAdapter.GetBoardBodyThickness() / m_boardAdapter.BiuTo3dUnits()
+                               / pcbIUScale.IU_PER_MM;
+            double zBotMm = -thicknessMm * 0.5;
+            double zTopMm = thicknessMm * 0.5;
+            for( const BOARD_STRUCTURE_STACK& stack : structure.stacks )
+                if( stack.id == region.stack_id )
+                {
+                    thicknessMm = 0.0;
+                    for( const BOARD_STRUCTURE_MATERIAL& material : stack.materials )
+                        thicknessMm += material.thickness_nm * 1e-6;
+
+                    bool haveZ = false;
+                    for( const auto& layer : stack.layers )
+                    {
+                        double layerThickness = 0.0;
+                        for( const auto& material : stack.materials )
+                            if( material.id == layer.material_id )
+                            {
+                                layerThickness = material.thickness_nm * 1e-6;
+                                break;
+                            }
+                        const double bottom = layer.z_offset_nm * 1e-6;
+                        const double top = bottom + layerThickness;
+                        if( !haveZ )
+                        {
+                            zBotMm = bottom;
+                            zTopMm = top;
+                            haveZ = true;
+                        }
+                        else
+                        {
+                            zBotMm = std::min( zBotMm, bottom );
+                            zTopMm = std::max( zTopMm, top );
+                        }
+                    }
+                }
+            const bool physical = globalBend != nullptr;
+            const float zBot = static_cast<float>( zBotMm * pcbIUScale.IU_PER_MM
+                                                  * m_boardAdapter.BiuTo3dUnits() );
+            const float zTop = static_cast<float>( zTopMm * pcbIUScale.IU_PER_MM
+                                                  * m_boardAdapter.BiuTo3dUnits() );
+            if( auto list = createBoard( poly, nullptr, false, globalBend,
+                                                         zTop, zBot, foldThicknessMm ) )
+                structuredBodies.push_back( { list, zBot, zTop, physical,
+                                                STRUCTURED_BODY::KIND::SUBSTRATE } );
+        }
+        for( const BOARD_STRUCTURE_STIFFENER& stiffener : structure.stiffeners )
+        {
+            SHAPE_POLY_SET poly;
+            if( stiffener.shape.outline.size() < 3 ) continue;
+            SHAPE_LINE_CHAIN outline;
+            for( const VECTOR2I& p : stiffener.shape.outline ) outline.Append( p );
+            outline.SetClosed( true );
+            poly.AddOutline( outline );
+            for( const auto& points : stiffener.shape.holes )
+            {
+                SHAPE_LINE_CHAIN hole;
+                for( const VECTOR2I& p : points ) hole.Append( p );
+                hole.SetClosed( true );
+                poly.AddHole( hole );
+            }
+            subtractConstructionVoids( poly );
+            const BOARD_STRUCTURE_REGION* parent = nullptr;
+            for( const BOARD_STRUCTURE_REGION& candidate : structure.regions )
+                if( candidate.id == stiffener.region_id )
+                {
+                    parent = &candidate;
+                    break;
+                }
+
+            double parentThicknessMm = m_boardAdapter.GetBoardBodyThickness()
+                                      / m_boardAdapter.BiuTo3dUnits() / pcbIUScale.IU_PER_MM;
+            double parentBotMm = -parentThicknessMm * 0.5;
+            double parentTopMm = parentThicknessMm * 0.5;
+            if( parent )
+                if( const BOARD_STRUCTURE_STACK* stack = structure.StackForRegion( *parent ) )
+                {
+                    parentThicknessMm = 0.0;
+                    for( const auto& material : stack->materials )
+                        parentThicknessMm += material.thickness_nm * 1e-6;
+                    bool haveZ = false;
+                    for( const auto& layer : stack->layers )
+                    {
+                        double layerThickness = 0.0;
+                        for( const auto& material : stack->materials )
+                            if( material.id == layer.material_id )
+                            {
+                                layerThickness = material.thickness_nm * 1e-6;
+                                break;
+                            }
+                        const double bottom = layer.z_offset_nm * 1e-6;
+                        const double top = bottom + layerThickness;
+                        if( !haveZ )
+                        {
+                            parentBotMm = bottom;
+                            parentTopMm = top;
+                            haveZ = true;
+                        }
+                        else
+                        {
+                            parentBotMm = std::min( parentBotMm, bottom );
+                            parentTopMm = std::max( parentTopMm, top );
+                        }
+                    }
+                }
+
+            const double stiffenerMm = ( stiffener.thickness_nm > 0
+                                       ? stiffener.thickness_nm : stiffener.max_thickness_nm ) * 1e-6;
+            const double adhesiveMm = stiffener.adhesive_thickness_nm * 1e-6;
+            const bool physical = globalBend != nullptr;
+            const float bot = static_cast<float>( ( stiffener.top ? parentTopMm + adhesiveMm
+                                                           : parentBotMm - adhesiveMm - stiffenerMm )
+                                          * pcbIUScale.IU_PER_MM * m_boardAdapter.BiuTo3dUnits() );
+            const float top = static_cast<float>( ( stiffener.top ? parentTopMm + adhesiveMm + stiffenerMm
+                                                           : parentBotMm - adhesiveMm )
+                                          * pcbIUScale.IU_PER_MM * m_boardAdapter.BiuTo3dUnits() );
+            if( auto list = createBoard( poly, nullptr, false, globalBend,
+                                                         top, bot, foldThicknessMm ) )
+                structuredBodies.push_back( { list, bot, top, physical,
+                                                STRUCTURED_BODY::KIND::STIFFENER } );
+            if( adhesiveMm > 0.0 )
+            {
+                const double parentFace = stiffener.top ? parentTopMm : parentBotMm;
+                const double adhesiveBot = stiffener.top ? parentFace : parentFace - adhesiveMm;
+                const double adhesiveTop = stiffener.top ? parentFace + adhesiveMm : parentFace;
+                const float ab = adhesiveBot * pcbIUScale.IU_PER_MM * m_boardAdapter.BiuTo3dUnits();
+                const float at = adhesiveTop * pcbIUScale.IU_PER_MM * m_boardAdapter.BiuTo3dUnits();
+                if( auto list = createBoard( poly, nullptr, false, globalBend,
+                                                             at, ab, foldThicknessMm ) )
+                    structuredBodies.push_back( { list, ab, at, physical,
+                                                    STRUCTURED_BODY::KIND::ADHESIVE } );
+            }
+        }
+
+        // Coverlays and their adhesive are construction solids as well.  Keep
+        // them in the same physical coordinate path so a folded preview does
+        // not leave a flat mask floating over the flex.
+        for( const BOARD_STRUCTURE_COVERLAY& coverlay : structure.coverlays )
+        {
+            SHAPE_POLY_SET poly;
+            if( coverlay.coverage.outline.size() < 3 )
+                continue;
+            SHAPE_LINE_CHAIN outline;
+            for( const VECTOR2I& p : coverlay.coverage.outline ) outline.Append( p );
+            outline.SetClosed( true );
+            poly.AddOutline( outline );
+            for( const auto& points : coverlay.coverage.holes )
+            {
+                SHAPE_LINE_CHAIN hole;
+                for( const VECTOR2I& p : points ) hole.Append( p );
+                hole.SetClosed( true );
+                poly.AddHole( hole );
+            }
+            for( const auto& opening : coverlay.openings )
+            {
+                if( opening.outline.size() < 3 )
+                    continue;
+                const int outlineIndex = poly.NewHole( 0 );
+                for( const VECTOR2I& p : opening.outline ) poly.Append( p, 0, outlineIndex );
+                for( const auto& points : opening.holes )
+                {
+                    const int holeIndex = poly.NewHole( 0 );
+                    for( const VECTOR2I& p : points ) poly.Append( p, 0, holeIndex );
+                }
+            }
+            subtractConstructionVoids( poly );
+
+            const BOARD_STRUCTURE_REGION* parent = nullptr;
+            for( const BOARD_STRUCTURE_REGION& candidate : structure.regions )
+                if( candidate.id == coverlay.region_id )
+                {
+                    parent = &candidate;
+                    break;
+                }
+            double parentThicknessMm = m_boardAdapter.GetBoardBodyThickness()
+                                      / m_boardAdapter.BiuTo3dUnits() / pcbIUScale.IU_PER_MM;
+            double parentBotMm = -parentThicknessMm * 0.5;
+            double parentTopMm = parentThicknessMm * 0.5;
+            if( parent )
+                if( const BOARD_STRUCTURE_STACK* stack = structure.StackForRegion( *parent ) )
+                {
+                    parentThicknessMm = 0.0;
+                    for( const auto& material : stack->materials )
+                        parentThicknessMm += material.thickness_nm * 1e-6;
+                    bool haveZ = false;
+                    for( const auto& layer : stack->layers )
+                    {
+                        double layerThickness = 0.0;
+                        for( const auto& material : stack->materials )
+                            if( material.id == layer.material_id )
+                            {
+                                layerThickness = material.thickness_nm * 1e-6;
+                                break;
+                            }
+                        const double bottom = layer.z_offset_nm * 1e-6;
+                        const double top = bottom + layerThickness;
+                        if( !haveZ )
+                        {
+                            parentBotMm = bottom;
+                            parentTopMm = top;
+                            haveZ = true;
+                        }
+                        else
+                        {
+                            parentBotMm = std::min( parentBotMm, bottom );
+                            parentTopMm = std::max( parentTopMm, top );
+                        }
+                    }
+                }
+            const double coverMm = coverlay.thickness_nm * 1e-6;
+            const double adhesiveMm = coverlay.adhesive_thickness_nm * 1e-6;
+            const bool physical = globalBend != nullptr;
+            const float bot = static_cast<float>( ( coverlay.top ? parentTopMm + adhesiveMm
+                                                          : parentBotMm - adhesiveMm - coverMm )
+                                          * pcbIUScale.IU_PER_MM * m_boardAdapter.BiuTo3dUnits() );
+            const float top = static_cast<float>( ( coverlay.top ? parentTopMm + adhesiveMm + coverMm
+                                                          : parentBotMm - adhesiveMm )
+                                          * pcbIUScale.IU_PER_MM * m_boardAdapter.BiuTo3dUnits() );
+            if( auto list = createBoard( poly, nullptr, false, globalBend,
+                                                         top, bot, foldThicknessMm ) )
+                structuredBodies.push_back( { list, bot, top, physical,
+                                                STRUCTURED_BODY::KIND::COVERLAY } );
+            if( adhesiveMm > 0.0 )
+            {
+                const double parentFace = coverlay.top ? parentTopMm : parentBotMm;
+                const double adhesiveBot = coverlay.top ? parentFace : parentFace - adhesiveMm;
+                const double adhesiveTop = coverlay.top ? parentFace + adhesiveMm : parentFace;
+                const float ab = adhesiveBot * pcbIUScale.IU_PER_MM * m_boardAdapter.BiuTo3dUnits();
+                const float at = adhesiveTop * pcbIUScale.IU_PER_MM * m_boardAdapter.BiuTo3dUnits();
+                if( auto list = createBoard( poly, nullptr, false, globalBend,
+                                                             at, ab, foldThicknessMm ) )
+                    structuredBodies.push_back( { list, ab, at, physical,
+                                                    STRUCTURED_BODY::KIND::ADHESIVE } );
+            }
+        }
+
+        // Native artwork is built from the same polygon map as the ordinary
+        // flat renderer, but split at structural region boundaries.  This is
+        // important for flex: transforming one large flat list leaves copper
+        // and silk spanning the hinge as a planar overlay.
+        if( m_boardAdapter.GetConstructionView() )
+        {
+            const MAP_POLY& artworkMap = m_boardAdapter.GetPolyMap();
+            const double sceneUnitsPerMm = pcbIUScale.IU_PER_MM
+                                         * m_boardAdapter.BiuTo3dUnits();
+
+            auto regionZ = [&]( const BOARD_STRUCTURE_REGION& aRegion,
+                                PCB_LAYER_ID aLayer ) -> std::pair<float, float>
+            {
+                const BOARD_STRUCTURE_STACK* stack = structure.StackForRegion( aRegion );
+                double bodyBot = -foldThicknessMm * 0.5;
+                double bodyTop = foldThicknessMm * 0.5;
+                if( stack )
+                {
+                    bool haveBody = false;
+                    for( const auto& instance : stack->layers )
+                    {
+                        double materialThickness = 0.0;
+                        for( const auto& material : stack->materials )
+                            if( material.id == instance.material_id )
+                            {
+                                materialThickness = material.thickness_nm * 1e-6;
+                                break;
+                            }
+                        const double bot = instance.z_offset_nm * 1e-6;
+                        const double top = bot + materialThickness;
+                        if( !haveBody )
+                        {
+                            bodyBot = bot;
+                            bodyTop = top;
+                            haveBody = true;
+                        }
+                        else
+                        {
+                            bodyBot = std::min( bodyBot, bot );
+                            bodyTop = std::max( bodyTop, top );
+                        }
+                        if( instance.global_copper_layer == static_cast<int>( aLayer ) )
+                            return { static_cast<float>( bot * sceneUnitsPerMm ),
+                                     static_cast<float>( top * sceneUnitsPerMm ) };
+                    }
+                }
+
+                // Technical layers sit on the corresponding regional face.
+                // Keep a small real thickness so mask and silk remain visible
+                // after the fold and retain their normal depth ordering.
+                const bool topSide = aLayer == F_Cu || aLayer == F_Mask || aLayer == F_SilkS
+                                  || aLayer == F_Paste;
+                const double thickness = m_boardAdapter.GetNonCopperLayerThickness() / sceneUnitsPerMm;
+                const double lift = ( aLayer == F_SilkS || aLayer == B_SilkS ) ? thickness : 0.0;
+                const double face = topSide ? bodyTop + lift : bodyBot - lift;
+                if( topSide )
+                    return { static_cast<float>( face * sceneUnitsPerMm ),
+                             static_cast<float>( ( face + thickness ) * sceneUnitsPerMm ) };
+                return { static_cast<float>( ( face - thickness ) * sceneUnitsPerMm ),
+                         static_cast<float>( face * sceneUnitsPerMm ) };
+            };
+
+            const std::bitset<LAYER_3D_END> artworkVisibility = m_boardAdapter.GetVisibleLayers();
+            for( const auto& [layer, polySource] : artworkMap )
+            {
+                if( !m_boardAdapter.Is3dLayerEnabled( layer, artworkVisibility )
+                    || !polySource )
+                    continue;
+
+                for( const BOARD_STRUCTURE_REGION& region : structure.regions )
+                {
+                    if( region.shape.outline.size() < 3 )
+                        continue;
+                    if( IsCopperLayer( layer ) )
+                    {
+                        const auto* stack = structure.StackForRegion( region );
+                        if( !stack || std::none_of( stack->layers.begin(), stack->layers.end(),
+                                [&]( const auto& instance ) { return instance.global_copper_layer == int( layer ); } ) )
+                            continue;
+                    }
+                    if( layer == F_Mask || layer == B_Mask )
+                    {
+                        const int requiredCopper = layer == F_Mask ? int( F_Cu ) : int( B_Cu );
+                        const auto* stack = structure.StackForRegion( region );
+                        if( !stack || std::none_of( stack->layers.begin(), stack->layers.end(),
+                                [&]( const auto& instance )
+                                { return instance.global_copper_layer == requiredCopper; } ) )
+                            continue;
+                    }
+                    SHAPE_LINE_CHAIN boundary;
+                    for( const VECTOR2I& point : region.shape.outline )
+                        boundary.Append( point );
+                    boundary.SetClosed( true );
+                    SHAPE_POLY_SET regionPoly;
+                    regionPoly.AddOutline( boundary );
+                    for( const auto& points : region.shape.holes )
+                    {
+                        SHAPE_LINE_CHAIN hole;
+                        for( const VECTOR2I& point : points )
+                            hole.Append( point );
+                        hole.SetClosed( true );
+                        regionPoly.AddHole( hole );
+                    }
+                    // KiCad's mask polygon map contains the openings.  The
+                    // rendered mask is the sheet surrounding those openings,
+                    // so start with the region and subtract the mask map.
+                    SHAPE_POLY_SET clipped = ( layer == F_Mask || layer == B_Mask )
+                                            ? regionPoly.CloneDropTriangulation()
+                                            : polySource->CloneDropTriangulation();
+                    if( layer == F_Mask || layer == B_Mask )
+                        clipped.BooleanSubtract( *polySource );
+                    else
+                    {
+                        // Exposed plated pads are removed from the ordinary
+                        // copper map when plated-copper differentiation is on.
+                        // Reunite them before clipping to avoid missing SMD pads.
+                        const SHAPE_POLY_SET* plated = layer == F_Cu
+                                ? m_boardAdapter.GetFrontPlatedCopperPolys()
+                                : layer == B_Cu ? m_boardAdapter.GetBackPlatedCopperPolys() : nullptr;
+                        if( plated && plated->OutlineCount() ) clipped.BooleanAdd( *plated );
+                        clipped.BooleanIntersection( regionPoly );
+                        if( ( layer == F_SilkS || layer == B_SilkS )
+                            && m_boardAdapter.m_Cfg->m_Render.subtract_mask_from_silk )
+                        {
+                            const auto mask = artworkMap.find( layer == F_SilkS ? F_Mask : B_Mask );
+                            if( mask != artworkMap.end() && mask->second ) clipped.BooleanSubtract( *mask->second );
+                        }
+                    }
+                    const auto holes = m_boardAdapter.GetHoleIdPolysMap().find( layer );
+                    if( holes != m_boardAdapter.GetHoleIdPolysMap().end() && holes->second )
+                        clipped.BooleanSubtract( *holes->second );
+                    clipped.BooleanSubtract( m_boardAdapter.GetNPTH_ODPolys() );
+                    if( clipped.OutlineCount() == 0 )
+                        continue;
+
+                    const auto [zBot, zTop] = regionZ( region, layer );
+                    if( auto list = createBoard( clipped, nullptr, false, globalBend,
+                                                                  zTop, zBot, foldThicknessMm ) )
+                    {
+                        structuredArtwork.push_back( { layer, list,
+                            layer == F_Mask || layer == B_Mask || layer == F_Paste
+                                                        || layer == B_Paste,
+                                                        zBot, zTop, globalBend != nullptr } );
+                    }
+                }
+            }
+        }
+    }
+
+    {
+        std::lock_guard lock( m_renderMutex );
+        for( auto& entry : m_structuredBodies )
+            retireRenderPtr( entry.list );
+        for( auto& entry : m_structuredArtwork )
+            retireRenderPtr( entry.list );
+        m_structuredBodies = std::move( structuredBodies );
+        m_structuredArtwork = std::move( structuredArtwork );
+    }
 
     m_antiBoardPolys.RemoveAllContours();
     m_antiBoardPolys.NewOutline();

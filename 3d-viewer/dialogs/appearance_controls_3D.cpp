@@ -203,9 +203,43 @@ APPEARANCE_CONTROLS_3D::APPEARANCE_CONTROLS_3D( EDA_3D_VIEWER_FRAME* aParent, wx
                 m_frame->NewDisplay( true );
             } );
 
+    m_cbConstructionView = new wxCheckBox( m_panelLayers, wxID_ANY,
+                                           _( "Construction view" ) );
+    m_cbConstructionView->SetFont( infoFont );
+    m_cbConstructionView->SetToolTip( _( "Show regional stackups, stiffeners, coverlays, adhesive, and component models; hide flat electrical artwork" ) );
+    m_cbConstructionView->SetValue( m_frame->GetAdapter().GetConstructionView() );
+    m_cbConstructionView->Bind( wxEVT_CHECKBOX,
+            [this]( wxCommandEvent& aEvent )
+            {
+                const bool construction = aEvent.IsChecked();
+                m_frame->GetAdapter().SetConstructionView( construction );
+                m_cbConstructionView->Enable( m_frame->GetAdapter().m_Cfg->m_Render.engine
+                                               == RENDER_ENGINE::OPENGL
+                                               && m_frame->GetBoard()
+                                               && !m_frame->GetBoard()->GetBoardStructure().Empty() );
+                m_cbFoldedView->Enable( construction
+                                         && m_frame->GetAdapter().m_Cfg->m_Render.engine
+                                                == RENDER_ENGINE::OPENGL );
+                m_frame->NewDisplay( true );
+            } );
+
+    m_cbFoldedView = new wxCheckBox( m_panelLayers, wxID_ANY, _( "Fold rigid-flex board" ) );
+    m_cbFoldedView->SetFont( infoFont );
+    m_cbFoldedView->SetToolTip( _( "Display rigid-flex structural regions in their cylindrical folded state (OpenGL only)" ) );
+    m_cbFoldedView->Bind( wxEVT_CHECKBOX,
+            [this]( wxCommandEvent& aEvent )
+            {
+                const bool folded = aEvent.IsChecked();
+                m_frame->GetAdapter().SetFoldedView( folded );
+                m_cbFoldedView->SetLabel( _( "Fold rigid-flex board" ) );
+                m_frame->NewDisplay( true );
+            } );
+
     m_panelLayersSizer->Add( m_cbUseBoardStackupColors, 0, wxEXPAND | wxTOP | wxLEFT | wxRIGHT, 5 );
     m_panelLayersSizer->Add( m_cbUseBoardEditorCopperColors, 0,
                              wxEXPAND | wxALL, 5 );
+    m_panelLayersSizer->Add( m_cbConstructionView, 0, wxEXPAND | wxALL, 5 );
+    m_panelLayersSizer->Add( m_cbFoldedView, 0, wxEXPAND | wxALL, 5 );
 
     m_cbLayerPresets->SetToolTip( wxString::Format( _( "Save and restore color and visibility combinations.\n"
                                                        "Use %s+Tab to activate selector.\n"
@@ -276,6 +310,8 @@ void APPEARANCE_CONTROLS_3D::rebuildControls()
 
     rebuildLayers();
     m_cbUseBoardStackupColors->SetLabel( _( "Use board stackup colors" ) );
+    m_cbConstructionView->SetLabel( _( "Construction view" ) );
+    m_cbFoldedView->SetLabel( _( "Fold rigid-flex board" ) );
     rebuildLayerPresetsWidget( true );
     rebuildViewportsWidget();
 
@@ -716,6 +752,15 @@ void APPEARANCE_CONTROLS_3D::UpdateLayerCtls()
     {
         m_cbUseBoardStackupColors->SetValue( cfg->m_UseStackupColors );
         m_cbUseBoardEditorCopperColors->SetValue( cfg->m_Render.use_board_editor_copper_colors );
+        const bool construction = m_frame->GetAdapter().GetConstructionView();
+        m_cbConstructionView->SetValue( construction );
+        m_cbConstructionView->Enable( cfg->m_Render.engine == RENDER_ENGINE::OPENGL
+                                      && m_frame->GetBoard()
+                                      && !m_frame->GetBoard()->GetBoardStructure().Empty() );
+        const bool folded = m_frame->GetAdapter().GetFoldedView();
+        m_cbFoldedView->SetValue( folded );
+        m_cbFoldedView->SetLabel( _( "Fold rigid-flex board" ) );
+        m_cbFoldedView->Enable( construction && cfg->m_Render.engine == RENDER_ENGINE::OPENGL );
     }
 }
 

@@ -74,6 +74,10 @@ DIALOG_EXPORT_STEP_BASE::DIALOG_EXPORT_STEP_BASE( wxWindow* parent, wxWindowID i
 	m_cbExportBody->SetValue(true);
 	sbBoardOptions->Add( m_cbExportBody, 0, wxALL, 5 );
 
+	m_cbFolded = new wxCheckBox( sbBoardOptions->GetStaticBox(), wxID_ANY, _("Export folded rigid-flex state"), wxDefaultPosition, wxDefaultSize, 0 );
+	m_cbFolded->SetToolTip( _( "Use the board structure bend definition to create folded STEP solids." ) );
+	sbBoardOptions->Add( m_cbFolded, 0, wxALL, 5 );
+
 	m_cbCutViasInBody = new wxCheckBox( sbBoardOptions->GetStaticBox(), wxID_ANY, _("Cut vias in board body"), wxDefaultPosition, wxDefaultSize, 0 );
 	m_cbCutViasInBody->SetToolTip( _("Cut via holes in board body even if conductor layers are not exported.") );
 

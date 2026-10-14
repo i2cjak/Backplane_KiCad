@@ -224,6 +224,7 @@ bool EXPORTER_STEP::buildFootprint3DShapes( FOOTPRINT* aFootprint, const VECTOR2
                                             SHAPE_POLY_SET* aClipPolygon )
 {
     bool              hasdata = false;
+    bool              componentFailure = false;
     std::vector<PAD*> padsMatchingNetFilter;
 
     // Dump the pad holes into the PCB
@@ -248,7 +249,10 @@ bool EXPORTER_STEP::buildFootprint3DShapes( FOOTPRINT* aFootprint, const VECTOR2
         {
             int platingThickness = pad->GetAttribute() == PAD_ATTRIB::PTH ? m_platingThickness : 0;
 
-            if( m_pcbModel->AddHole( *holeShape, platingThickness, F_Cu, B_Cu, false, aOrigin, true, true ) )
+            const bool throughHole = pad->GetLayerSet().Contains( F_Cu )
+                                  && pad->GetLayerSet().Contains( B_Cu );
+            if( m_pcbModel->AddHole( *holeShape, platingThickness, F_Cu, B_Cu, false, aOrigin,
+                                     true, true, throughHole ) )
                 hasdata = true;
 
             // Use the drill shape directly. holePoly is shrunk to fit the copper barrel.
@@ -510,13 +514,13 @@ bool EXPORTER_STEP::buildFootprint3DShapes( FOOTPRINT* aFootprint, const VECTOR2
 
     if( ( !(aFootprint->GetAttributes() & (FP_THROUGH_HOLE|FP_SMD)) ) && !m_params.m_IncludeUnspecified )
     {
-        return hasdata;
+        return m_params.m_Folded ? true : hasdata;
     }
 
     if( aFootprint->GetDNPForVariant( m_board ? m_board->GetCurrentVariant() : wxString() )
             && !m_params.m_IncludeDNP )
     {
-        return hasdata;
+        return m_params.m_Folded ? true : hasdata;
     }
 
     // Prefetch the library for this footprint
@@ -538,7 +542,7 @@ bool EXPORTER_STEP::buildFootprint3DShapes( FOOTPRINT* aFootprint, const VECTOR2
     // Exit early if we don't want to include footprint models
     if( m_params.m_BoardOnly || !m_params.m_ExportComponents )
     {
-        return hasdata;
+        return m_params.m_Folded ? true : hasdata;
     }
 
     bool componentFilter = !m_params.m_ComponentFilter.IsEmpty();
@@ -563,7 +567,7 @@ bool EXPORTER_STEP::buildFootprint3DShapes( FOOTPRINT* aFootprint, const VECTOR2
         }
 
         if( !found )
-            return hasdata;
+            return m_params.m_Folded ? true : hasdata;
     }
 
     VECTOR2D newpos( pcbIUScale.IUTomm( posX ), pcbIUScale.IUTomm( posY ) );
@@ -642,9 +646,16 @@ bool EXPORTER_STEP::buildFootprint3DShapes( FOOTPRINT* aFootprint, const VECTOR2
             {
                 hasdata = true;
             }
+            else if( m_params.m_Folded )
+            {
+                // Folded component transforms are intentionally unsupported;
+                // do not silently produce a board-only STEP file.
+                componentFailure = true;
+            }
         }
         catch( const Standard_Failure& e )
         {
+            componentFailure = m_params.m_Folded;
             m_reporter->Report( wxString::Format( _( "Could not add 3D model for %s.\n"
                                                      "OpenCASCADE error: %s\n" ),
                                                   aFootprint->GetReference(),
@@ -710,7 +721,7 @@ bool EXPORTER_STEP::buildFootprint3DShapes( FOOTPRINT* aFootprint, const VECTOR2
         }
     }
 
-    return hasdata;
+    return m_params.m_Folded ? !componentFailure : hasdata;
 }
 
 
@@ -797,8 +808,9 @@ bool EXPORTER_STEP::buildTrack3DShape( PCB_TRACK* aTrack, const VECTOR2D& aOrigi
                 m_poly_holes[B_Mask].Append( holePoly );
         }
 
+        const bool throughHole = top_layer == F_Cu && bot_layer == B_Cu;
         m_pcbModel->AddHole( *holeShape, m_platingThickness, top_layer, bot_layer, true, aOrigin,
-                             !m_params.m_FillAllVias, m_params.m_CutViasInBody );
+                             !m_params.m_FillAllVias, m_params.m_CutViasInBody, throughHole );
 
         // Handle via backdrills - secondary and tertiary drills defined in the padstack
         const PADSTACK& padstack = via->Padstack();
@@ -1308,6 +1320,10 @@ bool EXPORTER_STEP::buildBoard3DShapes()
     m_pcbModel->SetPadColor( m_padColor.r, m_padColor.g, m_padColor.b );
 
     m_pcbModel->SetStackup( m_board->GetStackupOrDefault() );
+    if( !m_board->GetBoardStructure().Empty() )
+        m_pcbModel->SetBoardStructure( &m_board->GetBoardStructure() );
+    m_pcbModel->SetFolded( m_params.m_Folded );
+    m_pcbModel->SetFoldOrigin( origin );
     m_pcbModel->SetEnabledLayers( m_layersToExport );
     m_pcbModel->SetFuseShapes( m_params.m_FuseShapes );
     m_pcbModel->SetNetFilter( m_params.m_NetFilter );
@@ -1325,7 +1341,13 @@ bool EXPORTER_STEP::buildBoard3DShapes()
     // For copper layers, only pads and tracks are added, because adding everything on copper
     // generate unreasonable file sizes and take a unreasonable calculation time.
     for( FOOTPRINT* fp : m_board->Footprints() )
-        buildFootprint3DShapes( fp, origin, &pcbOutlinesNoArcs );
+    {
+        const bool footprintData = buildFootprint3DShapes( fp, origin, &pcbOutlinesNoArcs );
+        // In folded mode this reports component-export success; intentionally
+        // excluded footprints and board-only exports are successful no-ops.
+        if( m_params.m_Folded && !footprintData )
+            return false;
+    }
 
     for( PCB_TRACK* track : m_board->Tracks() )
         buildTrack3DShape( track, origin );

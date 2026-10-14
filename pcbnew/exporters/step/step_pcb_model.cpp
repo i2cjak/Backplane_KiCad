@@ -64,6 +64,7 @@
 #include <pcb_painter.h>
 
 #include "step_pcb_model.h"
+#include <board_structure.h>
 #include "streamwrapper.h"
 
 #include <IGESCAFControl_Reader.hxx>
@@ -90,6 +91,7 @@
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Solid.hxx>
 #include <XCAFApp_Application.hxx>
 #include <XCAFDoc.hxx>
 #include <XCAFDoc_DocumentTool.hxx>
@@ -111,6 +113,11 @@
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <BRepCheck_Analyzer.hxx>
+#include <BRepLib.hxx>
 #include <BRepExtrema_DistShapeShape.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
@@ -1062,7 +1069,8 @@ bool STEP_PCB_MODEL::AddPadShape( const PAD* aPad, const VECTOR2D& aOrigin, bool
 
 bool STEP_PCB_MODEL::AddHole( const SHAPE_SEGMENT& aShape, int aPlatingThickness,
                               PCB_LAYER_ID aLayerTop, PCB_LAYER_ID aLayerBot, bool aVia,
-                              const VECTOR2D& aOrigin, bool aCutCopper, bool aCutBody )
+                              const VECTOR2D& aOrigin, bool aCutCopper, bool aCutBody,
+                              bool aFoldCutout )
 {
     double margin = 0.001; // a small margin on the Z axix to be sure the hole
                            // is bigger than the board with copper
@@ -1105,6 +1113,18 @@ bool STEP_PCB_MODEL::AddHole( const SHAPE_SEGMENT& aShape, int aPlatingThickness
                                      holeZsize, bottom - margin, aOrigin ) )
         {
             m_boardCutouts.push_back( boardHole );
+
+            // The legacy 3D cut tool uses the global stack Z range.  Regional
+            // solids need the through-drill footprint in their input polygon,
+            // so retain the unshrunk drill outline for that path.  This is
+            // deliberately recorded only for full body drills; blind and
+            // counterbore depth is represented by the existing 3D tool.
+            SHAPE_POLY_SET drillPoly;
+            aShape.TransformToPolygon( drillPoly,
+                                       pcbIUScale.mmToIU( ARC_TO_SEGMENT_MAX_ERROR_MM ),
+                                       ERROR_OUTSIDE );
+            if( aFoldCutout )
+                m_foldCutouts.Append( drillPoly );
         }
         else
         {
@@ -1925,6 +1945,123 @@ bool STEP_PCB_MODEL::AddComponent( const wxString& aBaseName, const wxString& aF
         return false;
     }
 
+    if( m_folded && m_structure && !m_structure->bends.empty() )
+    {
+        const double originX = pcbIUScale.IUTomm( m_foldOrigin.x );
+        const double originY = pcbIUScale.IUTomm( m_foldOrigin.y );
+        const double absX = aPosition.x + originX;
+        const double absY = aPosition.y + originY;
+
+        double fallbackThickness = 0.0;
+        double fallbackZ = 0.0;
+        getBoardBodyZPlacement( fallbackZ, fallbackThickness );
+        auto thicknessForBend = [&]( const BOARD_STRUCTURE_BEND& bend )
+        {
+            double result = fallbackThickness;
+            for( const BOARD_STRUCTURE_REGION& region : m_structure->regions )
+                if( region.id == bend.region_id )
+                    if( const BOARD_STRUCTURE_STACK* stack = m_structure->StackForRegion( region ) )
+                    {
+                        double candidate = 0.0;
+                        for( const BOARD_STRUCTURE_MATERIAL& material : stack->materials )
+                            candidate += material.thickness_nm * 1e-6;
+                        if( candidate > 0.0 )
+                            result = candidate;
+                    }
+            return result;
+        };
+        for( const BOARD_STRUCTURE_BEND& bend : m_structure->bends )
+        {
+            const double dx = static_cast<double>( bend.end.x - bend.start.x ) * 1e-6;
+            const double dy = static_cast<double>( bend.end.y - bend.start.y ) * 1e-6;
+            const double length = std::hypot( dx, dy );
+            if( !std::isfinite( length ) || length <= 0.0 )
+            {
+                m_reporter->Report( _( "Cannot fold a component around a degenerate bend axis." ),
+                                    RPT_SEVERITY_ERROR );
+                return false;
+            }
+            const double tx = dx / length;
+            const double ty = dy / length;
+            const double sideSign = bend.moving_side_left ? 1.0 : -1.0;
+            const double nx = -ty * sideSign;
+            const double ny = tx * sideSign;
+            const double side = ( absX - bend.start.x * 1e-6 ) * nx
+                              + ( absY - bend.start.y * 1e-6 ) * ny;
+            const double thickness = thicknessForBend( bend );
+            const double bendWidth = BOARD_STRUCTURE::BendStripLengthMm( bend, thickness );
+            if( side > 1e-6 && side < bendWidth - 1e-6 )
+            {
+                m_reporter->Report( wxString::Format(
+                                            _( "Cannot place component %s in a bend strip." ), aRefDes ),
+                                    RPT_SEVERITY_ERROR );
+                return false;
+            }
+        }
+
+        // A component on the fixed side stays in the flat frame.  A model on
+        // the downstream side is a rigid island: derive the affine matrix
+        // from FoldPointMm at the anchor and at three unit basis points.  This
+        // is the exact local Jacobian of the cylindrical evaluator and keeps
+        // the model's existing rotation and orientation intact.
+        bool downstream = false;
+        for( const BOARD_STRUCTURE_BEND& bend : m_structure->bends )
+        {
+            const double dx = static_cast<double>( bend.end.x - bend.start.x ) * 1e-6;
+            const double dy = static_cast<double>( bend.end.y - bend.start.y ) * 1e-6;
+            const double length = std::hypot( dx, dy );
+            const double tx = dx / length;
+            const double ty = dy / length;
+            const double sideSign = bend.moving_side_left ? 1.0 : -1.0;
+            const double side = ( absX - bend.start.x * 1e-6 ) * ( -ty * sideSign )
+                              + ( absY - bend.start.y * 1e-6 ) * ( tx * sideSign );
+            if( side >= BOARD_STRUCTURE::BendStripLengthMm( bend, thicknessForBend( bend ) ) - 1e-6 )
+                downstream = true;
+        }
+        if( downstream )
+        {
+            const VECTOR3D flatOrigin( absX, absY, 0.0 );
+            auto foldedPoint = [&]( const VECTOR3D& point )
+            {
+                const VECTOR3D folded = BOARD_STRUCTURE::FoldPointMm( m_structure->bends, point,
+                                                                       thicknessForBend( m_structure->bends.front() ),
+                                                                       m_structure->BendDatumZMm() );
+                return gp_Pnt( folded.x - originX, -( folded.y - originY ), folded.z );
+            };
+            const gp_Pnt flat = gp_Pnt( absX - originX, -( absY - originY ), 0.0 );
+            const gp_Pnt mapped = foldedPoint( flatOrigin );
+            const gp_Pnt mappedX = foldedPoint( VECTOR3D( flatOrigin.x + 1.0, flatOrigin.y,
+                                                          flatOrigin.z ) );
+            // OCC +Y corresponds to developed board -Y.  Sampling board +Y
+            // here would mirror the component instead of rotating it.
+            const gp_Pnt mappedY = foldedPoint( VECTOR3D( flatOrigin.x, flatOrigin.y - 1.0,
+                                                          flatOrigin.z ) );
+            const gp_Pnt mappedZ = foldedPoint( VECTOR3D( flatOrigin.x, flatOrigin.y,
+                                                          flatOrigin.z + 1.0 ) );
+
+            const gp_Vec colX( mapped, mappedX );
+            const gp_Vec colY( mapped, mappedY );
+            const gp_Vec colZ( mapped, mappedZ );
+            gp_Trsf foldTransform;
+            foldTransform.SetValues( colX.X(), colY.X(), colZ.X(), mapped.X()
+                                                                       - colX.X() * flat.X()
+                                                                       - colY.X() * flat.Y()
+                                                                       - colZ.X() * flat.Z(),
+                                      colX.Y(), colY.Y(), colZ.Y(), mapped.Y()
+                                                                       - colX.Y() * flat.X()
+                                                                       - colY.Y() * flat.Y()
+                                                                       - colZ.Y() * flat.Z(),
+                                      colX.Z(), colY.Z(), colZ.Z(), mapped.Z()
+                                                                       - colX.Z() * flat.X()
+                                                                       - colY.Z() * flat.Y()
+                                                                       - colZ.Z() * flat.Z() );
+
+            gp_Trsf componentTransform = foldTransform;
+            componentTransform.Multiply( toploc.Transformation() );
+            toploc = TopLoc_Location( componentTransform );
+        }
+    }
+
     // add the located sub-assembly
     TDF_Label llabel = m_assy->AddComponent( m_assy_label, lmodel, toploc );
 
@@ -2605,6 +2742,234 @@ static bool colorFromStackup( BOARD_STACKUP_ITEM_TYPE aType, const wxString& aCo
     return false;
 }
 
+// Build a closed faceted solid for a mechanical region.  Mapping the vertices
+// (rather than applying a location to a flat prism) is what gives the STEP
+// model an actual cylindrical bend.  The polygon triangulation has already
+// removed holes, so no material is introduced in cut-outs.
+static bool makeFoldedRegionSolids( std::vector<TopoDS_Shape>& aShapes,
+                                    const SHAPE_POLY_SET& aPoly,
+                                    const std::vector<BOARD_STRUCTURE_BEND>* aBends,
+                                    double aThickness, double aZ, const VECTOR2D& aOrigin,
+                                    double aFoldThickness, double aFoldDatumZ,
+                                    REPORTER* aReporter )
+{
+    if( aThickness <= 0.0 )
+        return false;
+
+    SHAPE_POLY_SET triangulated = aPoly.CloneDropTriangulation();
+    triangulated.Simplify();
+    triangulated.CacheTriangulation( false );
+
+    auto point = [&]( const VECTOR2I& p, double z )
+    {
+        VECTOR3D flat( pcbIUScale.IUTomm( p.x ), pcbIUScale.IUTomm( p.y ), z );
+        VECTOR3D folded = aBends ? BOARD_STRUCTURE::FoldPointMm( *aBends, flat, aFoldThickness,
+                                                                   aFoldDatumZ ) : flat;
+        return gp_Pnt( folded.x - pcbIUScale.IUTomm( aOrigin.x ),
+                       -( folded.y - pcbIUScale.IUTomm( aOrigin.y ) ), folded.z );
+    };
+
+    size_t expectedFacets = 0;
+    std::vector<TopoDS_Shape> generated;
+    bool failedFacet = false;
+    for( unsigned int polyId = 0; polyId < triangulated.TriangulatedPolyCount(); ++polyId )
+    {
+        const SHAPE_POLY_SET::TRIANGULATED_POLYGON* tris = triangulated.TriangulatedPolygon( polyId );
+        if( !tris )
+            continue;
+
+        for( size_t triId = 0; triId < tris->GetTriangleCount(); ++triId )
+        {
+            ++expectedFacets;
+            VECTOR2I va, vb, vc;
+            tris->GetTriangle( static_cast<int>( triId ), va, vb, vc );
+            gp_Pnt bottom[3] = { point( va, aZ ), point( vb, aZ ), point( vc, aZ ) };
+            gp_Pnt top[3] = { point( va, aZ + aThickness ), point( vb, aZ + aThickness ),
+                              point( vc, aZ + aThickness ) };
+
+            BRepBuilderAPI_Sewing sewing( 1e-7, true, true, true, false );
+
+            auto addFace = [&]( const gp_Pnt& p0, const gp_Pnt& p1, const gp_Pnt& p2 )
+            {
+                BRepBuilderAPI_MakePolygon wire;
+                wire.Add( p0 ); wire.Add( p1 ); wire.Add( p2 ); wire.Close();
+                if( !wire.IsDone() )
+                    return false;
+                BRepBuilderAPI_MakeFace face( wire.Wire() );
+                if( !face.IsDone() )
+                    return false;
+                sewing.Add( face.Face() );
+                return true;
+            };
+
+            bool ok = addFace( bottom[0], bottom[2], bottom[1] )
+                   && addFace( top[0], top[1], top[2] )
+                   && addFace( bottom[0], bottom[1], top[1] )
+                   && addFace( bottom[0], top[1], top[0] )
+                   && addFace( bottom[1], bottom[2], top[2] )
+                   && addFace( bottom[1], top[2], top[1] )
+                   && addFace( bottom[2], bottom[0], top[0] )
+                   && addFace( bottom[2], top[0], top[2] );
+
+            if( !ok )
+            {
+                failedFacet = true;
+                continue;
+            }
+
+            sewing.Perform();
+            TopoDS_Shape sewn = sewing.SewedShape();
+            if( sewn.IsNull() || sewn.ShapeType() != TopAbs_SHELL )
+            {
+                failedFacet = true;
+                continue;
+            }
+            BRepBuilderAPI_MakeSolid solid( TopoDS::Shell( sewn ) );
+            if( solid.IsDone() && !solid.Solid().IsNull() )
+            {
+                TopoDS_Solid candidate = solid.Solid();
+                if( !BRepLib::OrientClosedSolid( candidate )
+                    || !BRepCheck_Analyzer( candidate, true ).IsValid() )
+                {
+                    failedFacet = true;
+                    continue;
+                }
+                generated.push_back( candidate );
+            }
+            else
+                failedFacet = true;
+        }
+    }
+
+    if( expectedFacets == 0 || failedFacet || generated.size() != expectedFacets )
+    {
+        if( aReporter )
+            aReporter->Report( _( "No valid facets could be created for folded region." ),
+                               RPT_SEVERITY_ERROR );
+        return false;
+    }
+    aShapes.insert( aShapes.end(), generated.begin(), generated.end() );
+    return true;
+}
+
+// Split a region at the bend tangent and into constant-width developed strips.
+// This inserts actual samples along the arc (rather than mapping only the
+// original outline vertices), with a maximum cylindrical chord error.
+static bool makeFoldedRegionPartitioned( std::vector<TopoDS_Shape>& aShapes,
+                                          const SHAPE_POLY_SET& aPoly,
+                                          const std::vector<BOARD_STRUCTURE_BEND>& aBends,
+                                          double aThickness, double aZ,
+                                          const VECTOR2D& aOrigin, REPORTER* aReporter,
+                                          double aFoldThickness, double aFoldDatumZ )
+{
+    if( aBends.empty() )
+        return makeFoldedRegionSolids( aShapes, aPoly, nullptr, aThickness, aZ, aOrigin,
+                                       aFoldThickness, aFoldDatumZ, aReporter );
+
+    // Every bend is described in developed coordinates.  Partitioning at all
+    // hinge boundaries and arc samples lets the facet mapper compose the
+    // transported frames without spanning a discontinuity in its Jacobian.
+    std::vector<SHAPE_POLY_SET> sections;
+    sections.push_back( aPoly.CloneDropTriangulation() );
+    for( const BOARD_STRUCTURE_BEND& bend : aBends )
+    {
+        const double dx = static_cast<double>( bend.end.x - bend.start.x );
+        const double dy = static_cast<double>( bend.end.y - bend.start.y );
+        const double axisLen = std::hypot( dx, dy );
+        if( axisLen <= 0.0 )
+            return false;
+        const double tx = dx / axisLen;
+        const double ty = dy / axisLen;
+        const double sideSign = bend.moving_side_left ? 1.0 : -1.0;
+        const double nx = -ty * sideSign;
+        const double ny = tx * sideSign;
+        const double ox = static_cast<double>( bend.start.x );
+        const double oy = static_cast<double>( bend.start.y );
+
+        const double bendWidthMm = BOARD_STRUCTURE::BendStripLengthMm( bend, aFoldThickness );
+        const double bendWidth = bendWidthMm * 1e6;
+        if( !std::isfinite( bendWidth ) || bendWidth <= 1.0 )
+            continue;
+        const double angle = std::abs( bend.angle_degrees * M_PI / 180.0 );
+        const double radius = bendWidthMm / std::max( angle, 1e-12 );
+        const double chordError = 0.02;
+        const double stepAngle = radius > chordError
+                ? 2.0 * std::acos( std::max( 0.0, 1.0 - chordError / radius ) ) : angle;
+        const int samples = std::max( 1, static_cast<int>( std::ceil( angle / std::max( stepAngle, 1e-6 ) ) ) );
+
+        std::vector<SHAPE_POLY_SET> split;
+        for( SHAPE_POLY_SET& current : sections )
+        {
+            double minAlong = std::numeric_limits<double>::max();
+            double maxAlong = std::numeric_limits<double>::lowest();
+            double minSide = std::numeric_limits<double>::max();
+            double maxSide = std::numeric_limits<double>::lowest();
+            for( const auto& polygon : current.CPolygons() )
+                for( const auto& contour : polygon )
+                    for( const VECTOR2I& p : contour.CPoints() )
+                    {
+                        const double px = p.x - ox;
+                        const double py = p.y - oy;
+                        minAlong = std::min( minAlong, px * tx + py * ty );
+                        maxAlong = std::max( maxAlong, px * tx + py * ty );
+                        minSide = std::min( minSide, px * nx + py * ny );
+                        maxSide = std::max( maxSide, px * nx + py * ny );
+                    }
+            if( minAlong > maxAlong || minSide > maxSide )
+                continue;
+
+            const double alongPad = 1.0e6;
+            const double low = minSide - 1.0e3;
+            const double high = maxSide + 1.0e3;
+            std::vector<double> cuts = { low, 0.0 };
+            for( int i = 1; i < samples; ++i )
+                cuts.push_back( bendWidth * static_cast<double>( i ) / samples );
+            cuts.push_back( bendWidth );
+            cuts.push_back( high );
+
+            auto makeClip = [&]( double s0, double s1 )
+            {
+                SHAPE_POLY_SET clip;
+                const int clipOutline = clip.NewOutline();
+                auto p = [&]( double along, double side )
+                {
+                    return VECTOR2I( KiROUND( ox + tx * along + nx * side ),
+                                     KiROUND( oy + ty * along + ny * side ) );
+                };
+                clip.Append( p( minAlong - alongPad, s0 ), clipOutline );
+                clip.Append( p( maxAlong + alongPad, s0 ), clipOutline );
+                clip.Append( p( maxAlong + alongPad, s1 ), clipOutline );
+                clip.Append( p( minAlong - alongPad, s1 ), clipOutline );
+                return clip;
+            };
+            for( size_t k = 0; k + 1 < cuts.size(); ++k )
+            {
+                if( cuts[k + 1] - cuts[k] < 1.0 )
+                    continue;
+                SHAPE_POLY_SET piece = current.CloneDropTriangulation();
+                piece.BooleanIntersection( makeClip( cuts[k], cuts[k + 1] ) );
+                if( !piece.IsEmpty() )
+                    split.push_back( std::move( piece ) );
+            }
+        }
+        sections = std::move( split );
+        if( sections.empty() )
+            return false;
+    }
+
+    bool made = false;
+    bool failed = false;
+    for( SHAPE_POLY_SET& section : sections )
+    {
+        made = true;
+        if( !makeFoldedRegionSolids( aShapes, section, &aBends, aThickness, aZ, aOrigin,
+                                     aFoldThickness, aFoldDatumZ, aReporter ) )
+            failed = true;
+    }
+    return made && !failed;
+}
+
+
 
 bool STEP_PCB_MODEL::CreatePCB( SHAPE_POLY_SET& aOutline, const VECTOR2D& aOrigin, bool aPushBoardBody )
 {
@@ -2639,7 +3004,301 @@ bool STEP_PCB_MODEL::CreatePCB( SHAPE_POLY_SET& aOutline, const VECTOR2D& aOrigi
     // see bug https://gitlab.com/kicad/code/kicad/-/issues/17446
     // (Holes are missing from STEP export with circular PCB outline)
     // Hard to say if the bug is in our code or in OCC 7.7
-    if( !MakeShapes( m_board_outlines, aOutline, false, boardThickness, boardZPos, aOrigin ) )
+    bool structuredBody = m_structure && !m_structure->Empty();
+    bool structureGeometryValid = true;
+
+    if( structuredBody )
+    {
+        const auto validation = m_structure->Validate();
+        if( !validation.IsValid() )
+        {
+            for( const auto& error : validation.errors )
+                m_reporter->Report( wxString::FromUTF8( error ), RPT_SEVERITY_ERROR );
+            return false;
+        }
+    }
+
+    if( m_folded && ( !structuredBody || m_structure->bends.empty() ) )
+    {
+        m_reporter->Report( _( "Folded STEP export requires a board structure with bend definitions." ),
+                            RPT_SEVERITY_ERROR );
+        return false;
+    }
+
+    if( structuredBody )
+    {
+        const std::vector<BOARD_STRUCTURE_BEND>* globalBends = m_folded ? &m_structure->bends : nullptr;
+        double foldThickness = boardThickness;
+        double foldDatumZ = 0.0;
+        if( globalBends && !globalBends->empty() )
+            for( const auto& parent : m_structure->regions )
+                if( parent.id == globalBends->front().region_id )
+                    if( const auto* stack = m_structure->StackForRegion( parent ) )
+                    {
+                        double candidate = 0.0;
+                        for( const auto& material : stack->materials ) candidate += material.thickness_nm * 1e-6;
+                        if( candidate > 0.0 ) foldThickness = candidate;
+                        foldDatumZ = m_structure->BendDatumZMm();
+                    }
+        // Regional solids preserve local flex/rigid construction and make
+        // stiffeners visible to every OCC output.  The flat electrical
+        // artwork is still emitted through the normal paths below.
+        for( const BOARD_STRUCTURE_REGION& region : m_structure->regions )
+        {
+            SHAPE_POLY_SET poly;
+            const int outline = poly.NewOutline();
+            for( const VECTOR2I& p : region.shape.outline ) poly.Append( p, outline );
+            for( const auto& hole : region.shape.holes )
+            {
+                const int holeIndex = poly.NewHole( outline );
+                for( const VECTOR2I& p : hole ) poly.Append( p, outline, holeIndex );
+            }
+
+            // Cut through drills in the flat 2D polygon before any vertex is
+            // mapped through a bend.  The original OCC tools remain for flat
+            // exports; applying them after folding would use flat coordinates.
+            if( !m_foldCutouts.IsEmpty() )
+            {
+                SHAPE_POLY_SET cutouts = m_foldCutouts;
+                cutouts.Simplify();
+                poly.BooleanSubtract( cutouts );
+            }
+
+            double thickness = boardThickness;
+            double regionalBoardZ = boardZPos;
+            if( const BOARD_STRUCTURE_STACK* stack = m_structure->StackForRegion( region ) )
+            {
+                thickness = 0.0;
+                double zOffset = 0.0;
+                bool haveZOffset = false;
+                for( const BOARD_STRUCTURE_MATERIAL& material : stack->materials )
+                    thickness += material.thickness_nm * 1e-6;
+                for( const auto& layer : stack->layers )
+                    if( !haveZOffset || layer.z_offset_nm < zOffset * 1e6 )
+                    {
+                        zOffset = layer.z_offset_nm * 1e-6;
+                        haveZOffset = true;
+                    }
+                if( thickness <= 0.0 )
+                    thickness = boardThickness;
+                // Region stack offsets are measured from the structure's
+                // mechanical datum.  Do not add the global body placement a
+                // second time when a structured board is exported flat.
+                regionalBoardZ = haveZOffset ? zOffset : boardZPos;
+            }
+
+            const std::vector<BOARD_STRUCTURE_BEND>* bends = globalBends;
+
+            bool made = m_folded && bends
+                    ? makeFoldedRegionPartitioned( m_board_outlines, poly, *bends, thickness,
+                                                    regionalBoardZ, aOrigin, m_reporter, foldThickness, foldDatumZ )
+                    : m_folded
+                    ? makeFoldedRegionSolids( m_board_outlines, poly, nullptr, thickness, regionalBoardZ,
+                                               aOrigin, foldThickness, foldDatumZ, m_reporter )
+                    : MakeShapes( m_board_outlines, poly, false, thickness, regionalBoardZ, aOrigin );
+
+            if( !made )
+            {
+                structureGeometryValid = false;
+                m_reporter->Report( _( "OCC error creating structured region." ), RPT_SEVERITY_ERROR );
+            }
+        }
+
+        // Reinforcement is a physical solid on top of the regional substrate.
+        for( const BOARD_STRUCTURE_STIFFENER& stiffener : m_structure->stiffeners )
+        {
+            SHAPE_POLY_SET poly;
+            const int outline = poly.NewOutline();
+            for( const VECTOR2I& p : stiffener.shape.outline ) poly.Append( p, outline );
+            for( const auto& hole : stiffener.shape.holes )
+            {
+                const int holeIndex = poly.NewHole( outline );
+                for( const VECTOR2I& p : hole ) poly.Append( p, outline, holeIndex );
+            }
+
+            if( !m_foldCutouts.IsEmpty() )
+            {
+                SHAPE_POLY_SET cutouts = m_foldCutouts;
+                cutouts.Simplify();
+                poly.BooleanSubtract( cutouts );
+            }
+
+            double t = stiffener.thickness_nm * 1e-6;
+            if( t <= 0.0 )
+                t = stiffener.max_thickness_nm * 1e-6;
+            if( t <= 0.0 )
+                continue;
+            double parentThickness = boardThickness;
+            double parentZ = boardZPos;
+            const auto parent = std::find_if( m_structure->regions.begin(), m_structure->regions.end(),
+                                              [&]( const auto& item ) { return item.id == stiffener.region_id; } );
+            if( parent != m_structure->regions.end() )
+                if( const auto* stack = m_structure->StackForRegion( *parent ) )
+                {
+                    double candidate = 0.0;
+                    for( const auto& material : stack->materials ) candidate += material.thickness_nm * 1e-6;
+                    if( candidate > 0.0 ) parentThickness = candidate;
+                    bool haveZOffset = false;
+                    double zOffset = 0.0;
+                    for( const auto& layer : stack->layers )
+                        if( !haveZOffset || layer.z_offset_nm < zOffset * 1e6 )
+                        {
+                            zOffset = layer.z_offset_nm * 1e-6;
+                            haveZOffset = true;
+                        }
+                    if( haveZOffset )
+                        parentZ = zOffset;
+                }
+            const double adhesive = std::max( 0.0, stiffener.adhesive_thickness_nm * 1e-6 );
+            const double z = stiffener.top ? parentZ + parentThickness + adhesive : parentZ - adhesive;
+            const double signedThickness = stiffener.top ? t : -t;
+            const std::vector<BOARD_STRUCTURE_BEND>* bends = globalBends;
+
+            double foldedZ = stiffener.top ? z : z - t;
+            if( adhesive > 0.0 )
+            {
+                const double adhesiveZ = stiffener.top ? parentZ + parentThickness : parentZ - adhesive;
+                bool adhesiveMade = m_folded && bends
+                        ? makeFoldedRegionPartitioned( m_board_outlines, poly, *bends, adhesive, adhesiveZ,
+                                                       aOrigin, m_reporter, foldThickness, foldDatumZ )
+                        : m_folded
+                        ? makeFoldedRegionSolids( m_board_outlines, poly, nullptr, adhesive, adhesiveZ,
+                                                  aOrigin, foldThickness, foldDatumZ, m_reporter )
+                        : MakeShapes( m_board_outlines, poly, false, adhesive,
+                                      adhesiveZ, aOrigin );
+                if( !adhesiveMade )
+                {
+                    structureGeometryValid = false;
+                    m_reporter->Report( _( "OCC error creating stiffener adhesive solid." ), RPT_SEVERITY_ERROR );
+                }
+            }
+            bool made = m_folded && bends
+                    ? makeFoldedRegionPartitioned( m_board_outlines, poly, *bends, t, foldedZ, aOrigin, m_reporter, foldThickness, foldDatumZ )
+                    : m_folded
+                    ? makeFoldedRegionSolids( m_board_outlines, poly, nullptr, t, foldedZ, aOrigin, foldThickness, foldDatumZ, m_reporter )
+                    : MakeShapes( m_board_outlines, poly, false, signedThickness, z, aOrigin );
+
+            if( !made )
+            {
+                structureGeometryValid = false;
+                m_reporter->Report( _( "OCC error creating stiffener solid." ), RPT_SEVERITY_ERROR );
+            }
+        }
+
+        // Coverlay is a physical dielectric layer.  Its openings are removed
+        // in the flat polygon before bending, just like drill footprints.
+        for( const BOARD_STRUCTURE_COVERLAY& coverlay : m_structure->coverlays )
+        {
+            SHAPE_POLY_SET poly;
+            const int outline = poly.NewOutline();
+            for( const VECTOR2I& p : coverlay.coverage.outline )
+                poly.Append( p, outline );
+
+            for( const auto& hole : coverlay.coverage.holes )
+            {
+                const int holeIndex = poly.NewHole( outline );
+                for( const VECTOR2I& p : hole )
+                    poly.Append( p, outline, holeIndex );
+            }
+
+            for( const BOARD_STRUCTURE_POLYGON& opening : coverlay.openings )
+            {
+                SHAPE_POLY_SET openingPoly;
+                const int openingOutline = openingPoly.NewOutline();
+                for( const VECTOR2I& p : opening.outline )
+                    openingPoly.Append( p, openingOutline );
+                for( const auto& hole : opening.holes )
+                {
+                    const int holeIndex = openingPoly.NewHole( openingOutline );
+                    for( const VECTOR2I& p : hole )
+                        openingPoly.Append( p, openingOutline, holeIndex );
+                }
+                poly.BooleanSubtract( openingPoly );
+            }
+
+            if( !m_foldCutouts.IsEmpty() )
+            {
+                SHAPE_POLY_SET cutouts = m_foldCutouts;
+                cutouts.Simplify();
+                poly.BooleanSubtract( cutouts );
+            }
+
+            if( poly.IsEmpty() )
+                continue;
+
+            double parentThickness = boardThickness;
+            double parentZ = boardZPos;
+            const auto parent = std::find_if( m_structure->regions.begin(), m_structure->regions.end(),
+                                              [&]( const auto& item )
+                                              { return item.id == coverlay.region_id; } );
+            if( parent != m_structure->regions.end() )
+                if( const auto* stack = m_structure->StackForRegion( *parent ) )
+                {
+                    double candidate = 0.0;
+                    for( const BOARD_STRUCTURE_MATERIAL& material : stack->materials )
+                        candidate += material.thickness_nm * 1e-6;
+                    if( candidate > 0.0 )
+                        parentThickness = candidate;
+                    bool haveZOffset = false;
+                    double zOffset = 0.0;
+                    for( const auto& layer : stack->layers )
+                        if( !haveZOffset || layer.z_offset_nm < zOffset * 1e6 )
+                        {
+                            zOffset = layer.z_offset_nm * 1e-6;
+                            haveZOffset = true;
+                        }
+                    if( haveZOffset )
+                        parentZ = zOffset;
+                }
+
+            const double adhesive = std::max( 0.0, coverlay.adhesive_thickness_nm * 1e-6 );
+            const double coverlayThickness = std::max( 0.0, coverlay.thickness_nm * 1e-6 );
+            const std::vector<BOARD_STRUCTURE_BEND>* bends = globalBends;
+            const double adhesiveZ = coverlay.top ? parentZ + parentThickness : parentZ - adhesive;
+            const double coverlayZ = coverlay.top
+                    ? parentZ + parentThickness + adhesive
+                    : parentZ - adhesive - coverlayThickness;
+
+            if( adhesive > 0.0 )
+            {
+                const bool made = m_folded && bends
+                        ? makeFoldedRegionPartitioned( m_board_outlines, poly, *bends, adhesive,
+                                                       adhesiveZ, aOrigin, m_reporter, foldThickness, foldDatumZ )
+                        : m_folded
+                        ? makeFoldedRegionSolids( m_board_outlines, poly, nullptr, adhesive,
+                                                  adhesiveZ, aOrigin, foldThickness, foldDatumZ, m_reporter )
+                        : MakeShapes( m_board_outlines, poly, false, adhesive, adhesiveZ, aOrigin );
+                if( !made )
+                {
+                    structureGeometryValid = false;
+                    m_reporter->Report( _( "OCC error creating coverlay adhesive solid." ),
+                                        RPT_SEVERITY_ERROR );
+                }
+            }
+
+            if( coverlayThickness > 0.0 )
+            {
+                const bool made = m_folded && bends
+                        ? makeFoldedRegionPartitioned( m_board_outlines, poly, *bends, coverlayThickness,
+                                                       coverlayZ, aOrigin, m_reporter, foldThickness, foldDatumZ )
+                        : m_folded
+                        ? makeFoldedRegionSolids( m_board_outlines, poly, nullptr, coverlayThickness,
+                                                  coverlayZ, aOrigin, foldThickness, foldDatumZ, m_reporter )
+                        : MakeShapes( m_board_outlines, poly, false, coverlay.top ? coverlayThickness
+                                                                                    : -coverlayThickness,
+                                      coverlay.top ? coverlayZ : coverlayZ + coverlayThickness, aOrigin );
+                if( !made )
+                {
+                    structureGeometryValid = false;
+                    m_reporter->Report( _( "OCC error creating coverlay solid." ),
+                                        RPT_SEVERITY_ERROR );
+                }
+            }
+        }
+        if( !structureGeometryValid )
+            return false;
+    }
+    else if( !MakeShapes( m_board_outlines, aOutline, false, boardThickness, boardZPos, aOrigin ) )
     {
         // Error
         m_reporter->Report( _( "OCC error creating main outline." ), RPT_SEVERITY_ERROR );
@@ -2846,7 +3505,9 @@ bool STEP_PCB_MODEL::CreatePCB( SHAPE_POLY_SET& aOutline, const VECTOR2D& aOrigi
             };
 
 
-    if( m_boardCutouts.size() )
+    // Folded structured solids consumed their 2D drill footprints above.
+    // Their original OCC tools must not be applied again in the flat frame.
+    if( m_boardCutouts.size() && !( m_folded && structuredBody ) )
     {
         Bnd_BoundSortBox     bsbHoles;
         std::vector<Bnd_Box> holeBoxes;
@@ -2989,11 +3650,14 @@ bool STEP_PCB_MODEL::CreatePCB( SHAPE_POLY_SET& aOutline, const VECTOR2D& aOrigi
 
                         // Dont expand the component or else coloring it gets hard
                         TDF_Label lbl = m_assy->AddComponent( m_assy_label, shape, false );
+                        if( lbl.IsNull() )
+                        {
+                            m_reporter->Report( _( "Could not add generated PCB shape to STEP assembly." ),
+                                                RPT_SEVERITY_ERROR );
+                            return;
+                        }
                         KICAD3D_INFO::Set( lbl, KICAD3D_MODEL_TYPE::BOARD, aNiceName.ToStdString() );
                         m_pcb_labels.push_back( lbl );
-
-                        if( m_pcb_labels.back().IsNull() )
-                            return;
 
                         lbl.FindAttribute( XCAFDoc::ShapeRefGUID(), node );
                         TDF_Label shpLbl = node->Father()->Label();
@@ -3909,6 +4573,29 @@ bool STEP_PCB_MODEL::getModelLocation( bool aBottom, const VECTOR2D& aPosition, 
     top += f_thickness;
     getLayerZPlacement( B_Cu, f_pos, f_thickness );
     bottom += f_thickness;      // f_thickness is < 0 for B_Cu layer
+
+    // Construction stacks already include their copper thickness and use an
+    // explicit mechanical datum.  Seat component models on that region's
+    // surface before applying any fold transform.
+    if( m_structure && !m_structure->regions.empty() )
+    {
+        VECTOR2I anchor( KiROUND( aPosition.x * pcbIUScale.IU_PER_MM + m_foldOrigin.x ),
+                         KiROUND( aPosition.y * pcbIUScale.IU_PER_MM + m_foldOrigin.y ) );
+        if( const auto* region = m_structure->RegionAt( anchor ) )
+            if( const auto* stack = m_structure->StackForRegion( *region ) )
+            {
+                bool found = false;
+                for( const auto& layer : stack->layers )
+                    for( const auto& material : stack->materials )
+                        if( material.id == layer.material_id )
+                        {
+                            const double lo = layer.z_offset_nm * 1e-6;
+                            const double hi = lo + material.thickness_nm * 1e-6;
+                            if( !found ) bottom = lo, top = hi, found = true;
+                            else bottom = std::min( bottom, lo ), top = std::max( top, hi );
+                        }
+            }
+    }
 
     gp_Trsf lRot;
 

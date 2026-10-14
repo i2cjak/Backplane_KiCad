@@ -1519,7 +1519,7 @@ void EDA_3D_CANVAS::RenderEngineChanged()
         switch( cfg->m_Render.engine )
         {
         case RENDER_ENGINE::OPENGL:     m_3d_render = m_3d_render_opengl.get();     break;
-        case RENDER_ENGINE::RAYTRACING: m_3d_render = m_3d_render_raytracing.get(); break;
+        case RENDER_ENGINE::RAYTRACING: m_boardAdapter.SetFoldedView( false ); m_3d_render = m_3d_render_raytracing.get(); break;
         default:                        m_3d_render = nullptr;                      break;
         }
     }
