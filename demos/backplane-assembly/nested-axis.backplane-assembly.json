@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "name": "nested rotated axis module",
+  "anchor": "board",
+  "instances": [
+    {
+      "id": "board",
+      "source": "../../qa/data/pcbnew/api_kitchen_sink.kicad_pcb",
+      "kind": "board",
+      "transform": { "translation": [0, 0, 0], "rotation": [0, 0, 0] }
+    },
+    {
+      "id": "module",
+      "source": "nested-module.backplane-assembly.json",
+      "kind": "assembly",
+      "transform": { "translation": [80, 0, 0], "rotation": [0, 0, 90] }
+    }
+  ],
+  "mates": [
+    {
+      "id": "module-axis",
+      "type": "axis",
+      "first_instance": "board",
+      "second_instance": "module",
+      "first": [80, 0, 0],
+      "second": [0, 0, 0],
+      "first_axis": [0, 0, 1],
+      "second_axis": [1, 0, 0],
+      "opposing": false,
+      "clearance_mm": 0.2
+    }
+  ]
+}

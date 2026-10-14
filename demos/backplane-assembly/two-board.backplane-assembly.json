@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "name": "board-and-mechanical-part",
+  "anchor": "main",
+  "instances": [
+    {
+      "id": "main",
+      "source": "../../qa/data/pcbnew/api_kitchen_sink.kicad_pcb",
+      "kind": "board",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "id": "mechanical-block",
+      "source": "mechanical-block.step",
+      "kind": "part",
+      "transform": {
+        "translation": [
+          45,
+          -35,
+          5
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "mates": [
+    {
+      "id": "block-location",
+      "type": "point",
+      "first_instance": "main",
+      "second_instance": "mechanical-block",
+      "first": [
+        45,
+        -35,
+        5
+      ],
+      "second": [
+        0,
+        0,
+        0
+      ],
+      "clearance_mm": 0.15
+    }
+  ]
+}

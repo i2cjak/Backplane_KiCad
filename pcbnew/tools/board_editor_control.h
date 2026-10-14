@@ -78,6 +78,7 @@ public:
     int ExportVRML( const TOOL_EVENT& aEvent );
     int ExportIDF( const TOOL_EVENT& aEvent );
     int ExportSTEP( const TOOL_EVENT& aEvent );
+    int EditAssembly( const TOOL_EVENT& aEvent );
     int ExportCmpFile( const TOOL_EVENT& aEvent );
     int ExportHyperlynx( const TOOL_EVENT& aEvent );
     int GenBOMFileFromBoard( const TOOL_EVENT& aEvent );

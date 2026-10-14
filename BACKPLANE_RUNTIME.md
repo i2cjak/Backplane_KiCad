@@ -4,6 +4,16 @@ This runtime is based on upstream KiCad master `fe761fb867` (KiCad 10.99).
 Release builds append `bp.N` through `KICAD_VERSION_EXTRA`; the configured
 Backplane identity is reported separately.
 
+The `assembly` capability adds the `kiapi.backplane` commands `GetAssembly`,
+`SaveAssembly`, `ResolveAssemblyMates`, `CheckAssemblyCollisions`,
+`ExportAssemblyStep`, `ListAssemblyComponents`, `MoveAssemblyComponent`, and
+`SyncAssemblyElectrical`. Assembly metadata remains in
+`.backplane-assembly.json` companions. `OpenAssemblyTab`, `ListAssemblyTabs`,
+and `ShowAssembly3D` are GUI-only and return `AS_UNIMPLEMENTED` from a
+headless PCB handler. The current assembly STEP and 3D preparation path is
+unfolded; folded rigid-flex presentation is reserved for the structure/3D
+viewer implementation.
+
 ## Start the headless server
 
 The hub starts one server per project, passes its own PID, and waits for the

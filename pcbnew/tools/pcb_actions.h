@@ -495,6 +495,7 @@ public:
     static TOOL_ACTION exportVRML;
     static TOOL_ACTION exportIDF;
     static TOOL_ACTION exportSTEP;
+    static TOOL_ACTION editAssembly;
     static TOOL_ACTION exportCmpFile;
     static TOOL_ACTION exportHyperlynx;
 

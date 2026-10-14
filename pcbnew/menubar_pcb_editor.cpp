@@ -467,6 +467,7 @@ void PCB_EDIT_FRAME::doReCreateMenuBar()
     toolsMenu->Add( PCB_ACTIONS::collect3DModels );
 
     toolsMenu->AppendSeparator();
+    toolsMenu->Add( PCB_ACTIONS::editAssembly );
 
     toolsMenu->AppendSeparator();
     toolsMenu->Add( PCB_ACTIONS::boardReannotate );

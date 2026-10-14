@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "name": "native board electrical link example",
+  "anchor": "left",
+  "instances": [
+    {
+      "id": "left",
+      "source": "../../qa/data/pcbnew/api_kitchen_sink.kicad_pcb",
+      "kind": "board",
+      "transform": {
+        "translation": [
+          0,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "id": "right",
+      "source": "../../qa/data/pcbnew/api_kitchen_sink.kicad_pcb",
+      "kind": "board",
+      "transform": {
+        "translation": [
+          100,
+          0,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ]
+      }
+    }
+  ],
+  "electrical": {
+    "links": [
+      {
+        "id": "signal-1-link",
+        "endpoints": [
+          {
+            "instance": "left",
+            "reference": "P2",
+            "pad": "1",
+            "net_name": "A"
+          },
+          {
+            "instance": "right",
+            "reference": "P2",
+            "pad": "1",
+            "net_name": "A"
+          }
+        ],
+        "name": "SIGNAL_BUS"
+      }
+    ],
+    "schema": 1
+  },
+  "mates": []
+}

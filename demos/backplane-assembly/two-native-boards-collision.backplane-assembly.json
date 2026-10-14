@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "name": "native-board-collision-regression",
+  "anchor": "left",
+  "instances": [
+    { "id": "left", "source": "../../qa/data/pcbnew/api_kitchen_sink.kicad_pcb", "kind": "board", "transform": { "translation": [0, 0, 0], "rotation": [0, 0, 0] } },
+    { "id": "right", "source": "../../qa/data/pcbnew/api_kitchen_sink.kicad_pcb", "kind": "board", "transform": { "translation": [0, 0, 0], "rotation": [0, 0, 0] } }
+  ],
+  "mates": []
+}

@@ -1837,6 +1837,12 @@ TOOL_ACTION PCB_ACTIONS::exportSTEP( TOOL_ACTION_ARGS()
         .Tooltip( _( "Export STEP, GLB, BREP, XAO, PLY or STL 3D board representation" ) )
         .Icon( BITMAPS::export_step ) );
 
+TOOL_ACTION PCB_ACTIONS::editAssembly( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.EditorControl.editAssembly" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Assembly Editor..." ) )
+        .Tooltip( _( "Open or create a multi-board assembly manifest" ) )
+        .Icon( BITMAPS::export_step ) );
 
 TOOL_ACTION PCB_ACTIONS::exportCmpFile( TOOL_ACTION_ARGS()
         .Name( "pcbnew.EditorControl.exportFootprintAssociations" )
