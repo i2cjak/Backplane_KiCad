@@ -353,6 +353,10 @@ jobs:
           for regression in scripts/backplane-*-regression.py; do
             "$RUNNER_TEMP/ipc-smoke-venv/bin/python" "$regression" "release/${archive_root}/bin/kicad-cli"
           done
+          # Checks that need more than the CLI path (stock KiCad, a GUI socket) are named *-check.py
+          # and run where those exist; the structure routing check only needs an output folder.
+          "$RUNNER_TEMP/ipc-smoke-venv/bin/python" scripts/backplane-structure-routing-check.py \
+            "release/${archive_root}/bin/kicad-cli" --output "$RUNNER_TEMP/structure-routing"
           /usr/bin/python3 scripts/backplane-library-smoke.py "release/${archive_root}"
           du -sh "release/${archive_root}/share/kicad/3dmodels" "release/${archive_root}"
           (cd release && tar -czf "${archive_root}.tar.gz" "${archive_root}")

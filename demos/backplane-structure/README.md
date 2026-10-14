@@ -53,7 +53,7 @@ Run the independent local regression using an environment containing
 `gerbonara` and `cadquery-ocp`:
 
 ```sh
-python scripts/backplane-structure-regression.py /path/to/fork/kicad-cli \
+python scripts/backplane-structure-stock-check.py /path/to/fork/kicad-cli \
   --stock-cli /usr/bin/kicad-cli --output /tmp/structure-regression --folded
 ```
 

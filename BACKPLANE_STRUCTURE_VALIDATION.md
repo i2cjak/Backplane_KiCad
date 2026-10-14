@@ -59,7 +59,7 @@ been reproduced on master and do not validate this source port.
 | Native component models | Stock headers, SOIC-8 and 0805 SMD packages verified seated on fixed and moving islands through a 180° U-fold; local DRC remains clean; populated STEP solids valid |
 | Native 3D viewer | Flat raytrace passed; build 19 OpenGL flat/fold toggling and two-bend U-fold visually verified with closed sidewalls and curved surfaces |
 
-The regression driver is [scripts/backplane-structure-regression.py](scripts/backplane-structure-regression.py).
+The regression driver is [scripts/backplane-structure-stock-check.py](scripts/backplane-structure-stock-check.py).
 It copies source examples into a separate output directory, preserving the
 authoritative example files. It uses stock KiCad, the fork, Gerbonara, and an
 independent OCP installation. Negative cases must produce the intended diagnostics.
@@ -67,7 +67,7 @@ independent OCP installation. Negative cases must produce the intended diagnosti
 Example invocation:
 
 ```sh
-python scripts/backplane-structure-regression.py /path/to/fork/kicad-cli \
+python scripts/backplane-structure-stock-check.py /path/to/fork/kicad-cli \
   --stock-cli /usr/bin/kicad-cli --output /tmp/structure-regression --folded
 ```
 
