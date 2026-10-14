@@ -41,11 +41,12 @@ layers. `board-construction.json` identifies each output and carries the materia
 adhesive, thickness and bend specification. Native copper and fabrication
 artwork always remain in the flat developed state.
 
-Regenerate the source examples with the stock KiCad Python interpreter:
+The nine native/project/companion files are immutable migration fixtures from
+`1747f64599`. Generate new examples outside this directory using KiCad Python:
 
 ```sh
-python3 scripts/backplane-create-structure-exemplars.py
-python3 scripts/backplane-populate-smd-exemplar.py demos/backplane-structure/two-bend-u-fold.kicad_pcb
+python3 scripts/backplane-create-structure-exemplars.py --output /tmp/new-structure-examples
+python3 scripts/backplane-populate-smd-exemplar.py /tmp/new-structure-examples/two-bend-u-fold.kicad_pcb
 ```
 
 Run the independent local regression using an environment containing
@@ -71,3 +72,14 @@ blender --background --python scripts/backplane-render-construction.py -- \
 The renderer also saves a `.blend` scene beside the PNG. Add `--square` for a 1600 × 1600 image. Use `--underside` to
 inspect a bottom stiffener. Colors are presentation choices; use the construction
 manifest to identify actual materials and thicknesses.
+
+## Master migration
+
+Opening these v1 companions on master retains structure. Saving a copied board
+writes current native master fields and a v2 companion containing only extensions.
+Do not resave the authoritative fixtures. Run
+`scripts/backplane-structure-migration-regression.py /path/to/kicad-cli` for the
+headless migration gate. No native master validation has been run for this port.
+For stock KiCad 10, use `project downgrade --target 10.0` on a disposable copy.
+See [KiCad 10 export](../../BACKPLANE_RIGID_FLEX_SPEC.md#kicad-10-export) for
+what stock sees and what downgrade removes or approximates.

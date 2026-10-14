@@ -59,5 +59,10 @@ Classes: **DROP-UPSTREAM** = master has it; **DROP-OBSOLETE** = only meaningful 
 | feat(ipc) | `kiapi.backplane.SketchRoute` | d5b38b21fa |
 | test(ipc) | runtime handshake regression | new |
 
-Not yet ported: rigid-flex, structure canvas/validation, assembly IPC (phase 2, from
-`backplane/wip-structure-2026-09-12`).
+Rigid-flex/board structure is source-ported on `port/structure` from snapshot
+`1747f64599`, excluding the assembly implementation. The reduced metadata layer
+reads v1 item data into native master fields and writes v2 fork extensions only.
+Fork IPC lives in `api/proto/backplane/structure.proto`; `board-structure` is a
+shared capability. No C++ build or native runtime validation was run on the
+workstation. The lead build host must run the migration gate and existing geometry,
+DRC/router, GUI/viewer and export regressions. Assembly remains a separate port.
