@@ -112,7 +112,13 @@ def main():
         )
         invalid_types = api.request_raw(commands.GetConnectedItems(
             header=header, items=[tracks[0].id], types=[enums.KOT_SCH_SYMBOL]))
-        assert invalid_types.status.status == api.envelope.AS_BAD_REQUEST, invalid_types
+        # The 10.0.6 runtime rejected a schematic type filter; upstream filters it to nothing.
+        if invalid_types.status.status == api.envelope.AS_OK:
+            filtered = editor.GetItemsResponse()
+            assert invalid_types.message.Unpack(filtered), invalid_types
+            assert not filtered.items, filtered
+        else:
+            assert invalid_types.status.status == api.envelope.AS_BAD_REQUEST, invalid_types
         print("PASS PCB connectivity, net/netclass queries; headless selection reported unavailable", flush=True)
 
         design_rules = request(commands.GetBoardDesignRules, commands.BoardDesignRulesResponse).rules

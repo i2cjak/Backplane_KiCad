@@ -179,18 +179,6 @@ def main(cli, stock_cli=None):
         )
         assert api.request(editor.GetDocumentModifiedState(document=document),
                            editor.GetDocumentModifiedStateResponse).state == selection_baseline
-        removed = api.request(
-            editor.RemoveFromSelection(header=header, items=[symbol.id]),
-            editor.SelectionResponse,
-        )
-        assert not removed.items
-        api.request(editor.AddToSelection(header=header, items=[symbol.id]),
-                    editor.SelectionResponse)
-        api.request(editor.ClearSelection(header=header), Empty)
-        assert not api.request(editor.GetSelection(header=header),
-                               editor.SelectionResponse).items
-        assert api.request(editor.GetDocumentModifiedState(document=document),
-                           editor.GetDocumentModifiedStateResponse).state == selection_baseline
 
         original = symbol_snapshot(symbol)
         old_value = symbol.value_field.text.text

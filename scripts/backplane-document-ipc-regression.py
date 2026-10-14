@@ -187,8 +187,16 @@ def main():
         )
         assert len(pcb_documents.documents) == 1, pcb_documents
         assert len(sch_documents.documents) == 1, sch_documents
-        assert pcb_documents.documents[0] == pcb_a_document
-        assert sch_documents.documents[0] == sch_a_document
+        # Compare document identity; upstream fills the project specifier itself.
+        def same_document(listed, opened):
+            return (listed.type == opened.type
+                    and listed.WhichOneof("identifier") == opened.WhichOneof("identifier")
+                    and getattr(listed, listed.WhichOneof("identifier") or "type")
+                    == getattr(opened, opened.WhichOneof("identifier") or "type"))
+        assert same_document(pcb_documents.documents[0], pcb_a_document), (
+            pcb_documents.documents[0], pcb_a_document)
+        assert same_document(sch_documents.documents[0], sch_a_document), (
+            sch_documents.documents[0], sch_a_document)
 
         # A second project cannot be selected while this project's children are open.
         expect_status(

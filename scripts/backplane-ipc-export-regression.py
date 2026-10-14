@@ -95,7 +95,8 @@ def main():
                 side=pcb.RS_TOP, zoom=1.0,
                 background_style=pcb.RBS_OPAQUE), "png"),
             (types.DOCTYPE_PCB, pcb.RunBoardJobExportGerbers(
-                layers=[board.BL_F_Cu, board.BL_B_Cu, board.BL_Edge_Cuts]), "directory"),
+                plot_settings=pcb.BoardPlotSettings(
+                    layers=[board.BL_F_Cu, board.BL_B_Cu, board.BL_Edge_Cuts])), "directory"),
             (types.DOCTYPE_PCB, pcb.RunBoardJobExportDrill(
                 format=pcb.DF_EXCELLON, units=enums.U_MM,
                 origin=pcb.DO_ABSOLUTE, zeros_format=pcb.DZF_DECIMAL), "directory"),

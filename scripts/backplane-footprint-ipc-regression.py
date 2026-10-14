@@ -83,7 +83,10 @@ def main():
             editor.GetOpenDocuments(type=types.DOCTYPE_FOOTPRINT),
             editor.GetOpenDocumentsResponse,
         )
-        assert list(open_docs.documents) == [footprint_doc]
+        # Compare document identity; upstream fills the project specifier itself.
+        assert len(open_docs.documents) == 1, open_docs
+        assert open_docs.documents[0].type == footprint_doc.type, open_docs
+        assert open_docs.documents[0].lib_id == footprint_doc.lib_id, (open_docs, footprint_doc)
 
         header = types.ItemHeader(document=footprint_doc)
         items = api.request(
