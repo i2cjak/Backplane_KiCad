@@ -36,10 +36,10 @@ std::unique_ptr<BOARD> loadStructureExemplar()
 }
 
 
-size_t querySegment( PNS::NODE& aWorld, PCB_LAYER_ID aLayer, const VECTOR2I& aStart,
+size_t querySegment( PNS::NODE& aWorld, NETINFO_ITEM* aNet, PCB_LAYER_ID aLayer, const VECTOR2I& aStart,
                      const VECTOR2I& aEnd )
 {
-    PNS::SEGMENT segment( SEG( aStart, aEnd ), (PNS::NET_HANDLE) 99 );
+    PNS::SEGMENT segment( SEG( aStart, aEnd ), aNet );
     segment.SetLayer( aLayer );
     segment.SetWidth( 100000 );
     PNS::NODE::OBSTACLES obstacles;
@@ -55,6 +55,9 @@ BOOST_AUTO_TEST_CASE( PNSStructureRegionalKeepouts )
     BOOST_REQUIRE_MESSAGE( board, "Could not load rigid-flex structure exemplar" );
     BOOST_REQUIRE( !board->GetBoardStructure().Empty() );
 
+    NETINFO_ITEM* net = board->FindNet( wxS( "SIGNAL_1" ) );
+    BOOST_REQUIRE( net );
+
     PNS_KICAD_IFACE_BASE iface;
     iface.SetBoard( board.get() );
     PNS::ROUTER router;
@@ -64,19 +67,19 @@ BOOST_AUTO_TEST_CASE( PNSStructureRegionalKeepouts )
 
     // F.Cu is absent from the flex stack (x=45..75 mm), so a route wholly in
     // that bridge must collide with the structure keepout.
-    BOOST_CHECK_GT( querySegment( *router.GetWorld(), F_Cu,
+    BOOST_CHECK_GT( querySegment( *router.GetWorld(), net, F_Cu,
                                   VECTOR2I( 50000000, 30000000 ),
                                   VECTOR2I( 53000000, 30000000 ) ), 0u );
 
     // In1.Cu is present in the flex stack.  This short route does not cross
     // the bend axis, so it must remain routable.
-    BOOST_CHECK_EQUAL( querySegment( *router.GetWorld(), In1_Cu,
+    BOOST_CHECK_EQUAL( querySegment( *router.GetWorld(), net, In1_Cu,
                                      VECTOR2I( 50000000, 30000000 ),
                                      VECTOR2I( 53000000, 30000000 ) ), 0u );
 
     // Bend strips are keepouts on every copper layer and prohibit vias.
     PNS::VIA via( VECTOR2I( 55000000, 30000000 ), PNS_LAYER_RANGE( F_Cu, B_Cu ),
-                  1000000, 500000, (PNS::NET_HANDLE) 99, VIATYPE::THROUGH );
+                  1000000, 500000, net, VIATYPE::THROUGH );
     PNS::NODE::OBSTACLES obstacles;
     router.GetWorld()->QueryColliding( &via, obstacles );
     BOOST_CHECK_GT( obstacles.size(), 0u );
