@@ -29,6 +29,7 @@
 #include <drill/drill_chart_model.h>
 #include <drill/drill_symbol_assigner.h>
 #include <drill/drill_symbol_profile.h>
+#include <board_structure.h>
 #include <embedded_files.h>
 #include <convert_shape_list_to_polygon.h> // for OUTLINE_ERROR_HANDLER
 #include <geometry/shape_poly_set.h>
@@ -533,6 +534,9 @@ public:
 
     const std::map<wxString, wxString>& GetProperties() const { return m_properties; }
     void SetProperties( const std::map<wxString, wxString>& aProps ) { m_properties = aProps; }
+
+    BOARD_STRUCTURE&       GetBoardStructure() { return m_boardStructure; }
+    const BOARD_STRUCTURE& GetBoardStructure() const { return m_boardStructure; }
 
     // Variant system
     wxString GetCurrentVariant() const { return m_currentVariant; }
@@ -1977,6 +1981,8 @@ private:
     wxString                           m_currentVariant;        // Currently active variant (empty = default)
     std::vector<wxString>              m_variantNames;          // All variant names in the board
     std::map<wxString, wxString>       m_variantDescriptions;   // Descriptions for each variant
+
+    BOARD_STRUCTURE m_boardStructure;
 
     /**
      * All of the board design settings are stored as a JSON object inside the project file.  The

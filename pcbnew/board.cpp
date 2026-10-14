@@ -37,6 +37,7 @@
 #include <pcb_drill_map.h>
 #include <board_commit.h>
 #include <board.h>
+#include <board_structure.h>
 #include <collectors.h>
 #include <component_classes/component_class_manager.h>
 #include <core/arraydim.h>

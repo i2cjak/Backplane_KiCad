@@ -38,6 +38,10 @@ set( QA_PCBNEW_SRCS
     test_board_design_settings.cpp
     test_board_item_index.cpp
     test_board_loader.cpp
+    test_board_structure.cpp
+    test_board_structure_review.cpp
+    test_structure_partition.cpp
+    test_backplane_rigid_flex_geometry.cpp
     test_board_item.cpp
     test_drill_chart.cpp
     test_board_commit.cpp

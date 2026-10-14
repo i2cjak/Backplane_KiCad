@@ -306,7 +306,11 @@ void PCB_IO_KICAD_SEXPR::SaveBoard( const wxString& aFileName, BOARD& aBoard,
     PRETTIFIED_FILE_OUTPUTFORMATTER formatter( aFileName );
     FormatBoardToFormatter( &formatter, &aBoard, aProperties );
     formatter.Finish();
-    aBoard.BackplaneMetadata().Save( aFileName );
+    auto& metadata = aBoard.BackplaneMetadata();
+    metadata.CaptureExtension( wxS( "root" ), "board_structure",
+                               aBoard.GetBoardStructure().Empty() ? nlohmann::json()
+                                                                 : aBoard.GetBoardStructure().ToJson() );
+    metadata.Save( aFileName );
 }
 
 
@@ -3787,6 +3791,20 @@ void PCB_IO_KICAD_SEXPR::loadBoard( const wxString& aFileName, BOARD& aBoard, bo
         auto& metadata = aBoard.BackplaneMetadata();
         metadata.Load( aFileName );
         metadata.Apply( wxS( "root" ), aBoard );
+        const auto structure = metadata.ReadExtension( wxS( "root" ), "board_structure" );
+
+        try
+        {
+            aBoard.GetBoardStructure() = BOARD_STRUCTURE();
+
+            if( !structure.is_null() )
+                aBoard.GetBoardStructure().FromJson( structure );
+        }
+        catch( const std::exception& error )
+        {
+            THROW_IO_ERROR( wxString::Format( "Invalid Backplane board structure: %s",
+                                             wxString::FromUTF8( error.what() ) ) );
+        }
         aBoard.RunOnChildren( [&]( BOARD_ITEM* item )
         {
             metadata.Apply( item->m_Uuid.AsString(), *item );
