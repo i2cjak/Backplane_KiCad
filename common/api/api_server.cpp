@@ -20,6 +20,7 @@
 
 #include <fmt/format.h>
 #include <algorithm>
+#include <exception>
 #include <wx/app.h>
 #include <wx/datetime.h>
 #include <wx/event.h>
@@ -324,15 +325,38 @@ void KICAD_API_SERVER::handleApiRequestString( std::string& aRequestString )
     API_RESULT result;
     bool notifyNetSettings = false;
 
-    for( API_HANDLER* handler : m_handlers )
-    {
-        result = handler->Handle( request );
-        notifyNetSettings |= handler->clearNetSettingsNotification();
+    // An exception escaping a handler would otherwise be swallowed by the event loop and the
+    // client would wait for a reply forever.  Answer with an internal error instead.
+    auto internalError =
+            [&]( const std::string& aWhat )
+            {
+                ApiResponseStatus status;
+                status.set_status( ApiStatusCode::AS_INTERNAL_ERROR );
+                status.set_error_message( fmt::format( "{} failed: {}",
+                                                       request.message().type_url(), aWhat ) );
+                result = tl::unexpected( status );
+            };
 
-        if( result.has_value() )
-            break;
-        else if( result.error().status() != ApiStatusCode::AS_UNHANDLED )
-            break;
+    try
+    {
+        for( API_HANDLER* handler : m_handlers )
+        {
+            result = handler->Handle( request );
+            notifyNetSettings |= handler->clearNetSettingsNotification();
+
+            if( result.has_value() )
+                break;
+            else if( result.error().status() != ApiStatusCode::AS_UNHANDLED )
+                break;
+        }
+    }
+    catch( const std::exception& e )
+    {
+        internalError( e.what() );
+    }
+    catch( ... )
+    {
+        internalError( "unknown exception" );
     }
 
     if( notifyNetSettings )
