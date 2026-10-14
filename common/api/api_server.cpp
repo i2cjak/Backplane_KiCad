@@ -19,6 +19,7 @@
  */
 
 #include <fmt/format.h>
+#include <algorithm>
 #include <wx/app.h>
 #include <wx/datetime.h>
 #include <wx/event.h>
@@ -196,6 +197,22 @@ void KICAD_API_SERVER::Stop()
 bool KICAD_API_SERVER::Running() const
 {
     return m_server && m_server->Running();
+}
+
+
+std::vector<std::string> KICAD_API_SERVER::RegisteredCommands() const
+{
+    std::vector<std::string> commands;
+
+    for( API_HANDLER* handler : m_handlers )
+    {
+        std::vector<std::string> handlerCommands = handler->RegisteredCommands();
+        commands.insert( commands.end(), handlerCommands.begin(), handlerCommands.end() );
+    }
+
+    std::sort( commands.begin(), commands.end() );
+    commands.erase( std::unique( commands.begin(), commands.end() ), commands.end() );
+    return commands;
 }
 
 

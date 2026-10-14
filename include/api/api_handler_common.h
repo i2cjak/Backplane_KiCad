@@ -26,6 +26,7 @@
 #include <google/protobuf/empty.pb.h>
 
 #include <api/api_handler.h>
+#include <api/backplane/capabilities.pb.h>
 #include <api/common/commands/base_commands.pb.h>
 #include <api/common/commands/project_commands.pb.h>
 
@@ -73,6 +74,9 @@ public:
 private:
     HANDLER_RESULT<commands::GetVersionResponse> handleGetVersion(
         const HANDLER_CONTEXT<commands::GetVersion>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::GetCapabilitiesResponse> handleGetCapabilities(
+        const HANDLER_CONTEXT<kiapi::backplane::GetCapabilities>& aCtx );
 
     HANDLER_RESULT<commands::PathResponse> handleGetKiCadBinaryPath(
         const HANDLER_CONTEXT<commands::GetKiCadBinaryPath>& aCtx );

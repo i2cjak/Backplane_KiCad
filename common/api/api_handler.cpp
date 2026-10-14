@@ -27,6 +27,18 @@ using kiapi::common::ApiRequest, kiapi::common::ApiResponse, kiapi::common::ApiR
 const wxString API_HANDLER::m_defaultCommitMessage = _( "Modification from API" );
 
 
+std::vector<std::string> API_HANDLER::RegisteredCommands() const
+{
+    std::vector<std::string> commands;
+    commands.reserve( m_handlers.size() );
+
+    for( const auto& entry : m_handlers )
+        commands.push_back( entry.first );
+
+    return commands;
+}
+
+
 API_RESULT API_HANDLER::Handle( ApiRequest& aMsg )
 {
     ApiResponseStatus status;

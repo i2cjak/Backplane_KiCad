@@ -22,7 +22,10 @@
 #define KICAD_API_HANDLER_H
 
 #include <functional>
+#include <map>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include <fmt/format.h>
 #include <tl/expected.hpp>
@@ -68,6 +71,11 @@ public:
      * @return a response to send to the client, or an appropriate error
      */
     API_RESULT Handle( ApiRequest& aMsg );
+
+    /**
+     * Return the fully-qualified protobuf type names handled by this instance.
+     */
+    std::vector<std::string> RegisteredCommands() const;
 
     /**
      * Called on all registered handlers after project net settings (netclasses or netclass

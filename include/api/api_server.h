@@ -26,6 +26,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <vector>
 
 #include <wx/event.h>
 #include <wx/filename.h>
@@ -79,6 +80,11 @@ public:
     }
 
     std::string SocketPath() const;
+
+    /**
+     * Return the fully-qualified protobuf type names registered by all handlers.
+     */
+    std::vector<std::string> RegisteredCommands() const;
 
     const std::string& Token() const { return m_token; }
 

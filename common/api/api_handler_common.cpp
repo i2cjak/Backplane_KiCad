@@ -24,7 +24,10 @@
 #include <tuple>
 
 #include <api/api_handler_common.h>
+#include <api/api_server.h>
+#include <api/backplane_capabilities.h>
 #include <build_version.h>
+#include <backplane_build_version.h>
 #include <eda_shape.h>
 #include <eda_text.h>
 #include <gestfich.h>
@@ -48,6 +51,8 @@ API_HANDLER_COMMON::API_HANDLER_COMMON() :
         API_HANDLER()
 {
     registerHandler<commands::GetVersion, GetVersionResponse>( &API_HANDLER_COMMON::handleGetVersion );
+    registerHandler<kiapi::backplane::GetCapabilities, kiapi::backplane::GetCapabilitiesResponse>(
+            &API_HANDLER_COMMON::handleGetCapabilities );
     registerHandler<GetKiCadBinaryPath, PathResponse>(
             &API_HANDLER_COMMON::handleGetKiCadBinaryPath );
     registerHandler<GetPaths, GetPathsResponse>( &API_HANDLER_COMMON::handleGetPaths );
@@ -90,6 +95,31 @@ HANDLER_RESULT<GetVersionResponse> API_HANDLER_COMMON::handleGetVersion(
     reply.mutable_version()->set_major( std::get<0>( version ) );
     reply.mutable_version()->set_minor( std::get<1>( version ) );
     reply.mutable_version()->set_patch( std::get<2>( version ) );
+
+    return reply;
+}
+
+
+HANDLER_RESULT<kiapi::backplane::GetCapabilitiesResponse>
+API_HANDLER_COMMON::handleGetCapabilities( const HANDLER_CONTEXT<kiapi::backplane::GetCapabilities>& )
+{
+    kiapi::backplane::GetCapabilitiesResponse reply;
+
+    reply.set_fork_version( BACKPLANE_FORK_VERSION );
+    reply.set_upstream_commit( BACKPLANE_UPSTREAM_COMMIT );
+    reply.set_source_commit( GetCommitHash().ToStdString() );
+    reply.set_api_version( BACKPLANE_API_VERSION );
+    reply.set_board_file_version( BACKPLANE_BOARD_FILE_VERSION );
+    reply.set_schematic_file_version( BACKPLANE_SCHEMATIC_FILE_VERSION );
+
+    for( const char* capability : BACKPLANE::CAPABILITIES )
+        reply.add_capabilities( capability );
+
+    if( apiServer() )
+    {
+        for( const std::string& command : apiServer()->RegisteredCommands() )
+            reply.add_commands( command );
+    }
 
     return reply;
 }
