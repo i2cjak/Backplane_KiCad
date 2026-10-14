@@ -105,6 +105,8 @@ set( QA_PCBNEW_SRCS
     test_pcb_control_rehatch.cpp
     test_pns_basics.cpp
     test_pns_sketch_router.cpp
+    test_assembly_model.cpp
+    test_assembly_board_ops.cpp
     test_pad_flashing.cpp
     test_pad_numbering.cpp
     test_pcb_differ.cpp
