@@ -41,6 +41,33 @@ add_subdirectory( io/pads )
 set( KICAD_VERSION_EXTRA "" CACHE STRING
     "User defined configuration string to append to KiCad version." )
 
+# Backplane identity is separate from KiCad's own version logic.  Release builds
+# can still set KICAD_VERSION_EXTRA=bp.N for GetBuildVersion()/GetVersion().
+set( BACKPLANE_FORK_VERSION "10.99.0-bp.0" CACHE STRING
+    "Backplane fork version exposed through the API." )
+set( BACKPLANE_UPSTREAM_COMMIT "unknown" CACHE STRING
+    "Pinned upstream KiCad commit used for this Backplane build." )
+set( BACKPLANE_API_VERSION 1 CACHE STRING
+    "Backplane IPC API version." )
+
+# Native file-format versions, read from their headers so kicommon and kicad-cli
+# need not include pcbnew or eeschema IO headers.
+set( _bp_board_header ${CMAKE_SOURCE_DIR}/pcbnew/pcb_io/kicad_sexpr/pcb_io_kicad_sexpr.h )
+set( _bp_sch_header ${CMAKE_SOURCE_DIR}/eeschema/sch_file_versions.h )
+file( STRINGS ${_bp_board_header} _bp_board_line REGEX "^#define SEXPR_BOARD_FILE_VERSION +[0-9]+" )
+file( STRINGS ${_bp_sch_header} _bp_sch_line REGEX "^#define SEXPR_SCHEMATIC_FILE_VERSION +[0-9]+" )
+string( REGEX MATCH "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]" BACKPLANE_BOARD_FILE_VERSION "${_bp_board_line}" )
+string( REGEX MATCH "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]" BACKPLANE_SCHEMATIC_FILE_VERSION "${_bp_sch_line}" )
+
+if( NOT BACKPLANE_BOARD_FILE_VERSION OR NOT BACKPLANE_SCHEMATIC_FILE_VERSION )
+    message( FATAL_ERROR "Could not read the native file-format versions for the Backplane manifest" )
+endif()
+
+set_property( DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_bp_board_header} ${_bp_sch_header} )
+
+configure_file( ${CMAKE_SOURCE_DIR}/cmake/backplane_build_version.h.in
+                ${CMAKE_BINARY_DIR}/backplane_build_version.h @ONLY )
+
 # Generate version header file.
 add_custom_target(
     version_header ALL
