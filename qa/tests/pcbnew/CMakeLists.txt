@@ -38,6 +38,7 @@ set( QA_PCBNEW_SRCS
     test_board_design_settings.cpp
     test_board_item_index.cpp
     test_board_loader.cpp
+    test_backplane_document_metadata.cpp
     test_board_structure.cpp
     test_board_structure_review.cpp
     test_structure_router.cpp

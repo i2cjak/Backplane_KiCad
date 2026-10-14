@@ -1,0 +1,193 @@
+{
+  "format": "backplane-kicad-metadata",
+  "version": 1,
+  "items": {
+    "root": {
+      "board_structure": {
+        "schema_version": 1,
+        "stacks": [
+          {
+            "id": "flex",
+            "name": "flex",
+            "kind": "flex",
+            "copper_layers": [
+              0,
+              2
+            ],
+            "materials": [
+              {
+                "id": "flex-0",
+                "category": "copper",
+                "material": "Copper",
+                "thickness_nm": 18000,
+                "min_thickness_nm": 18000,
+                "max_thickness_nm": 18000
+              },
+              {
+                "id": "flex-1",
+                "category": "dielectric",
+                "material": "Polyimide",
+                "thickness_nm": 114000,
+                "min_thickness_nm": 114000,
+                "max_thickness_nm": 114000
+              },
+              {
+                "id": "flex-2",
+                "category": "copper",
+                "material": "Copper",
+                "thickness_nm": 18000,
+                "min_thickness_nm": 18000,
+                "max_thickness_nm": 18000
+              }
+            ],
+            "layers": [
+              {
+                "material_id": "flex-0",
+                "global_copper_layer": 2,
+                "z_offset_nm": -75000
+              },
+              {
+                "material_id": "flex-1",
+                "global_copper_layer": -1,
+                "z_offset_nm": -57000
+              },
+              {
+                "material_id": "flex-2",
+                "global_copper_layer": 0,
+                "z_offset_nm": 57000
+              }
+            ],
+            "continuity_id": "shared-copper"
+          }
+        ],
+        "regions": [
+          {
+            "id": "flex",
+            "name": "Reinforced flex",
+            "stack_id": "flex",
+            "shape": {
+              "outline": [
+                [
+                  20000000,
+                  20000000
+                ],
+                [
+                  100000000,
+                  20000000
+                ],
+                [
+                  100000000,
+                  40000000
+                ],
+                [
+                  20000000,
+                  40000000
+                ]
+              ],
+              "holes": []
+            }
+          }
+        ],
+        "boundaries": [],
+        "region_seeds": [
+          {
+            "region_id": "flex",
+            "point": [
+              60000000,
+              30000000
+            ]
+          }
+        ],
+        "stiffeners": [
+          {
+            "id": "support",
+            "region_id": "flex",
+            "shape": {
+              "outline": [
+                [
+                  85000000,
+                  20000000
+                ],
+                [
+                  100000000,
+                  20000000
+                ],
+                [
+                  100000000,
+                  40000000
+                ],
+                [
+                  85000000,
+                  40000000
+                ]
+              ],
+              "holes": []
+            },
+            "material": "FR4",
+            "adhesive": "Thermoset",
+            "thickness_nm": 300000,
+            "min_thickness_nm": 280000,
+            "max_thickness_nm": 320000,
+            "adhesive_thickness_nm": 25000,
+            "top": false,
+            "role": "Terminal support",
+            "support_targets": []
+          }
+        ],
+        "coverlays": [
+          {
+            "id": "cover-top",
+            "region_id": "flex",
+            "coverage": {
+              "outline": [
+                [
+                  30000000,
+                  20000000
+                ],
+                [
+                  85000000,
+                  20000000
+                ],
+                [
+                  85000000,
+                  40000000
+                ],
+                [
+                  30000000,
+                  40000000
+                ]
+              ],
+              "holes": []
+            },
+            "openings": [],
+            "material": "Polyimide",
+            "adhesive": "Acrylic",
+            "thickness_nm": 25000,
+            "adhesive_thickness_nm": 25000,
+            "top": true,
+            "registration_tolerance_nm": 75000
+          }
+        ],
+        "bends": [
+          {
+            "id": "fold-1",
+            "region_id": "flex",
+            "start": [
+              55000000,
+              40000000
+            ],
+            "end": [
+              55000000,
+              20000000
+            ],
+            "angle_degrees": 90,
+            "inner_radius_mm": 2,
+            "neutral_axis_offset_mm": -1,
+            "moving_side_left": true,
+            "sequence": 0
+          }
+        ]
+      }
+    }
+  }
+}

@@ -22,8 +22,15 @@ def resolve_stock_cli(path):
 
 
 class IpcSession:
-    def __init__(self, cli, timeout=180000):
+    def __init__(self, cli, timeout=180000, api_socket=None):
+        """Create an isolated session, or attach to an existing API socket.
+
+        ``api_socket`` is useful for GUI regressions: the caller owns the GUI
+        process and its lifetime, while this client still gets generated
+        bindings and isolated configuration directories.
+        """
         self.cli = Path(cli).resolve(strict=True)
+        self.api_socket = Path(api_socket).resolve() if api_socket else None
         self.source = Path(__file__).resolve().parents[1]
         self.timeout = timeout
         self.token = ""
@@ -53,16 +60,18 @@ class IpcSession:
                 self.env[variable] = str(path)
             self.env.pop("DISPLAY", None)
             self.env.pop("WAYLAND_DISPLAY", None)
-            self.socket = self.root / "api.sock"
-            self.log = (self.root / "server.log").open("w+")
-            self.server = subprocess.Popen(
-                [str(self.cli), "api-server", "--socket", str(self.socket)],
-                env=self.env, stdout=self.log, stderr=subprocess.STDOUT,
-            )
+            self.socket = self.api_socket or self.root / "api.sock"
+            if self.api_socket is None:
+                self.log = (self.root / "server.log").open("w+")
+                self.server = subprocess.Popen(
+                    [str(self.cli), "api-server", "--socket", str(self.socket)],
+                    env=self.env, stdout=self.log, stderr=subprocess.STDOUT,
+                )
             deadline = time.monotonic() + 30
             while not self.socket.is_socket():
-                if self.server.poll() is not None or time.monotonic() > deadline:
-                    raise RuntimeError(f"IPC server did not start: {self.server.poll()}")
+                if (self.server is not None and self.server.poll() is not None) or time.monotonic() > deadline:
+                    status = self.server.poll() if self.server is not None else "attached socket missing"
+                    raise RuntimeError(f"IPC server did not start: {status}")
                 time.sleep(0.05)
             self.connection = pynng.Req0(
                 dial=f"ipc://{self.socket}", block_on_dial=True,
@@ -94,9 +103,10 @@ class IpcSession:
             self.connection.send(request.SerializeToString())
             response = self.envelope.ApiResponse.FromString(self.connection.recv())
         except pynng.exceptions.Timeout as error:
+            status = self.server.poll() if self.server is not None else "attached GUI"
             raise TimeoutError(
                 f"{command.DESCRIPTOR.full_name} timed out; "
-                f"IPC server exit status: {self.server.poll()}"
+                f"IPC server exit status: {status}"
             ) from error
         self.token = response.header.kicad_token
         return response
