@@ -3430,6 +3430,7 @@ void SCH_IO_KICAD_SEXPR_PARSER::ParseSchematic( SCH_SHEET* aSheet, bool aIsCopya
                 line->SetLocked( poly->IsLocked() );
                 line->SetStartEnding( poly->GetStartEnding() );
                 line->SetEndEnding( poly->GetEndEnding() );
+                line->SetCustomProperties( poly->GetCustomProperties() );
                 const_cast<KIID&>( line->m_Uuid ) = poly->m_Uuid;
 
                 screen->Append( line );
@@ -4846,7 +4847,11 @@ SCH_SHAPE* SCH_IO_KICAD_SEXPR_PARSER::parseSchPolyLine()
             NeedRIGHT();
             break;
 
-        default: Expecting( "pts, uuid, stroke, fill, locked, start_shape, or end_shape" );
+        case T_custom_property:
+            parseCustomProperty( polyline.get() );
+            break;
+
+        default: Expecting( "pts, uuid, stroke, fill, locked, start_shape, end_shape, or custom_property" );
         }
     }
 
