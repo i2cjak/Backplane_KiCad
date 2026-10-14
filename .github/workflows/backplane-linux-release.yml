@@ -177,7 +177,8 @@ jobs:
 
       - name: Build and install KiCad runtime
         run: |
-          cmake --build build/backplane-linux --parallel 4
+          # -k 0: report every compile error in one run instead of stopping at the first.
+          cmake --build build/backplane-linux --parallel 4 -- -k 0
           cmake --install build/backplane-linux
 
       - name: Preserve compiler cache after build attempts
