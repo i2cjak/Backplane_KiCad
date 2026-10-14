@@ -136,7 +136,7 @@ int CLI::PROJECT_DOWNGRADE_COMMAND::doPerform( KIWAY& aKiway )
 
         for( const wxString& source : sources )
         {
-            if( !IsDowngradeDesignFile( source ) )
+            if( !IsDowngradeDesignFile( source ) && !IsBackplaneCompanionFile( source ) )
                 continue;
 
             std::error_code error;

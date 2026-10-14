@@ -206,6 +206,18 @@ inline bool IsDowngradeDesignFile( const wxString& aPath )
 }
 
 
+/// Backplane companion files are opaque to stock KiCad but travel with a project export.
+inline bool IsBackplaneCompanionFile( const wxString& aPath )
+{
+    if( IsDowngradeWorkingArtifact( aPath ) )
+        return false;
+
+    wxString name = wxFileName( aPath ).GetFullName();
+    return name.EndsWith( wxT( ".backplane.json" ) )
+           || name.EndsWith( wxT( ".backplane-assembly.json" ) );
+}
+
+
 /// Read back a downgraded output and require the target stamp plus a clean token scan.
 /// An output that cannot be read back to verify counts as a failure too.
 inline bool VerifyDowngradedFile( const wxString& aPath, int aStampVersion,

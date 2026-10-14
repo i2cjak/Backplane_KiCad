@@ -20,6 +20,7 @@
 #include "project_downgrade.h"
 
 #include <filesystem>
+#include <map>
 #include <system_error>
 #include <utility>
 
@@ -29,6 +30,7 @@
 #include <wx/ffile.h>
 #include <wx/filefn.h>
 #include <wx/filename.h>
+#include <wx/log.h>
 
 #include <downgrade_scan.h>
 #include <downgrade_target.h>
@@ -304,6 +306,65 @@ static wxString firstTooNewFile( const wxString& aDir, const DOWNGRADE_TARGET& a
 }
 
 
+static void addBackplaneCompanionReport( const wxString& aProjectDir, COMPATIBILITY_REPORT& aReport )
+{
+    wxArrayString companions;
+    wxDir::GetAllFiles( aProjectDir, &companions );
+
+    for( const wxString& companion : companions )
+    {
+        if( !IsBackplaneCompanionFile( companion ) )
+            continue;
+
+        wxFileName relative( companion );
+        relative.MakeRelativeTo( aProjectDir );
+        aReport.Add( DOWNGRADE_BUCKET::KEEP,
+                     wxString::Format( _( "Backplane companion '%s'" ), relative.GetFullPath() ),
+                     _( "Kept; ignored by stock KiCad." ) );
+    }
+}
+
+
+static wxString backplaneCompanionOutputPath( const wxString& aSource,
+                                              const wxString& aProjectDir,
+                                              const wxString& aDestDir,
+                                              const std::map<wxString, wxString>& aNativeDestinations )
+{
+    wxString suffix;
+
+    if( aSource.EndsWith( wxT( ".backplane-assembly.json" ) ) )
+        suffix = wxT( ".backplane-assembly.json" );
+    else if( aSource.EndsWith( wxT( ".backplane.json" ) ) )
+        suffix = wxT( ".backplane.json" );
+    else
+        return wxEmptyString;
+
+    wxString nativeSource = aSource.Left( aSource.length() - suffix.length() );
+
+    if( auto it = aNativeDestinations.find( nativeSource ); it != aNativeDestinations.end() )
+        return it->second + suffix;
+
+    // Some companions use the project/design stem without the native extension.  Couple those
+    // names to the native destination as well, so a future native rename carries the sidecar.
+    wxFileName companionBase( nativeSource );
+
+    for( const auto& [source, destination] : aNativeDestinations )
+    {
+        wxFileName native( source );
+
+        if( native.GetPath() == companionBase.GetPath() && native.GetName() == companionBase.GetName() )
+        {
+            wxFileName nativeDestination( destination );
+            return nativeDestination.GetPathWithSep() + nativeDestination.GetName() + suffix;
+        }
+    }
+
+    wxFileName relative( aSource );
+    relative.MakeRelativeTo( aProjectDir );
+    return aDestDir + wxFileName::GetPathSeparator() + relative.GetFullPath();
+}
+
+
 bool ClassifyProjectForDowngrade( KIWAY& aKiway, const wxString& aProjectDir, const wxString& aProjectName,
                                   const wxString& aTargetName, COMPATIBILITY_REPORT& aReport, wxString& aError,
                                   std::vector<wxString>* aFoundVariants, bool aDropInsteadOfApproximate,
@@ -317,6 +378,8 @@ bool ClassifyProjectForDowngrade( KIWAY& aKiway, const wxString& aProjectDir, co
         aError = _( "This project has no board or schematic to export." );
         return false;
     }
+
+    addBackplaneCompanionReport( aProjectDir, aReport );
 
     const DOWNGRADE_TARGET* target = FindDowngradeTarget( aTargetName );
     wxFileName              proFn( aProjectDir, aProjectName, FILEEXT::ProjectFileExtension );
@@ -508,6 +571,8 @@ bool ExportProjectForDowngrade( KIWAY& aKiway, const wxString& aProjectDir, cons
     };
 
     // Design files only. Datasheets, gerbers, UI state and other working files stay behind.
+    std::map<wxString, wxString> nativeDestinations;
+
     {
         wxArrayString files;
         wxDir::GetAllFiles( aProjectDir, &files );
@@ -521,6 +586,7 @@ bool ExportProjectForDowngrade( KIWAY& aKiway, const wxString& aProjectDir, cons
             rel.MakeRelativeTo( aProjectDir );
 
             wxFileName out( aDestDir + wxFileName::GetPathSeparator() + rel.GetFullPath() );
+            nativeDestinations[file] = out.GetFullPath();
 
             if( !out.DirExists() && !wxFileName::Mkdir( out.GetPath(), wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL ) )
                 return failClosed( _( "Could not copy the project." ) );
@@ -620,6 +686,37 @@ bool ExportProjectForDowngrade( KIWAY& aKiway, const wxString& aProjectDir, cons
 
         if( !out.IsOpened() || !out.Write( text ) )
             return failClosed( _( "Export failed: could not write the library table." ) );
+    }
+
+    // Companion files are opaque to stock KiCad.  Preserve them after native conversion has
+    // completed, but never make an otherwise usable downgrade fail because a sidecar could not
+    // be copied.
+    {
+        wxArrayString companions;
+        wxDir::GetAllFiles( aProjectDir, &companions );
+
+        for( const wxString& source : companions )
+        {
+            if( !IsBackplaneCompanionFile( source ) )
+                continue;
+
+            wxString destination = backplaneCompanionOutputPath( source, aProjectDir, aDestDir,
+                                                                  nativeDestinations );
+            wxFileName out( destination );
+
+            if( !out.DirExists() && !wxFileName::Mkdir( out.GetPath(), wxS_DIR_DEFAULT, wxPATH_MKDIR_FULL ) )
+            {
+                wxLogWarning( _( "Could not copy Backplane companion '%s' to '%s'; keeping the downgrade usable." ),
+                              source, destination );
+                continue;
+            }
+
+            if( !wxCopyFile( source, destination ) )
+            {
+                wxLogWarning( _( "Could not copy Backplane companion '%s' to '%s'; keeping the downgrade usable." ),
+                              source, destination );
+            }
+        }
     }
 
     // Final backstop: nothing left in the copy may still be too new for the target to open.
