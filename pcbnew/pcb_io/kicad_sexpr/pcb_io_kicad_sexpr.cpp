@@ -3791,6 +3791,14 @@ void PCB_IO_KICAD_SEXPR::loadBoard( const wxString& aFileName, BOARD& aBoard, bo
         auto& metadata = aBoard.BackplaneMetadata();
         metadata.Load( aFileName );
         metadata.Apply( wxS( "root" ), aBoard );
+        // BOARD has native (property ...) entries, rather than root-level
+        // custom_property tokens.  Migrate legacy root properties there while
+        // preserving the native board-property map's values.
+        auto properties = aBoard.GetProperties();
+        for( const auto& [name, value] : aBoard.GetCustomProperties() )
+            properties.try_emplace( name, value );
+        aBoard.SetProperties( properties );
+        aBoard.ClearCustomProperties();
         const auto structure = metadata.ReadExtension( wxS( "root" ), "board_structure" );
 
         try

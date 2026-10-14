@@ -32,6 +32,7 @@ FIXTURE_HASHES = {
 }
 SHAPE_ID = "ab000000-0000-4000-8000-000000000001"
 PROPERTY = "Backplane migration probe"
+ROOT_PROPERTY = "Backplane root migration probe"
 ENDING = {"style": 1, "length": 700000, "width": 400000,
           "stroke_width": 100000, "stroke_style": 0,
           "stroke_color": [0.2, 0.3, 0.4, 1.0]}
@@ -74,6 +75,7 @@ def inject_legacy_items(path):
     path.write_text(text[:at] + segment + text[at:])
     data = json.loads(companion(path).read_text())
     assert data["version"] == 1
+    data["items"]["root"]["custom_properties"] = {ROOT_PROPERTY: "legacy-root"}
     data["items"][SHAPE_ID] = {
         "custom_properties": {PROPERTY: "legacy-v1"},
         "start_ending": ENDING,
@@ -140,6 +142,7 @@ def main():
                 assert "(board_structure" not in native
                 if probe:
                     assert "(custom_property" in native and PROPERTY in native, path
+                    assert f'(property "{ROOT_PROPERTY}" "legacy-root")' in native, path
                     assert "(start_shape" in native and "(end_shape" in native, path
                     # SaveCopyOfDocument must serialize the live extension at its destination.
                     copy_path = session.root / ("copy-" + path.name)
@@ -152,6 +155,8 @@ def main():
                 export_dir = session.root / "v10-exports" / (path.stem + ("-probe" if probe else ""))
                 command = [str(session.cli), "project", "downgrade", "--target", "10.0", "--force",
                            "-o", str(export_dir), str(path.with_suffix(".kicad_pro"))]
+                if probe:
+                    command.append("--drop-approximations")
                 exported = subprocess.run(command, env=session.env, text=True,
                                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
                 assert exported.returncode == 0, exported.stdout
@@ -161,7 +166,8 @@ def main():
                 # A v1 file left beside already migrated native fields must not override them.
                 if probe:
                     legacy = {"format": "backplane-kicad-metadata", "version": 1,
-                              "items": {"root": {"board_structure": structure}, SHAPE_ID: {
+                              "items": {"root": {"board_structure": structure,
+                                                  "custom_properties": {ROOT_PROPERTY: "stale-root"}}, SHAPE_ID: {
                                   "custom_properties": {PROPERTY: "stale-v1"},
                                   "start_ending": {**ENDING, "style": 2},
                                   "end_ending": {**ENDING, "style": 3}}}}
@@ -172,7 +178,8 @@ def main():
                 if probe:
                     fetch_probe(session, document)
                     session.request(project.SaveDocument(document=document), Empty)
-                    verify_v2(path, structure)
+                    restored_native = verify_v2(path, structure)
+                    assert f'(property "{ROOT_PROPERTY}" "legacy-root")' in restored_native, path
                     # Removing the last extension deletes the companion, keeping native fields.
                     bp.json_set("SetBoardStructure", "BoardStructureResponse", document, "{}")
                     session.request(project.SaveDocument(document=document), Empty)
