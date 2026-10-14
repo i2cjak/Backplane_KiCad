@@ -92,7 +92,8 @@ def main():
         gerber_job = board_jobs.RunBoardJobExportGerbers(
             job_settings=jobs.RunJobSettings(document=board,
                                                   output_path=str(session.root / "gerbers")),
-            layers=[board_types.BL_F_Cu, board_types.BL_B_Cu, board_types.BL_Edge_Cuts])
+            plot_settings=board_jobs.BoardPlotSettings(
+            layers=[board_types.BL_F_Cu, board_types.BL_B_Cu, board_types.BL_Edge_Cuts]))
         gerber_result = session.request(gerber_job, jobs.RunJobResponse)
         assert gerber_result.status == jobs.JS_SUCCESS, gerber_result
         assert (session.root / "folded.step").stat().st_size > 1000
