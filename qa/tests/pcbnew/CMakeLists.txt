@@ -40,6 +40,7 @@ set( QA_PCBNEW_SRCS
     test_board_loader.cpp
     test_board_structure.cpp
     test_board_structure_review.cpp
+    test_structure_router.cpp
     test_structure_partition.cpp
     test_backplane_rigid_flex_geometry.cpp
     test_board_item.cpp

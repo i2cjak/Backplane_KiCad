@@ -35,6 +35,7 @@ class ROUTER_PREVIEW_ITEM;
 
 class BOARD;
 class BOARD_COMMIT;
+class ZONE;
 class PCB_TEXT;
 class PCB_DISPLAY_OPTIONS;
 class PCB_TOOL_BASE;
@@ -148,6 +149,8 @@ protected:
 protected:
     PNS::NODE* m_world;
     BOARD*     m_board;
+    // Router-only construction obstacles; never inserted into native board artwork.
+    std::vector<std::unique_ptr<ZONE>> m_structureKeepouts;
     int        m_startLayer; // The starting layer, in PNS layer coordinates
 };
 

@@ -3681,6 +3681,44 @@ bool ZONE_FILLER::fillSingleZone( ZONE* aZone, PCB_LAYER_ID aLayer, SHAPE_POLY_S
             aZone->SetNeedRefill( false );
     }
 
+    // Regional stacks restrict the physical extent on which a copper layer can
+    // exist.  Keep this clipping in the fill path so refill cannot recreate
+    // absent-layer copper after DRC has reported it.
+    if( aZone->IsOnCopperLayer() && !m_board->GetBoardStructure().Empty() )
+    {
+        SHAPE_POLY_SET regionalExtents;
+
+        for( const BOARD_STRUCTURE_REGION& region : m_board->GetBoardStructure().regions )
+        {
+            const BOARD_STRUCTURE_STACK* stack = m_board->GetBoardStructure().StackForRegion( region );
+
+            if( !stack || std::find( stack->copper_layers.begin(), stack->copper_layers.end(),
+                                     static_cast<int>( aLayer ) ) == stack->copper_layers.end()
+                || region.shape.outline.size() < 3 )
+                continue;
+
+            SHAPE_LINE_CHAIN outline;
+            for( const VECTOR2I& point : region.shape.outline )
+                outline.Append( point );
+            outline.SetClosed( true );
+            const int outlineIndex = regionalExtents.AddOutline( outline );
+
+            for( const std::vector<VECTOR2I>& hole : region.shape.holes )
+            {
+                SHAPE_LINE_CHAIN holeChain;
+                for( const VECTOR2I& point : hole )
+                    holeChain.Append( point );
+                holeChain.SetClosed( true );
+                regionalExtents.AddHole( holeChain, outlineIndex );
+            }
+        }
+
+        if( regionalExtents.OutlineCount() == 0 )
+            aFillPolys.RemoveAllContours();
+        else
+            aFillPolys.BooleanIntersection( regionalExtents );
+    }
+
     return true;
 }
 

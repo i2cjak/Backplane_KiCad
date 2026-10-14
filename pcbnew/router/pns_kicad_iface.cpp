@@ -2402,6 +2402,75 @@ void PNS_KICAD_IFACE_BASE::SyncWorld( PNS::NODE *aWorld )
     if( m_board->GetBoardPolygonOutlines( buffer, true ) )
         boardOutline = &buffer;
 
+    m_structureKeepouts.clear();
+    const auto& structure = m_board->GetBoardStructure();
+    if( boardOutline && !structure.regions.empty() )
+    {
+        auto polygon = []( const BOARD_STRUCTURE_POLYGON& shape )
+        {
+            SHAPE_POLY_SET result;
+            SHAPE_LINE_CHAIN outline;
+            for( const auto& point : shape.outline ) outline.Append( point );
+            outline.SetClosed( true );
+            result.AddOutline( outline );
+            for( const auto& points : shape.holes )
+            {
+                SHAPE_LINE_CHAIN hole;
+                for( const auto& point : points ) hole.Append( point );
+                hole.SetClosed( true );
+                result.AddHole( hole, 0 );
+            }
+            return result;
+        };
+        auto keepout = [&]( SHAPE_POLY_SET shape, const LSET& layers, bool tracks )
+        {
+            if( shape.IsEmpty() ) return;
+            auto zone = std::make_unique<ZONE>( m_board );
+            zone->SetIsRuleArea( true );
+            zone->SetDoNotAllowTracks( tracks );
+            zone->SetDoNotAllowVias( true );
+            zone->SetDoNotAllowPads( true );
+            zone->SetLayerSet( layers );
+            *zone->Outline() = std::move( shape );
+            syncZone( aWorld, zone.get(), boardOutline );
+            m_structureKeepouts.push_back( std::move( zone ) );
+        };
+        for( PCB_LAYER_ID layer : m_board->GetEnabledLayers().CuStack() )
+        {
+            SHAPE_POLY_SET allowed;
+            for( const auto& region : structure.regions )
+            {
+                const auto* stack = structure.StackForRegion( region );
+                if( stack && std::find( stack->copper_layers.begin(), stack->copper_layers.end(),
+                                       static_cast<int>( layer ) ) != stack->copper_layers.end() )
+                    allowed.BooleanAdd( polygon( region.shape ) );
+            }
+            SHAPE_POLY_SET forbidden = *boardOutline;
+            forbidden.BooleanSubtract( allowed );
+            keepout( std::move( forbidden ), LSET( { layer } ), true );
+        }
+        for( const auto& bend : structure.bends )
+        {
+            double thickness = 0;
+            for( const auto& region : structure.regions )
+                if( region.id == bend.region_id )
+                    if( const auto* stack = structure.StackForRegion( region ) )
+                        for( const auto& material : stack->materials )
+                            thickness += material.thickness_nm * 1e-6;
+            const double dx = double( bend.end.x ) - bend.start.x;
+            const double dy = double( bend.end.y ) - bend.start.y;
+            const double length = std::hypot( dx, dy );
+            if( length <= 0 ) continue;
+            const double width = BOARD_STRUCTURE::BendStripLengthMm( bend, thickness ) * 1e6;
+            const double sign = bend.moving_side_left ? 1 : -1;
+            const VECTOR2I delta( KiROUND( -dy * sign * width / length ),
+                                  KiROUND( dx * sign * width / length ) );
+            BOARD_STRUCTURE_POLYGON band;
+            band.outline = { bend.start, bend.end, bend.end + delta, bend.start + delta };
+            keepout( polygon( band ), LSET( m_board->GetEnabledLayers() & LSET::AllCuMask() ), false );
+        }
+    }
+
     for( ZONE* zone : m_board->Zones() )
     {
         syncZone( aWorld, zone, boardOutline );
