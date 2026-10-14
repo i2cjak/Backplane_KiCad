@@ -144,7 +144,7 @@ jobs:
             libx11-xcb-dev libxkbcommon-x11-dev libyaml-cpp-dev \
             libzstd-dev mesa-common-dev pax-utils protobuf-compiler \
             python3 python3-venv rapidjson-dev shared-mime-info unixodbc-dev \
-            zlib1g-dev libzint-dev
+            zlib1g-dev libzint-dev glslang-tools spirv-tools
 
       - name: Restore compiler cache
         id: compiler-cache
