@@ -150,6 +150,9 @@
 #include <paths.h>
 #include <streamwrapper.h>
 #include <tools/zone_filler_tool.h>
+#include <jobs/job_pcb_structure.h>
+#include <exporters/step/exporter_step.h>
+#include <exporters/board_structure_fabrication.h>
 
 #include <locale_io.h>
 #include <confirm.h>
@@ -183,6 +186,9 @@ PCBNEW_JOBS_HANDLER::PCBNEW_JOBS_HANDLER( KIWAY* aKiway ) :
 
                   return dlg.ShowModal() == wxID_OK;
               } );
+    Register( "pcb_structure", std::bind( &PCBNEW_JOBS_HANDLER::JobBoardStructure,
+                                           this, std::placeholders::_1 ),
+              []( JOB*, wxWindow* ) { return true; } );
     Register( "3d", std::bind( &PCBNEW_JOBS_HANDLER::JobExportStep, this, std::placeholders::_1 ),
               [aKiway]( JOB* job, wxWindow* aParent ) -> bool
               {
@@ -685,6 +691,29 @@ LSEQ PCBNEW_JOBS_HANDLER::convertLayerArg( wxString& aLayerString, BOARD* aBoard
     return layerMask;
 }
 
+
+int PCBNEW_JOBS_HANDLER::JobBoardStructure( JOB* aJob )
+{
+    auto* job = dynamic_cast<JOB_PCB_STRUCTURE*>( aJob );
+    if( !job )
+        return CLI::EXIT_CODES::ERR_UNKNOWN;
+    BOARD* board = getBoard( job->filename );
+    if( !board )
+        return CLI::EXIT_CODES::ERR_INVALID_INPUT_FILE;
+    const auto result = board->GetBoardStructure().Validate();
+    for( const auto& error : result.errors )
+        m_reporter->Report( wxString::FromUTF8( error ), RPT_SEVERITY_ERROR );
+    for( const auto& warning : result.warnings )
+        m_reporter->Report( wxString::FromUTF8( warning ), RPT_SEVERITY_WARNING );
+    if( !result.IsValid() )
+        return CLI::EXIT_CODES::ERR_RC_VIOLATIONS;
+    if( job->exportFabrication
+        && !ExportBoardStructureFabrication( *board, job->GetConfiguredOutputPath(),
+                                             VECTOR2I( 0, 0 ), *m_reporter ) )
+        return CLI::EXIT_CODES::ERR_INVALID_OUTPUT_CONFLICT;
+    m_reporter->Report( _( "Board structure validation passed" ), RPT_SEVERITY_INFO );
+    return CLI::EXIT_CODES::OK;
+}
 
 int PCBNEW_JOBS_HANDLER::JobExportBom( JOB* aJob )
 {
@@ -1898,6 +1927,16 @@ int PCBNEW_JOBS_HANDLER::JobExportGerbers( JOB* aJob )
         PCB_PLOTTER::BuildPlotFileName( &fn, outPath, wxT( "job" ), FILEEXT::GerberJobFileExtension );
         jobfile_writer.CreateJobFile( fn.GetFullPath() );
         aJob->AddOutput( fn.GetFullPath() );
+    }
+
+    if( exitCode == CLI::EXIT_CODES::OK && !brd->GetBoardStructure().Empty() )
+    {
+        PCB_PLOT_PARAMS structureOptions;
+        PCB_PLOTTER::PlotJobToPlotOpts( structureOptions, aGerberJob, *m_reporter );
+        const VECTOR2I origin = structureOptions.GetUseAuxOrigin()
+                ? brd->GetDesignSettings().GetAuxOrigin() : VECTOR2I( 0, 0 );
+        if( !ExportBoardStructureFabrication( *brd, outPath, origin, *m_reporter ) )
+            return CLI::EXIT_CODES::ERR_INVALID_OUTPUT_CONFLICT;
     }
 
     return exitCode;

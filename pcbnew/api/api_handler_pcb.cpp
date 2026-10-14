@@ -120,6 +120,25 @@ API_HANDLER_PCB::API_HANDLER_PCB( PCB_EDIT_FRAME* aFrame ) :
 API_HANDLER_PCB::API_HANDLER_PCB( std::shared_ptr<PCB_CONTEXT> aContext, PCB_EDIT_FRAME* aFrame ) :
         API_HANDLER_BOARD( std::move( aContext ), aFrame )
 {
+    registerHandler<kiapi::backplane::GetBoardStructure, kiapi::backplane::BoardStructureResponse>(
+            &API_HANDLER_PCB::handleGetBoardStructure );
+    registerHandler<kiapi::backplane::SetBoardStructure, kiapi::backplane::BoardStructureResponse>(
+            &API_HANDLER_PCB::handleSetBoardStructure );
+    registerHandler<kiapi::backplane::ValidateBoardStructure, kiapi::backplane::BoardStructureResponse>(
+            &API_HANDLER_PCB::handleValidateBoardStructure );
+    registerHandler<kiapi::backplane::GetViewerConstructionState, kiapi::backplane::ViewerConstructionStateResponse>(
+            &API_HANDLER_PCB::handleGetViewerConstructionState );
+    registerHandler<kiapi::backplane::SetViewerConstructionState, kiapi::backplane::ViewerConstructionStateResponse>(
+            &API_HANDLER_PCB::handleSetViewerConstructionState );
+    registerHandler<kiapi::backplane::GetConstructionLayerState, kiapi::backplane::ConstructionLayerStateResponse>(
+            &API_HANDLER_PCB::handleGetConstructionLayerState );
+    registerHandler<kiapi::backplane::SetConstructionLayerState, kiapi::backplane::ConstructionLayerStateResponse>(
+            &API_HANDLER_PCB::handleSetConstructionLayerState );
+    registerHandler<kiapi::backplane::DeriveBoardStructurePartition, kiapi::backplane::BoardStructureResponse>(
+            &API_HANDLER_PCB::handleDeriveBoardStructurePartition );
+    registerHandler<kiapi::backplane::RunBoardStructureExport3D, types::RunJobResponse>(
+            &API_HANDLER_PCB::handleRunBoardStructureExport3D );
+
     registerHandler<GetOpenDocuments, GetOpenDocumentsResponse>(
             &API_HANDLER_PCB::handleGetOpenDocuments );
     registerHandler<SaveDocument, Empty>( &API_HANDLER_PCB::handleSaveDocument );
@@ -2319,55 +2338,70 @@ HANDLER_RESULT<types::RunJobResponse> ExecuteBoardJob( PCB_CONTEXT* aContext, JO
 HANDLER_RESULT<types::RunJobResponse> API_HANDLER_PCB::handleRunBoardJobExport3D(
         const HANDLER_CONTEXT<RunBoardJobExport3D>& aCtx )
 {
-    if( HANDLER_RESULT<bool> validation = validateDocument( aCtx.Request.job_settings().document() ); !validation )
+    return runBoardJobExport3D( aCtx.Request, false );
+}
+
+
+HANDLER_RESULT<types::RunJobResponse> API_HANDLER_PCB::handleRunBoardStructureExport3D(
+        const HANDLER_CONTEXT<kiapi::backplane::RunBoardStructureExport3D>& aCtx )
+{
+    return runBoardJobExport3D( aCtx.Request.job(), aCtx.Request.folded() );
+}
+
+
+HANDLER_RESULT<types::RunJobResponse> API_HANDLER_PCB::runBoardJobExport3D(
+        const RunBoardJobExport3D& aRequest, bool aFolded )
+{
+    if( HANDLER_RESULT<bool> validation = validateDocument( aRequest.job_settings().document() ); !validation )
         return tl::unexpected( validation.error() );
 
     if( std::optional<ApiResponseStatus> busy = checkForBusy() )
         return tl::unexpected( *busy );
 
     JOB_EXPORT_PCB_3D job;
+    job.m_3dparams.m_Folded = aFolded;
     job.m_filename = pcbContext()->GetCurrentFileName();
-    job.SetConfiguredOutputPath( wxString::FromUTF8( aCtx.Request.job_settings().output_path() ) );
+    job.SetConfiguredOutputPath( wxString::FromUTF8( aRequest.job_settings().output_path() ) );
 
-    job.m_format = FromProtoEnum<JOB_EXPORT_PCB_3D::FORMAT>( aCtx.Request.format() );
+    job.m_format = FromProtoEnum<JOB_EXPORT_PCB_3D::FORMAT>( aRequest.format() );
 
-    job.m_variant = wxString::FromUTF8( aCtx.Request.variant() );
-    job.m_3dparams.m_NetFilter = wxString::FromUTF8( aCtx.Request.net_filter() );
-    job.m_3dparams.m_ComponentFilter = wxString::FromUTF8( aCtx.Request.component_filter() );
+    job.m_variant = wxString::FromUTF8( aRequest.variant() );
+    job.m_3dparams.m_NetFilter = wxString::FromUTF8( aRequest.net_filter() );
+    job.m_3dparams.m_ComponentFilter = wxString::FromUTF8( aRequest.component_filter() );
 
-    job.m_hasUserOrigin = aCtx.Request.has_user_origin();
-    job.m_3dparams.m_Origin = VECTOR2D( aCtx.Request.origin().x_nm(), aCtx.Request.origin().y_nm() );
+    job.m_hasUserOrigin = aRequest.has_user_origin();
+    job.m_3dparams.m_Origin = VECTOR2D( aRequest.origin().x_nm(), aRequest.origin().y_nm() );
 
-    job.m_3dparams.m_Overwrite = aCtx.Request.overwrite();
-    job.m_3dparams.m_UseGridOrigin = aCtx.Request.use_grid_origin();
-    job.m_3dparams.m_UseDrillOrigin = aCtx.Request.use_drill_origin();
-    job.m_3dparams.m_UseDefinedOrigin = aCtx.Request.use_defined_origin() || aCtx.Request.has_user_origin();
-    job.m_3dparams.m_UsePcbCenterOrigin = aCtx.Request.use_pcb_center_origin();
+    job.m_3dparams.m_Overwrite = aRequest.overwrite();
+    job.m_3dparams.m_UseGridOrigin = aRequest.use_grid_origin();
+    job.m_3dparams.m_UseDrillOrigin = aRequest.use_drill_origin();
+    job.m_3dparams.m_UseDefinedOrigin = aRequest.use_defined_origin() || aRequest.has_user_origin();
+    job.m_3dparams.m_UsePcbCenterOrigin = aRequest.use_pcb_center_origin();
 
-    job.m_3dparams.m_IncludeUnspecified = aCtx.Request.include_unspecified();
-    job.m_3dparams.m_IncludeDNP = aCtx.Request.include_dnp();
-    job.m_3dparams.m_SubstModels = aCtx.Request.substitute_models();
+    job.m_3dparams.m_IncludeUnspecified = aRequest.include_unspecified();
+    job.m_3dparams.m_IncludeDNP = aRequest.include_dnp();
+    job.m_3dparams.m_SubstModels = aRequest.substitute_models();
 
-    job.m_3dparams.m_BoardOutlinesChainingEpsilon = aCtx.Request.board_outlines_chaining_epsilon();
-    job.m_3dparams.m_BoardOnly = aCtx.Request.board_only();
-    job.m_3dparams.m_CutViasInBody = aCtx.Request.cut_vias_in_body();
-    job.m_3dparams.m_ExportBoardBody = aCtx.Request.export_board_body();
-    job.m_3dparams.m_ExportComponents = aCtx.Request.export_components();
-    job.m_3dparams.m_ExportTracksVias = aCtx.Request.export_tracks_and_vias();
-    job.m_3dparams.m_ExportPads = aCtx.Request.export_pads();
-    job.m_3dparams.m_ExportZones = aCtx.Request.export_zones();
-    job.m_3dparams.m_ExportInnerCopper = aCtx.Request.export_inner_copper();
-    job.m_3dparams.m_ExportSilkscreen = aCtx.Request.export_silkscreen();
-    job.m_3dparams.m_ExportSoldermask = aCtx.Request.export_soldermask();
-    job.m_3dparams.m_FuseShapes = aCtx.Request.fuse_shapes();
-    job.m_3dparams.m_FillAllVias = aCtx.Request.fill_all_vias();
-    job.m_3dparams.m_OptimizeStep = aCtx.Request.optimize_step();
-    job.m_3dparams.m_ExtraPadThickness = aCtx.Request.extra_pad_thickness();
+    job.m_3dparams.m_BoardOutlinesChainingEpsilon = aRequest.board_outlines_chaining_epsilon();
+    job.m_3dparams.m_BoardOnly = aRequest.board_only();
+    job.m_3dparams.m_CutViasInBody = aRequest.cut_vias_in_body();
+    job.m_3dparams.m_ExportBoardBody = aRequest.export_board_body();
+    job.m_3dparams.m_ExportComponents = aRequest.export_components();
+    job.m_3dparams.m_ExportTracksVias = aRequest.export_tracks_and_vias();
+    job.m_3dparams.m_ExportPads = aRequest.export_pads();
+    job.m_3dparams.m_ExportZones = aRequest.export_zones();
+    job.m_3dparams.m_ExportInnerCopper = aRequest.export_inner_copper();
+    job.m_3dparams.m_ExportSilkscreen = aRequest.export_silkscreen();
+    job.m_3dparams.m_ExportSoldermask = aRequest.export_soldermask();
+    job.m_3dparams.m_FuseShapes = aRequest.fuse_shapes();
+    job.m_3dparams.m_FillAllVias = aRequest.fill_all_vias();
+    job.m_3dparams.m_OptimizeStep = aRequest.optimize_step();
+    job.m_3dparams.m_ExtraPadThickness = aRequest.extra_pad_thickness();
 
-    job.m_vrmlUnits = FromProtoEnum<JOB_EXPORT_PCB_3D::VRML_UNITS>( aCtx.Request.vrml_units() );
+    job.m_vrmlUnits = FromProtoEnum<JOB_EXPORT_PCB_3D::VRML_UNITS>( aRequest.vrml_units() );
 
-    job.m_vrmlModelDir = wxString::FromUTF8( aCtx.Request.vrml_model_dir() );
-    job.m_vrmlRelativePaths = aCtx.Request.vrml_relative_paths();
+    job.m_vrmlModelDir = wxString::FromUTF8( aRequest.vrml_model_dir() );
+    job.m_vrmlRelativePaths = aRequest.vrml_relative_paths();
 
     return ExecuteBoardJob( pcbContext(), job );
 }

@@ -1,0 +1,103 @@
+/*
+ * Board construction and rigid-flex commands.
+ *
+ * The physical construction is intentionally carried as JSON.  This keeps
+ * the IPC contract aligned with the companion-file schema while allowing the
+ * schema to evolve independently of the native KiCad board format.
+ */
+syntax = "proto3";
+
+package kiapi.backplane;
+
+import "common/types/base_types.proto";
+import "board/board_jobs.proto";
+
+message GetBoardStructure
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+}
+
+message BoardStructureResponse
+{
+  // Canonical board_structure object, without the companion-file wrapper.
+  string json = 1;
+  bool valid = 2;
+  repeated string errors = 3;
+  repeated string warnings = 4;
+}
+
+message SetBoardStructure
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+
+  // Canonical board_structure object, without the companion-file wrapper.
+  string json = 2;
+
+  // Validate and return the normalized structure without changing the board.
+  bool validate_only = 3;
+}
+
+message ValidateBoardStructure
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+  string json = 2;
+}
+
+message GetViewerConstructionState
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+}
+
+message SetViewerConstructionState
+{
+  kiapi.common.types.DocumentSpecifier board = 1;
+  bool construction_view = 2;
+  bool folded_view = 3;
+  bool open_if_needed = 4;
+}
+
+message ViewerConstructionStateResponse
+{
+  bool viewer_open = 1;
+  bool construction_view = 2;
+  bool folded_view = 3;
+}
+
+// Construction layer identity is separate from native PCB copper-layer IDs.
+enum ConstructionLayer {
+  CL_NONE = 0;
+  CL_STACKUP_BOUNDARY = 1;
+  CL_BEND = 2;
+  CL_F_STIFFENER = 3;
+  CL_B_STIFFENER = 4;
+}
+message GetConstructionLayerState {
+  kiapi.common.types.DocumentSpecifier board = 1;
+}
+message SetConstructionLayerState {
+  kiapi.common.types.DocumentSpecifier board = 1;
+  optional ConstructionLayer active_layer = 2;
+  repeated ConstructionLayerVisibility visibility = 3;
+}
+message ConstructionLayerVisibility {
+  ConstructionLayer layer = 1;
+  bool visible = 2;
+}
+message ConstructionLayerStateResponse {
+  ConstructionLayer active_layer = 1;
+  repeated ConstructionLayerVisibility visibility = 2;
+}
+// Rebuilds regional polygons from Edge.Cuts and boundary records atomically.
+message DeriveBoardStructurePartition {
+  kiapi.common.types.DocumentSpecifier board = 1;
+  // Empty uses the current structure; otherwise a candidate structure object.
+  string json = 2;
+  bool validate_only = 3;
+}
+
+// Fork options wrap the unchanged upstream job message instead of extending it.
+// Returns kiapi.common.types.RunJobResponse, like the upstream export command.
+message RunBoardStructureExport3D {
+  kiapi.board.jobs.RunBoardJobExport3D job = 1;
+  bool folded = 2;
+}

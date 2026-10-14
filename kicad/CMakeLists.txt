@@ -66,6 +66,7 @@ set( KICAD_CLI_SRCS
     cli/command_jobset_run.cpp
     cli/command_pcb_export_base.cpp
     cli/command_pcb_diff.cpp
+    cli/command_pcb_structure.cpp
     cli/command_pcb_drc.cpp
     cli/command_mergetool.cpp
     cli/command_git_mergedriver.cpp

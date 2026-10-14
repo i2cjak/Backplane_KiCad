@@ -295,6 +295,7 @@ set( PCBNEW_EXPORTERS
     exporters/export_gencad.cpp
     exporters/export_gencad_writer.cpp
     exporters/export_idf.cpp
+    exporters/board_structure_fabrication.cpp
     exporters/step/exporter_step.cpp
     exporters/step/glb_utils.cpp
     exporters/step/kicad3d_info.cpp
@@ -503,6 +504,7 @@ set( PCBNEW_CLASS_SRCS
     api/api_handler_board.cpp
     api/api_handler_fp_libraries.cpp
     api/api_handler_footprint.cpp
+    api/api_pcb_structure.cpp
     api/api_handler_pcb.cpp
     api/api_pcb_sketch_route.cpp
     api/footprint_context.cpp

@@ -19,6 +19,7 @@
 
 #include "dialog_plot.h"
 
+#include <exporters/board_structure_fabrication.h>
 #include <wx/bmpbuttn.h>
 #include <wx/clntdata.h>
 #include <wx/dirdlg.h>
@@ -1324,6 +1325,15 @@ void DIALOG_PLOT::Plot( wxCommandEvent& event )
         }
 
         pcbPlotter.Plot( outputDir.GetPath(), layersToPlot, commonLayers, m_useGerberExtensions->GetValue() );
+        if( getPlotFormat() == PLOT_FORMAT::GERBER )
+        {
+            const VECTOR2I origin = m_plotOpts.GetUseAuxOrigin()
+                    ? m_editFrame->GetBoard()->GetDesignSettings().GetAuxOrigin() : VECTOR2I();
+            if( !ExportBoardStructureFabrication( *m_editFrame->GetBoard(),
+                                                  outputDir.GetPath(), origin, reporter ) )
+                reporter.Report( _( "Board construction export failed." ), RPT_SEVERITY_ERROR );
+        }
+
 
         board->SetCurrentVariant( oldVariant );
     }

@@ -23,6 +23,7 @@
 
 #include <api/api_handler_board.h>
 #include <api/pcb_context.h>
+#include <api/backplane/structure.pb.h>
 #include <api/backplane/sketch_route.pb.h>
 #include <api/board/board_jobs.pb.h>
 #include <api/common/commands/cross_probe_commands.pb.h>
@@ -54,6 +55,27 @@ public:
     API_HANDLER_PCB( std::shared_ptr<PCB_CONTEXT> aContext, PCB_EDIT_FRAME* aFrame = nullptr );
 
 private:
+    HANDLER_RESULT<kiapi::backplane::BoardStructureResponse> handleGetBoardStructure(
+            const HANDLER_CONTEXT<kiapi::backplane::GetBoardStructure>& aCtx );
+    HANDLER_RESULT<kiapi::backplane::BoardStructureResponse> handleSetBoardStructure(
+            const HANDLER_CONTEXT<kiapi::backplane::SetBoardStructure>& aCtx );
+    HANDLER_RESULT<kiapi::backplane::BoardStructureResponse> handleValidateBoardStructure(
+            const HANDLER_CONTEXT<kiapi::backplane::ValidateBoardStructure>& aCtx );
+    HANDLER_RESULT<kiapi::backplane::ViewerConstructionStateResponse> handleGetViewerConstructionState(
+            const HANDLER_CONTEXT<kiapi::backplane::GetViewerConstructionState>& aCtx );
+    HANDLER_RESULT<kiapi::backplane::ViewerConstructionStateResponse> handleSetViewerConstructionState(
+            const HANDLER_CONTEXT<kiapi::backplane::SetViewerConstructionState>& aCtx );
+    HANDLER_RESULT<kiapi::backplane::ConstructionLayerStateResponse> handleGetConstructionLayerState(
+            const HANDLER_CONTEXT<kiapi::backplane::GetConstructionLayerState>& aCtx );
+    HANDLER_RESULT<kiapi::backplane::ConstructionLayerStateResponse> handleSetConstructionLayerState(
+            const HANDLER_CONTEXT<kiapi::backplane::SetConstructionLayerState>& aCtx );
+    HANDLER_RESULT<kiapi::backplane::BoardStructureResponse> handleDeriveBoardStructurePartition(
+            const HANDLER_CONTEXT<kiapi::backplane::DeriveBoardStructurePartition>& aCtx );
+    HANDLER_RESULT<types::RunJobResponse> handleRunBoardStructureExport3D(
+            const HANDLER_CONTEXT<kiapi::backplane::RunBoardStructureExport3D>& aCtx );
+    HANDLER_RESULT<types::RunJobResponse> runBoardJobExport3D(
+            const RunBoardJobExport3D& aRequest, bool aFolded );
+
     typedef std::map<std::string, PROPERTY_BASE*> PROTO_PROPERTY_MAP;
 
     HANDLER_RESULT<commands::GetOpenDocumentsResponse> handleGetOpenDocuments(

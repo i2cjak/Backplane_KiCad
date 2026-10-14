@@ -51,6 +51,7 @@
 #include "cli/command_jobset.h"
 #include "cli/command_jobset_run.h"
 #include "cli/command_pcb.h"
+#include "cli/command_pcb_structure.h"
 #include "cli/command_pcb_export.h"
 #include "cli/command_export_bom.h"
 #include "cli/command_fp_diff.h"
@@ -149,6 +150,7 @@ static CLI::JOBSET_COMMAND               jobsetCmd{};
 static CLI::JOBSET_RUN_COMMAND           jobsetRunCmd{};
 static CLI::PCB_COMMAND                  pcbCmd{};
 static CLI::PCB_DIFF_COMMAND             pcbDiffCmd{};
+static CLI::PCB_STRUCTURE_COMMAND        pcbStructureCmd{};
 static CLI::PCB_DRC_COMMAND              pcbDrcCmd{};
 static CLI::MERGETOOL_COMMAND            mergetoolCmd{};
 static CLI::GIT_MERGEDRIVER_COMMAND      gitMergeDriverCmd{};
@@ -272,6 +274,9 @@ static std::vector<COMMAND_ENTRY> commandStack = {
             },
             {
                 &pcbDrcCmd
+            },
+            {
+                &pcbStructureCmd
             },
             {
                 &pcbImportCmd

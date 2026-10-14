@@ -68,3 +68,15 @@ Set `KICAD_KIFACE_HOME` to the directory containing the runtime's `.kiface`
 plugins. Set `KICAD_STOCK_PLUGIN_HOME` to the runtime's stock plugin directory.
 These explicit paths take precedence over the normal executable/AppImage
 discovery paths and allow a bundled runtime to be relocated safely.
+
+## Board structure capability
+
+`board-structure` advertises the fork commands in `kiapi.backplane`:
+Get/Set/ValidateBoardStructure, DeriveBoardStructurePartition,
+Get/SetViewerConstructionState, Get/SetConstructionLayerState, and
+RunBoardStructureExport3D (wraps the upstream 3D job with a `folded` option).
+Structure get/set/validation, partition derivation and exports work through the
+same PCB handler in GUI and headless `api-server` contexts. Construction-layer
+and native viewer controls require a GUI PCB editor. No upstream proto is extended.
+Legacy v1 companions migrate item properties/endings into master native files;
+v2 companions retain only fork extensions. Keep the companion beside the board.
