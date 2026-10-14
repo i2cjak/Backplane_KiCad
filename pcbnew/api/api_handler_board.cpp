@@ -248,7 +248,22 @@ void API_HANDLER_BOARD::deleteItemsInternal( std::map<KIID, ItemDeletionStatus>&
 
     for( BOARD_ITEM* item : validatedItems )
     {
-        if( item->Type() == PCB_TABLECELL_T )
+        if( item->Type() == PCB_FIELD_T && !static_cast<PCB_FIELD*>( item )->IsMandatory()
+            && item->GetParentFootprint() )
+        {
+            FOOTPRINT* parentFootprint = item->GetParentFootprint();
+            commit->Modify( parentFootprint );
+
+            if( PCB_SELECTION_TOOL* selectionTool = toolManager()->GetTool<PCB_SELECTION_TOOL>() )
+                selectionTool->RemoveItemFromSel( item, true /* quiet */ );
+
+            if( KIGFX::VIEW* view = toolManager()->GetView() )
+                view->Remove( item );
+
+            parentFootprint->Remove( item );
+            delete item;
+        }
+        else if( item->Type() == PCB_TABLECELL_T )
         {
             // Cells are owned by their table; the commit removal path doesn't handle them.
             // Match the GUI delete: clear the cell contents (generated-table cells have no user text).
@@ -604,7 +619,23 @@ HANDLER_RESULT<ItemRequestStatus> API_HANDLER_BOARD::handleCreateUpdateItemsInte
 
                 BOARD_ITEM* newBoardItem = item.get();
                 item->Serialize( newItem );
-                commit->Add( item.release() );
+
+                // BOARD_COMMIT records footprint children at the parent-footprint undo level in
+                // the board editor.  Insert a child into that parent explicitly or the commit
+                // contains only a parent image and the created child is lost from the footprint.
+                if( FOOTPRINT* parentFootprint = item->GetParentFootprint() )
+                {
+                    commit->Modify( parentFootprint );
+                    BOARD_ITEM* child = item.release();
+                    parentFootprint->Add( child );
+
+                    if( KIGFX::VIEW* view = toolManager()->GetView() )
+                        view->Add( child );
+                }
+                else
+                {
+                    commit->Add( item.release() );
+                }
 
                 if( newBoardItem->Type() == PCB_GENERATOR_T )
                 {
