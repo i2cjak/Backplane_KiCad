@@ -1262,6 +1262,7 @@ void BOARD_DESIGN_SETTINGS::initFromOther( const BOARD_DESIGN_SETTINGS& aOther )
     m_MinSilkTextThickness        = aOther.m_MinSilkTextThickness;
     m_DRCSeverities               = aOther.m_DRCSeverities;
     m_DrcExclusions               = aOther.m_DrcExclusions;
+    m_TeardropParamsList          = aOther.m_TeardropParamsList;
     m_ZoneKeepExternalFillets     = aOther.m_ZoneKeepExternalFillets;
     m_MaxError                    = aOther.m_MaxError;
     m_SolderMaskExpansion         = aOther.m_SolderMaskExpansion;
