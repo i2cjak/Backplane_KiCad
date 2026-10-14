@@ -33,6 +33,7 @@ FIXTURE_HASHES = {
 SHAPE_ID = "ab000000-0000-4000-8000-000000000001"
 PROPERTY = "Backplane migration probe"
 ROOT_PROPERTY = "Backplane root migration probe"
+PROJECT_PROPERTY = "Backplane project precedence probe"
 ENDING = {"style": 1, "length": 700000, "width": 400000,
           "stroke_width": 100000, "stroke_style": 0,
           "stroke_color": [0.2, 0.3, 0.4, 1.0]}
@@ -75,13 +76,18 @@ def inject_legacy_items(path):
     path.write_text(text[:at] + segment + text[at:])
     data = json.loads(companion(path).read_text())
     assert data["version"] == 1
-    data["items"]["root"]["custom_properties"] = {ROOT_PROPERTY: "legacy-root"}
+    data["items"]["root"]["custom_properties"] = {
+        ROOT_PROPERTY: "legacy-root", PROJECT_PROPERTY: "stale-companion"}
     data["items"][SHAPE_ID] = {
         "custom_properties": {PROPERTY: "legacy-v1"},
         "start_ending": ENDING,
         "end_ending": {**ENDING, "style": 4},
     }
     companion(path).write_text(json.dumps(data, indent=2) + "\n")
+    project_path = path.with_suffix(".kicad_pro")
+    project = json.loads(project_path.read_text())
+    project.setdefault("text_variables", {})[PROJECT_PROPERTY] = "native-project"
+    project_path.write_text(json.dumps(project, indent=2) + "\n")
 
 
 def fetch_probe(session, document):
@@ -143,6 +149,9 @@ def main():
                 if probe:
                     assert "(custom_property" in native and PROPERTY in native, path
                     assert f'(property "{ROOT_PROPERTY}" "legacy-root")' in native, path
+                    assert f'(property "{PROJECT_PROPERTY}" "native-project")' in native, path
+                    saved_project = json.loads(path.with_suffix(".kicad_pro").read_text())
+                    assert saved_project["text_variables"][ROOT_PROPERTY] == "legacy-root", path
                     assert "(start_shape" in native and "(end_shape" in native, path
                     # SaveCopyOfDocument must serialize the live extension at its destination.
                     copy_path = session.root / ("copy-" + path.name)
@@ -150,6 +159,7 @@ def main():
                     session.request(editor.SaveCopyOfDocument(
                         document=document, path=str(copy_path)), Empty)
                     verify_v2(copy_path, structure)
+                    assert f'(property "{ROOT_PROPERTY}" "legacy-root")' in copy_path.read_text(), copy_path
                 bp.close(document)
                 # Downgrade must preserve the v2 companion outside the source project.
                 export_dir = session.root / "v10-exports" / (path.stem + ("-probe" if probe else ""))
@@ -190,6 +200,27 @@ def main():
                     fetch_probe(session, document)
                     assert not json.loads(bp.json_get("GetBoardStructure", "BoardStructureResponse", document).json)["regions"]
                 bp.close(document)
+                if probe:
+                    # Once migrated, project edits and deletions must replace the
+                    # board's native property cache, without resurrecting legacy data.
+                    project_path = path.with_suffix(".kicad_pro")
+                    for value in ("edited-project", None):
+                        project_data = json.loads(project_path.read_text())
+                        if value is None:
+                            del project_data["text_variables"][ROOT_PROPERTY]
+                        else:
+                            project_data["text_variables"][ROOT_PROPERTY] = value
+                        project_path.write_text(json.dumps(project_data, indent=2) + "\n")
+                        document = session.request(project.OpenDocument(type=types.DOCTYPE_PCB, path=str(path)),
+                                                   project.OpenDocumentResponse).document
+                        session.request(project.SaveDocument(document=document), Empty)
+                        native = path.read_text()
+                        if value is None:
+                            assert ROOT_PROPERTY not in native, path
+                        else:
+                            assert f'(property "{ROOT_PROPERTY}" "{value}")' in native, path
+                        assert f'(property "{PROJECT_PROPERTY}" "native-project")' in native, path
+                        bp.close(document)
             print(f"PASS {board_path.stem}: v1 -> native master + v2; copy/downgrade/reopen; item precedence/deletion",
                   flush=True)
     for name, expected in FIXTURE_HASHES.items():

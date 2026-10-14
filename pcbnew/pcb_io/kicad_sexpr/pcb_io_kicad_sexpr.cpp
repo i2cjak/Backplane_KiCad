@@ -62,6 +62,7 @@
 #include <pcbnew_settings.h>
 #include <pgm_base.h>
 #include <progress_reporter.h>
+#include <project.h>
 #include <reporter.h>
 #include <string_utils.h>
 #include <trace_helpers.h>
@@ -3798,7 +3799,6 @@ void PCB_IO_KICAD_SEXPR::loadBoard( const wxString& aFileName, BOARD& aBoard, bo
         for( const auto& [name, value] : aBoard.GetCustomProperties() )
             properties.try_emplace( name, value );
         aBoard.SetProperties( properties );
-        aBoard.ClearCustomProperties();
         const auto structure = metadata.ReadExtension( wxS( "root" ), "board_structure" );
 
         try
@@ -3847,6 +3847,18 @@ void PCB_IO_KICAD_SEXPR::loadBoard( const wxString& aFileName, BOARD& aBoard, bo
                 }
             }
         }, RECURSE_MODE::RECURSE );
+
+        // Native board properties cache project text variables.  Save and GUI
+        // refresh call SynchronizeProperties(), replacing that cache.  Seed
+        // only the migrated root keys into the authoritative project map so
+        // they survive synchronization, without overriding project values.
+        if( aProject && !aProject->IsNullProject() )
+        {
+            for( const auto& [name, value] : aBoard.GetCustomProperties() )
+                aProject->GetTextVars().try_emplace( name, properties.at( name ) );
+        }
+
+        aBoard.ClearCustomProperties();
     }
 }
 
