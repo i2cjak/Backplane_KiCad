@@ -1,0 +1,105 @@
+/*
+ * Backplane multi-board assembly commands.
+ *
+ * Assembly metadata is carried in host-local .backplane-assembly.json files;
+ * these commands do not add fork-only fields to native PCB files.
+ */
+syntax = "proto3";
+
+package kiapi.backplane;
+
+import "common/types/base_types.proto";
+
+message ListAssemblyComponents
+{
+  string path = 1;
+  string manifest_json = 2;
+  string instance_id = 3;
+  kiapi.common.types.DocumentSpecifier document = 4;
+}
+
+message MoveAssemblyComponent
+{
+  string path = 1;
+  string manifest_json = 2;
+  string instance_id = 3;
+  string reference = 4;
+  optional double x_mm = 5;
+  optional double y_mm = 6;
+  optional double rotation_deg = 7;
+  kiapi.common.types.DocumentSpecifier document = 8;
+}
+
+message SyncAssemblyElectrical
+{
+  string path = 1;
+  string manifest_json = 2;
+  bool save_snapshot = 3;
+  kiapi.common.types.DocumentSpecifier document = 4;
+}
+
+message AssemblyResponse
+{
+  kiapi.common.types.CommandStatus status = 1;
+  string path = 2;
+  string manifest_json = 3;
+  repeated AssemblyCollision collisions = 4;
+  string error_message = 5;
+  string result_json = 6;
+}
+
+message AssemblyCollision
+{
+  string first = 1;
+  string second = 2;
+  double clearance_mm = 3;
+}
+
+message GetAssembly
+{
+  string path = 1;
+  string manifest_json = 2;
+}
+
+message SaveAssembly
+{
+  string path = 1;
+  string manifest_json = 2;
+}
+
+message ResolveAssemblyMates
+{
+  string path = 1;
+  string manifest_json = 2;
+}
+
+message CheckAssemblyCollisions
+{
+  string path = 1;
+  string manifest_json = 2;
+}
+
+message ExportAssemblyStep
+{
+  string path = 1;
+  string manifest_json = 2;
+  string output_path = 3;
+}
+
+// GUI workspace commands. They return AS_UNIMPLEMENTED in headless mode.
+message OpenAssemblyTab
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+  string path = 2;
+}
+
+message ListAssemblyTabs
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+}
+
+message ShowAssembly3D
+{
+  kiapi.common.types.DocumentSpecifier document = 1;
+  uint32 tab_index = 2;
+}

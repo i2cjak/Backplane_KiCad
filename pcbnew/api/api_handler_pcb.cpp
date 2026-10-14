@@ -170,6 +170,28 @@ API_HANDLER_PCB::API_HANDLER_PCB( std::shared_ptr<PCB_CONTEXT> aContext, PCB_EDI
     registerHandler<RefillZones, Empty>( &API_HANDLER_PCB::handleRefillZones );
     registerHandler<kiapi::backplane::SketchRoute, kiapi::backplane::SketchRouteResponse>(
             &API_HANDLER_PCB::handleSketchRoute );
+    registerHandler<kiapi::backplane::ListAssemblyComponents, kiapi::backplane::AssemblyResponse>(
+            &API_HANDLER_PCB::handleListAssemblyComponents );
+    registerHandler<kiapi::backplane::MoveAssemblyComponent, kiapi::backplane::AssemblyResponse>(
+            &API_HANDLER_PCB::handleMoveAssemblyComponent );
+    registerHandler<kiapi::backplane::SyncAssemblyElectrical, kiapi::backplane::AssemblyResponse>(
+            &API_HANDLER_PCB::handleSyncAssemblyElectrical );
+    registerHandler<kiapi::backplane::OpenAssemblyTab, kiapi::backplane::AssemblyResponse>(
+            &API_HANDLER_PCB::handleOpenAssemblyTab );
+    registerHandler<kiapi::backplane::ListAssemblyTabs, kiapi::backplane::AssemblyResponse>(
+            &API_HANDLER_PCB::handleListAssemblyTabs );
+    registerHandler<kiapi::backplane::ShowAssembly3D, kiapi::backplane::AssemblyResponse>(
+            &API_HANDLER_PCB::handleShowAssembly3D );
+    registerHandler<kiapi::backplane::GetAssembly, kiapi::backplane::AssemblyResponse>(
+            &API_HANDLER_PCB::handleGetAssembly );
+    registerHandler<kiapi::backplane::SaveAssembly, kiapi::backplane::AssemblyResponse>(
+            &API_HANDLER_PCB::handleSaveAssembly );
+    registerHandler<kiapi::backplane::ResolveAssemblyMates, kiapi::backplane::AssemblyResponse>(
+            &API_HANDLER_PCB::handleResolveAssemblyMates );
+    registerHandler<kiapi::backplane::CheckAssemblyCollisions, kiapi::backplane::AssemblyResponse>(
+            &API_HANDLER_PCB::handleCheckAssemblyCollisions );
+    registerHandler<kiapi::backplane::ExportAssemblyStep, kiapi::backplane::AssemblyResponse>(
+            &API_HANDLER_PCB::handleExportAssemblyStep );
     registerHandler<ImportNetlist, ImportNetlistResponse>( &API_HANDLER_PCB::handleImportNetlist );
 
     registerHandler<GetBoardEditorAppearanceSettings, BoardEditorAppearanceSettings>(

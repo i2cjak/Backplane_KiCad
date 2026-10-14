@@ -22,7 +22,7 @@
 namespace BACKPLANE
 {
 
-inline constexpr std::array<const char*, 8> CAPABILITIES = {
+inline constexpr std::array<const char*, 9> CAPABILITIES = {
     "api-server",
     "headless-pcb",
     "headless-sch",
@@ -31,6 +31,7 @@ inline constexpr std::array<const char*, 8> CAPABILITIES = {
     "capabilities",
     "sketch-route",
     "board-structure",
+    "assembly",
 };
 
 } // namespace BACKPLANE

@@ -24,6 +24,7 @@
 #include <api/api_handler_board.h>
 #include <api/pcb_context.h>
 #include <api/backplane/structure.pb.h>
+#include <api/backplane/assembly.pb.h>
 #include <api/backplane/sketch_route.pb.h>
 #include <api/board/board_jobs.pb.h>
 #include <api/common/commands/cross_probe_commands.pb.h>
@@ -146,6 +147,39 @@ private:
 
     HANDLER_RESULT<kiapi::backplane::SketchRouteResponse> handleSketchRoute(
             const HANDLER_CONTEXT<kiapi::backplane::SketchRoute>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::AssemblyResponse> handleListAssemblyComponents(
+            const HANDLER_CONTEXT<kiapi::backplane::ListAssemblyComponents>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::AssemblyResponse> handleMoveAssemblyComponent(
+            const HANDLER_CONTEXT<kiapi::backplane::MoveAssemblyComponent>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::AssemblyResponse> handleSyncAssemblyElectrical(
+            const HANDLER_CONTEXT<kiapi::backplane::SyncAssemblyElectrical>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::AssemblyResponse> handleOpenAssemblyTab(
+            const HANDLER_CONTEXT<kiapi::backplane::OpenAssemblyTab>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::AssemblyResponse> handleListAssemblyTabs(
+            const HANDLER_CONTEXT<kiapi::backplane::ListAssemblyTabs>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::AssemblyResponse> handleShowAssembly3D(
+            const HANDLER_CONTEXT<kiapi::backplane::ShowAssembly3D>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::AssemblyResponse> handleGetAssembly(
+            const HANDLER_CONTEXT<kiapi::backplane::GetAssembly>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::AssemblyResponse> handleSaveAssembly(
+            const HANDLER_CONTEXT<kiapi::backplane::SaveAssembly>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::AssemblyResponse> handleResolveAssemblyMates(
+            const HANDLER_CONTEXT<kiapi::backplane::ResolveAssemblyMates>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::AssemblyResponse> handleCheckAssemblyCollisions(
+            const HANDLER_CONTEXT<kiapi::backplane::CheckAssemblyCollisions>& aCtx );
+
+    HANDLER_RESULT<kiapi::backplane::AssemblyResponse> handleExportAssemblyStep(
+            const HANDLER_CONTEXT<kiapi::backplane::ExportAssemblyStep>& aCtx );
 
     HANDLER_RESULT<ImportNetlistResponse> handleImportNetlist(
             const HANDLER_CONTEXT<ImportNetlist>& aCtx );
