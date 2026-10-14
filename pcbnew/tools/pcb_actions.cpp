@@ -477,6 +477,75 @@ TOOL_ACTION PCB_ACTIONS::drawBezier( TOOL_ACTION_ARGS()
         .Icon( BITMAPS::add_bezier )
         .Flags( AF_ACTIVATE ) );
 
+TOOL_ACTION PCB_ACTIONS::editBoardStructureFeature( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.BoardStructure.editFeature" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Edit Structure Feature" ) )
+        .Tooltip( _( "Click a region, stiffener, or bend to edit or delete it" ) )
+        .Flags( AF_ACTIVATE ) );
+
+TOOL_ACTION PCB_ACTIONS::drawStructureBoundary( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.BoardStructure.drawBoundary" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Draw Structure Boundary" ) )
+        .Tooltip( _( "Draw an internal Edge.Cuts boundary and rebuild structure regions" ) )
+        .ToolbarState( TOOLBAR_STATE::TOGGLE )
+        .Icon( BITMAPS::add_graphical_segments )
+        .Flags( AF_ACTIVATE ) );
+
+TOOL_ACTION PCB_ACTIONS::assignStructureStack( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.BoardStructure.assignStack" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Assign Structure Stack" ) )
+        .Tooltip( _( "Assign a rigid or flex stack to the clicked structure region" ) )
+        .Flags( AF_ACTIVATE ) );
+
+TOOL_ACTION PCB_ACTIONS::editStructureBoundary( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.BoardStructure.editBoundary" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Edit Structure Boundary" ) )
+        .Tooltip( _( "Move, edit, or delete a structure boundary" ) )
+        .Flags( AF_ACTIVATE ) );
+
+TOOL_ACTION PCB_ACTIONS::drawBoardStructureRegion( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.BoardStructure.drawRegion" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Draw Board Structure Region" ) )
+        .Tooltip( _( "Draw a board-structure region on the canvas" ) )
+        .ToolbarState( TOOLBAR_STATE::TOGGLE )
+        .Icon( BITMAPS::add_graphical_polygon )
+        .Flags( AF_ACTIVATE ) );
+
+TOOL_ACTION PCB_ACTIONS::drawBoardStructureRigidRegion( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.BoardStructure.drawRigidRegion" ).Scope( AS_GLOBAL )
+        .FriendlyName( _( "Draw Rigid Board Structure Region" ) )
+        .Tooltip( _( "Draw a rigid board-structure region on the canvas" ) )
+        .Icon( BITMAPS::add_graphical_polygon ).Flags( AF_ACTIVATE ) );
+
+TOOL_ACTION PCB_ACTIONS::drawBoardStructureFlexRegion( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.BoardStructure.drawFlexRegion" ).Scope( AS_GLOBAL )
+        .FriendlyName( _( "Draw Flex Board Structure Region" ) )
+        .Tooltip( _( "Draw a flex board-structure region on the canvas" ) )
+        .Icon( BITMAPS::add_graphical_polygon ).Flags( AF_ACTIVATE ) );
+
+TOOL_ACTION PCB_ACTIONS::drawBoardStructureBend( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.BoardStructure.drawBend" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Draw Board Structure Bend" ) )
+        .Tooltip( _( "Draw a board-structure bend line on the canvas" ) )
+        .ToolbarState( TOOLBAR_STATE::TOGGLE )
+        .Icon( BITMAPS::add_graphical_segments )
+        .Flags( AF_ACTIVATE ) );
+
+TOOL_ACTION PCB_ACTIONS::drawBoardStructureStiffener( TOOL_ACTION_ARGS()
+        .Name( "pcbnew.BoardStructure.drawStiffener" )
+        .Scope( AS_GLOBAL )
+        .FriendlyName( _( "Draw Board Structure Stiffener" ) )
+        .Tooltip( _( "Draw a board-structure stiffener on the canvas" ) )
+        .ToolbarState( TOOLBAR_STATE::TOGGLE )
+        .Icon( BITMAPS::add_graphical_polygon )
+        .Flags( AF_ACTIVATE ) );
+
 TOOL_ACTION PCB_ACTIONS::placeBarcode( TOOL_ACTION_ARGS()
         .Name( "pcbnew.InteractiveDrawing.barcode" )
         .Scope( AS_GLOBAL )
@@ -1767,6 +1836,7 @@ TOOL_ACTION PCB_ACTIONS::exportSTEP( TOOL_ACTION_ARGS()
         .FriendlyName( _( "Export STEP/GLB/BREP/XAO/PLY/STL..." ) )
         .Tooltip( _( "Export STEP, GLB, BREP, XAO, PLY or STL 3D board representation" ) )
         .Icon( BITMAPS::export_step ) );
+
 
 TOOL_ACTION PCB_ACTIONS::exportCmpFile( TOOL_ACTION_ARGS()
         .Name( "pcbnew.EditorControl.exportFootprintAssociations" )

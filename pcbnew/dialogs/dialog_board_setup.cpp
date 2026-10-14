@@ -58,6 +58,7 @@
 #include <advanced_config.h>
 #include <dialog_board_setup.h>
 #include <footprint.h>
+#include <dialogs/panel_setup_rigid_flex.h>
 
 
 #define RESOLVE_PAGE( T, pageIndex ) static_cast<T*>( m_treebook->ResolvePage( pageIndex ) )
@@ -70,6 +71,7 @@ DIALOG_BOARD_SETUP::DIALOG_BOARD_SETUP( PCB_EDIT_FRAME* aFrame, wxWindow* aParen
         m_boardFinish( nullptr ),
         m_physicalStackup( nullptr ),
         m_zones( nullptr ),
+        m_rigidFlex( nullptr ),
         m_tuningProfiles( nullptr ),
         m_netClasses( nullptr ),
         m_currentPage( 0 ),
@@ -118,6 +120,13 @@ DIALOG_BOARD_SETUP::DIALOG_BOARD_SETUP( PCB_EDIT_FRAME* aFrame, wxWindow* aParen
                 m_boardFinish = RESOLVE_PAGE( PANEL_SETUP_BOARD_FINISH, m_boardFinishPage );
                 return new PANEL_SETUP_BOARD_STACKUP( aParent, m_frame, m_layers, m_boardFinish );
             },  _( "Physical Stackup" ) );
+
+    m_treebook->AddLazySubPage(
+            [this]( wxWindow* aParent ) -> wxWindow*
+            {
+                m_rigidFlex = new PANEL_SETUP_RIGID_FLEX( aParent, m_frame );
+                return m_rigidFlex;
+            }, _( "Rigid-Flex Structure" ) );
 
     m_boardFinishPage = m_treebook->GetPageCount();
     m_treebook->AddLazySubPage(
@@ -337,7 +346,11 @@ bool DIALOG_BOARD_SETUP::TransferDataFromWindow()
         }
     }
 
-    return true;
+
+    // The page may have been left before OK, so wx's normal page transfer has
+    // only staged its values.  Commit it here, after all dialog validation has
+    // succeeded and the user has accepted the Board Setup dialog.
+    return !m_rigidFlex || m_rigidFlex->ApplyChanges();
 }
 
 

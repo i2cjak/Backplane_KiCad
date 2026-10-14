@@ -47,6 +47,9 @@
 #include <pcb_marker.h>
 #include <confirm.h>
 #include <dialogs/dialog_page_settings.h>
+#include <pcb_io/pcb_io_mgr.h>
+#include <exporters/step/exporter_step.h>
+#include <jobs/job_export_pcb_3d.h>
 #include <dialogs/dialog_update_pcb.h>
 #include <dialogs/dialog_assign_netclass.h>
 #include <dialogs/dialog_footprint_fields_table.h>

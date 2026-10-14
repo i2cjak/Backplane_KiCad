@@ -23,8 +23,12 @@
 
 #include <unordered_map>
 #include <vector>
+#include <functional>
+#include <array>
+#include <utility>
 
 #include <board.h>
+#include <board_construction_layer.h>
 #include <gal/color4d.h>
 #include <layer_ids.h>
 #include <project/board_project_settings.h>
@@ -42,6 +46,8 @@ class WX_COLLAPSIBLE_PANE;
 class wxStaticLine;
 class wxSlider;
 class wxRadioButton;
+class wxButton;
+class wxStaticBox;
 
 using KIGFX::COLOR4D;
 
@@ -147,6 +153,18 @@ private:
 class APPEARANCE_CONTROLS : public APPEARANCE_CONTROLS_BASE, public BOARD_LISTENER
 {
 public:
+
+    enum class STRUCTURE_ACTION
+    {
+        DRAW_BOUNDARY,
+        ASSIGN_STACK,
+        DRAW_STIFFENER,
+        DRAW_BEND,
+        EDIT_STACKUP,
+        EDIT_FEATURE
+    };
+
+    using STRUCTURE_ACTION_HANDLER = std::function<void( STRUCTURE_ACTION )>;
 
     /**
      * Container for an appearance setting (can control a single board layer, or GAL layer, etc)
@@ -302,6 +320,14 @@ public:
 
     void CommonSettingsChanged( int aFlag );
 
+    void SetStructureActionHandler( STRUCTURE_ACTION_HANDLER aHandler )
+    {
+        m_structureActionHandler = std::move( aHandler );
+    }
+
+    void SetStructureVisibility( int aCategory, bool aVisible );
+    void SelectConstructionLayer( CONSTRUCTION_LAYER aLayer );
+
 protected:
     void OnNotebookPageChanged( wxNotebookEvent& event ) override;
     void OnSetFocus( wxFocusEvent& aEvent ) override;
@@ -382,6 +408,9 @@ private:
     void onNetColorMode( wxCommandEvent& aEvent );
 
     void onRatsnestMode( wxCommandEvent& aEvent );
+
+    void onStructureVisibility( wxCommandEvent& aEvent );
+    void onStructureAction( wxCommandEvent& aEvent );
 
     void onNetclassContextMenu( wxCommandEvent& aEvent );
 
@@ -473,6 +502,14 @@ private:
     wxRadioButton*       m_rbHighContrastOff;
     wxStaticLine*        m_layerDisplaySeparator;
     wxCheckBox*          m_cbFlipBoard;
+
+    wxStaticBox* m_structureBox;
+    std::array<wxCheckBox*, 4> m_structureVisibility;
+    std::array<wxButton*, 6> m_structureActions;
+    STRUCTURE_ACTION_HANDLER m_structureActionHandler;
+    std::vector<wxPanel*> m_constructionRows;
+    std::vector<INDICATOR_ICON*> m_constructionIndicators;
+    std::vector<BITMAP_TOGGLE*> m_constructionEyes;
 
     // Net display options controls
     WX_COLLAPSIBLE_PANE* m_paneNetDisplayOptions;

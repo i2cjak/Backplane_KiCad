@@ -25,6 +25,7 @@
 
 #include <lset.h>
 #include <widgets/layer_box_selector.h>
+#include <board_construction_layer.h>
 
 class PCB_BASE_FRAME;
 class PCB_LAYER_PRESENTATION;
@@ -63,6 +64,15 @@ public:
     // selector. Not activated layers have their names appended with "(not activated)".
     void ShowNonActivatedLayers( bool aShow ) { m_showNotEnabledBrdlayers = aShow; }
 
+    /// Enable physical construction entries for the PCB editor toolbar only.
+    void ShowConstructionLayers( bool aShow ) { m_showConstructionLayers = aShow; }
+
+    // Construction entries use a private UI value range and must never be
+    // passed to ToLAYER_ID or used as LSET bits.
+    static bool IsConstructionSelection( int aSelection );
+    static CONSTRUCTION_LAYER ConstructionFromSelection( int aSelection );
+    static int SelectionForConstruction( CONSTRUCTION_LAYER aLayer );
+
 private:
     // Returns true if the layer id is enabled (i.e. if it should be displayed)
     bool isLayerEnabled( int aLayer ) const override;
@@ -75,6 +85,7 @@ private:
                                         // from layer list
     bool     m_showNotEnabledBrdlayers; // true to list all allowed layers
                                         // (with not activated layers flagged)
+    bool     m_showConstructionLayers = false;
     wxString m_undefinedLayerName;      // if not empty add an item with this name which sets
                                         // the layer to UNDEFINED_LAYER
 

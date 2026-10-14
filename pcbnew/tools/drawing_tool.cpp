@@ -66,6 +66,7 @@
 
 #include <bitmaps.h>
 #include <board.h>
+#include <board_construction_layer.h>
 #include <board_commit.h>
 #include <board_design_settings.h>
 #include <drc/drc_engine.h>
@@ -494,6 +495,25 @@ void DRAWING_TOOL::UpdateStatusBar() const
 
 int DRAWING_TOOL::DrawLine( const TOOL_EVENT& aEvent )
 {
+    if( auto* editFrame = dynamic_cast<PCB_EDIT_FRAME*>( m_frame ) )
+    {
+        switch( editFrame->GetCanvas()->GetActiveConstructionLayer() )
+        {
+        case CONSTRUCTION_LAYER::STACKUP_BOUNDARY:
+            m_toolMgr->RunAction( PCB_ACTIONS::drawStructureBoundary );
+            return 0;
+        case CONSTRUCTION_LAYER::BEND:
+            m_toolMgr->RunAction( PCB_ACTIONS::drawBoardStructureBend );
+            return 0;
+        case CONSTRUCTION_LAYER::F_STIFFENER:
+        case CONSTRUCTION_LAYER::B_STIFFENER:
+            m_toolMgr->RunAction( PCB_ACTIONS::drawBoardStructureStiffener );
+            return 0;
+        default:
+            break;
+        }
+    }
+
     if( m_isFootprintEditor && !m_frame->GetModel() )
         return 0;
 
@@ -3675,6 +3695,25 @@ bool DRAWING_TOOL::getSourceZoneForAction( ZONE_MODE aMode, ZONE** aZone )
 
 int DRAWING_TOOL::DrawZone( const TOOL_EVENT& aEvent )
 {
+    if( auto* editFrame = dynamic_cast<PCB_EDIT_FRAME*>( m_frame ) )
+    {
+        switch( editFrame->GetCanvas()->GetActiveConstructionLayer() )
+        {
+        case CONSTRUCTION_LAYER::STACKUP_BOUNDARY:
+            m_toolMgr->RunAction( PCB_ACTIONS::drawStructureBoundary );
+            return 0;
+        case CONSTRUCTION_LAYER::F_STIFFENER:
+        case CONSTRUCTION_LAYER::B_STIFFENER:
+            m_toolMgr->RunAction( PCB_ACTIONS::drawBoardStructureStiffener );
+            return 0;
+        case CONSTRUCTION_LAYER::BEND:
+            m_toolMgr->RunAction( PCB_ACTIONS::drawBoardStructureBend );
+            return 0;
+        default:
+            break;
+        }
+    }
+
     if( m_isFootprintEditor && !m_frame->GetModel() )
         return 0;
 

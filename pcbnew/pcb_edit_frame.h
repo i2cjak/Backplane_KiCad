@@ -30,6 +30,7 @@
 class PCB_SCREEN;
 class BOARD;
 class BOARD_COMMIT;
+class BOARD_STRUCTURE;
 class BOARD_ITEM_CONTAINER;
 class DESIGN_BLOCK;
 class DIALOG_BOOK_REPORTER;
@@ -287,6 +288,8 @@ public:
      * to update auxiliary information.
      */
     void OnModify() override;
+
+    void CommitBoardStructure( const BOARD_STRUCTURE& aStructure, const wxString& aDescription );
 
     /**
      * Change the currently active layer to \a aLayer and also update the #APPEARANCE_CONTROLS.

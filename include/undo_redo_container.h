@@ -65,7 +65,8 @@ enum class UNDO_REDO {
     GRIDORIGIN,         // origin changed (like CHANGED, contains the origin and a copy)
     PAGESETTINGS,       // page settings or title block changes
     REPEAT_ITEM,        // storage entry for the editor's global repeatItems list
-    VARIANTS            // one or more variants were added, deleted, or changed
+    VARIANTS,           // one or more variants were added, deleted, or changed
+    BOARD_STRUCTURE    // fork-only physical construction snapshot; never serialized
 };
 
 

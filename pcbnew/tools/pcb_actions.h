@@ -217,6 +217,22 @@ public:
     /// Tool action that starts the arc tool in the given mode.
     static const TOOL_ACTION& DrawArcForMode( ARC_DRAW_MODE aMode );
     static TOOL_ACTION drawBezier;
+
+    /// Draw a board-structure region polygon directly on the canvas.
+    static TOOL_ACTION editBoardStructureFeature;
+    /// Draw an Edge.Cuts construction boundary and rebuild regions from it.
+    static TOOL_ACTION drawStructureBoundary;
+    /// Assign the regional stack of the clicked construction region.
+    static TOOL_ACTION assignStructureStack;
+    /// Move, edit, or delete a construction boundary vertex/feature.
+    static TOOL_ACTION editStructureBoundary;
+    static TOOL_ACTION drawBoardStructureRegion;
+    static TOOL_ACTION drawBoardStructureRigidRegion;
+    static TOOL_ACTION drawBoardStructureFlexRegion;
+    /// Draw a board-structure bend line directly on the canvas.
+    static TOOL_ACTION drawBoardStructureBend;
+    /// Draw a board-structure stiffener polygon directly on the canvas.
+    static TOOL_ACTION drawBoardStructureStiffener;
     static TOOL_ACTION placePoint;
     static TOOL_ACTION placeReferenceImage;
     static TOOL_ACTION placeText;

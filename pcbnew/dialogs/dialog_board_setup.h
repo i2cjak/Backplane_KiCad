@@ -37,6 +37,7 @@ class PANEL_SETUP_BOARD_FINISH;
 class PANEL_SETUP_SEVERITIES;
 class PANEL_TEXT_VARIABLES;
 class PANEL_SETUP_TUNING_PROFILES;
+class PANEL_SETUP_RIGID_FLEX;
 
 
 class DIALOG_BOARD_SETUP : public PAGED_DIALOG
@@ -49,6 +50,7 @@ protected:
     // event handlers
     void onPageChanged( wxBookCtrlEvent& aEvent ) override;
     void onAuxiliaryAction( wxCommandEvent& aEvent ) override;
+    bool TransferDataFromWindow() override;
 
     bool TransferDataFromWindow() override;
 
@@ -57,6 +59,7 @@ protected:
     PANEL_SETUP_BOARD_FINISH*           m_boardFinish;
     PANEL_SETUP_BOARD_STACKUP*          m_physicalStackup;
     PANEL_SETUP_ZONES*                  m_zones;
+    PANEL_SETUP_RIGID_FLEX*             m_rigidFlex;
     PANEL_SETUP_TUNING_PROFILES*        m_tuningProfiles;
     PANEL_SETUP_NETCLASSES*             m_netClasses;
 

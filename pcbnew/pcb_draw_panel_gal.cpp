@@ -41,6 +41,7 @@
 #include <pcbnew_settings.h>
 #include <ratsnest/ratsnest_data.h>
 #include <ratsnest/ratsnest_view_item.h>
+#include <board_structure_view_item.h>
 #include <pcb_board_outline.h>
 
 #include <pgm_base.h>
@@ -278,6 +279,7 @@ PCB_DRAW_PANEL_GAL::~PCB_DRAW_PANEL_GAL()
 void PCB_DRAW_PANEL_GAL::DisplayBoard( BOARD* aBoard, PROGRESS_REPORTER* aReporter )
 {
     m_view->Clear();
+    m_structureView.reset();
 
     aBoard->CacheTriangulation( aReporter );
 
@@ -315,6 +317,11 @@ void PCB_DRAW_PANEL_GAL::DisplayBoard( BOARD* aBoard, PROGRESS_REPORTER* aReport
     aBoard->UpdateBoardOutline();
     m_view->Add( aBoard->BoardOutline() );
 
+    m_structureView = std::make_unique<BOARD_STRUCTURE_VIEW_ITEM>( aBoard );
+    for( int category = 0; category < 7; ++category )
+        m_structureView->SetVisible( category, m_structureVisible[category] );
+    m_view->Add( m_structureView.get() );
+
     // Ratsnest
     if( !aBoard->IsFootprintHolder() )
         addRatsnest( aBoard->GetConnectivity() );
@@ -347,6 +354,47 @@ void PCB_DRAW_PANEL_GAL::beforeRedraw()
     // or a display option changes
     if( m_localRatsnest && m_ratsnest->BoardInputsChanged( m_view ) )
         m_view->Update( m_ratsnest.get() );
+}
+
+
+void PCB_DRAW_PANEL_GAL::SetStructureVisible( int aCategory, bool aVisible )
+{
+    if( aCategory < 0 || aCategory >= 7 )
+        return;
+
+    m_structureVisible[aCategory] = aVisible;
+    if( m_structureView )
+    {
+        m_structureView->SetVisible( aCategory, aVisible );
+        m_view->Update( m_structureView.get(), KIGFX::APPEARANCE | KIGFX::GEOMETRY );
+        Refresh( false );
+    }
+}
+
+
+bool PCB_DRAW_PANEL_GAL::IsStructureVisible( int aCategory ) const
+{
+    return aCategory >= 0 && aCategory < 7 && m_structureVisible[aCategory];
+}
+
+void PCB_DRAW_PANEL_GAL::SetActiveConstructionLayer( CONSTRUCTION_LAYER aLayer )
+{
+    m_constructionLayer = aLayer;
+    if( aLayer == CONSTRUCTION_LAYER::F_STIFFENER || aLayer == CONSTRUCTION_LAYER::B_STIFFENER )
+        SetStructureVisible( 2, true );
+    if( aLayer != CONSTRUCTION_LAYER::NONE )
+        SetStructureVisible( ConstructionLayerCategory( aLayer ), true );
+    RefreshStructure();
+}
+
+
+void PCB_DRAW_PANEL_GAL::RefreshStructure()
+{
+    if( m_structureView )
+    {
+        m_view->Update( m_structureView.get(), KIGFX::GEOMETRY | KIGFX::REPAINT );
+        Refresh( false );
+    }
 }
 
 

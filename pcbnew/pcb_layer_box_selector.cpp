@@ -30,6 +30,31 @@
 #include <dpi_scaling_common.h>
 #include <wx/wupdlock.h>
 
+namespace
+{
+constexpr int CONSTRUCTION_UI_BASE = -1000;
+}
+
+bool PCB_LAYER_BOX_SELECTOR::IsConstructionSelection( int aSelection )
+{
+    return aSelection <= CONSTRUCTION_UI_BASE
+        && aSelection > CONSTRUCTION_UI_BASE - 16;
+}
+
+CONSTRUCTION_LAYER PCB_LAYER_BOX_SELECTOR::ConstructionFromSelection( int aSelection )
+{
+    if( !IsConstructionSelection( aSelection ) ) return CONSTRUCTION_LAYER::NONE;
+    const int value = CONSTRUCTION_UI_BASE - aSelection;
+    return value >= 1 && value <= 4 ? static_cast<CONSTRUCTION_LAYER>( value )
+                                    : CONSTRUCTION_LAYER::NONE;
+}
+
+int PCB_LAYER_BOX_SELECTOR::SelectionForConstruction( CONSTRUCTION_LAYER aLayer )
+{
+    const int value = static_cast<int>( aLayer );
+    return value >= 1 && value <= 4 ? CONSTRUCTION_UI_BASE - value : wxNOT_FOUND;
+}
+
 
 PCB_LAYER_BOX_SELECTOR::PCB_LAYER_BOX_SELECTOR( wxWindow* parent, wxWindowID id, const wxString& value,
                                                 const wxPoint& pos, const wxSize& size, int n,
@@ -96,6 +121,19 @@ void PCB_LAYER_BOX_SELECTOR::Resync()
         Append( layername, wxBitmapBundle::FromBitmaps( bitmaps ), (void*) (intptr_t) layerid );
     }
 
+    // The toolbar selector is also used by footprint editors and dialogs.  Do
+    // not expose physical construction context there: only the real PCB
+    // editor owns a construction-aware canvas.
+    if( m_showConstructionLayers && dynamic_cast<PCB_EDIT_FRAME*>( m_boardFrame ) )
+    {
+        for( int value = 1; value <= 4; ++value )
+        {
+            const auto layer = static_cast<CONSTRUCTION_LAYER>( value );
+            Append( wxString::FromUTF8( ConstructionLayerName( layer ) ), wxNullBitmap,
+                    (void*) (intptr_t) SelectionForConstruction( layer ) );
+        }
+    }
+
     if( !m_undefinedLayerName.IsEmpty() )
         Append( m_undefinedLayerName, wxNullBitmap, (void*)(intptr_t)UNDEFINED_LAYER );
 
@@ -121,6 +159,8 @@ void PCB_LAYER_BOX_SELECTOR::Resync()
 // Returns true if the layer id is enabled (i.e. is it should be displayed)
 bool PCB_LAYER_BOX_SELECTOR::isLayerEnabled( int aLayer ) const
 {
+    if( aLayer < 0 || aLayer >= PCB_LAYER_ID_COUNT )
+        return false;
     return getEnabledLayers().test( aLayer );
 }
 

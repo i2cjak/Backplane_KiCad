@@ -36,6 +36,7 @@
 #include <gal/graphics_abstraction_layer.h>
 #include <pcb_dimension.h>
 #include <pcb_layer_box_selector.h>
+#include <board_construction_layer.h>
 #include <footprint.h>
 #include <layer_pairs.h>
 #include <project.h>
@@ -373,6 +374,7 @@ void PCB_BASE_EDIT_FRAME::configureToolbars()
                 }
 
                 m_SelLayerBox->SetToolTip( _( "+/- to switch" ) );
+                m_SelLayerBox->ShowConstructionLayers( true );
                 m_SelLayerBox->Resync();
 
                 aToolbar->Add( m_SelLayerBox );
@@ -381,11 +383,13 @@ void PCB_BASE_EDIT_FRAME::configureToolbars()
                 aToolbar->Bind( wxEVT_UPDATE_UI,
                                 [this]( wxUpdateUIEvent& aEvent )
                                     {
+                                        const auto construction = GetCanvas()->GetActiveConstructionLayer();
+                                        const int desired = construction == CONSTRUCTION_LAYER::NONE
+                                                ? static_cast<int>( GetActiveLayer() )
+                                                : PCB_LAYER_BOX_SELECTOR::SelectionForConstruction( construction );
                                         if( m_SelLayerBox->GetCount()
-                                            && ( m_SelLayerBox->GetLayerSelection() != GetActiveLayer() ) )
-                                        {
-                                            m_SelLayerBox->SetLayerSelection( GetActiveLayer() );
-                                        }
+                                            && m_SelLayerBox->GetLayerSelection() != desired )
+                                            m_SelLayerBox->SetLayerSelection( desired );
                                     },
                                 m_SelLayerBox->GetId() );
 
@@ -393,7 +397,19 @@ void PCB_BASE_EDIT_FRAME::configureToolbars()
                 aToolbar->Bind( wxEVT_COMBOBOX,
                                 [this]( wxCommandEvent& aEvent )
                                     {
-                                        SetActiveLayer( ToLAYER_ID( m_SelLayerBox->GetLayerSelection() ) );
+                                        const int selection = m_SelLayerBox->GetLayerSelection();
+                                        if( PCB_LAYER_BOX_SELECTOR::IsConstructionSelection( selection ) )
+                                        {
+                                            const auto construction =
+                                                    PCB_LAYER_BOX_SELECTOR::ConstructionFromSelection( selection );
+                                            GetCanvas()->SetActiveConstructionLayer( construction );
+                                            if( GetAppearancePanel() )
+                                                GetAppearancePanel()->SelectConstructionLayer( construction );
+                                        }
+                                        else if( selection >= 0 && selection < PCB_LAYER_ID_COUNT )
+                                        {
+                                            SetActiveLayer( ToLAYER_ID( selection ) );
+                                        }
 
                                         if( GetDisplayOptions().m_ContrastModeDisplay != HIGH_CONTRAST_MODE::NORMAL )
                                             GetCanvas()->Refresh();

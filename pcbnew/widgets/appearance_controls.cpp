@@ -44,6 +44,10 @@
 #include <tools/pcb_actions.h>
 #include <widgets/bitmap_button.h>
 #include <widgets/bitmap_toggle.h>
+#include <pcb_draw_panel_gal.h>
+#include <wx/button.h>
+#include <wx/statbox.h>
+#include <wx/scrolwin.h>
 #include <widgets/wx_collapsible_pane.h>
 #include <widgets/color_swatch.h>
 #include <widgets/grid_bitmap_toggle.h>
@@ -430,6 +434,9 @@ APPEARANCE_CONTROLS::APPEARANCE_CONTROLS( PCB_BASE_FRAME* aParent, wxWindow* aFo
         m_currentPreset( nullptr ),
         m_lastSelectedUserPreset( nullptr ),
         m_layerContextMenu( nullptr ),
+        m_structureBox( nullptr ),
+        m_structureVisibility {},
+        m_structureActions {},
         m_togglingNetclassRatsnestVisibility( false )
 {
     // Correct the min size from wxformbuilder not using fromdip
@@ -480,6 +487,12 @@ APPEARANCE_CONTROLS::APPEARANCE_CONTROLS( PCB_BASE_FRAME* aParent, wxWindow* aFo
                                                  KeyNameFromKeyCode( VIEWPORT_SWITCH_KEY ) ) );
 
     createControls();
+
+    if( !m_isFpEditor && m_frame->GetCanvas() )
+    {
+        for( int ii = 0; ii < 4; ++ii )
+            SetStructureVisibility( ii, m_frame->GetCanvas()->IsStructureVisible( ii ) );
+    }
 
     m_btnNetInspector->SetBitmap( KiBitmapBundle( BITMAPS::list_nets, 16 ) );
     m_btnNetInspector->SetPadding( 2 );
@@ -707,6 +720,63 @@ void APPEARANCE_CONTROLS::createControls()
                                          m_sizerOuter->Layout();
                                          Thaw();
                                      } );
+
+    // Structure is a companion-model presentation section.  Keep it beside
+    // native layers instead of manufacturing pseudo PCB layers for it.
+    if( !m_isFpEditor )
+    {
+        auto* structurePage = new wxScrolledWindow( m_notebook, wxID_ANY );
+        structurePage->SetScrollRate( 0, 8 );
+        auto* structurePageSizer = new wxBoxSizer( wxVERTICAL );
+        structurePage->SetSizer( structurePageSizer );
+        m_structureBox = new wxStaticBox( structurePage, wxID_ANY, _( "Rigid-Flex / Construction" ) );
+        wxStaticBoxSizer* structureSizer = new wxStaticBoxSizer( m_structureBox, wxVERTICAL );
+        wxFont structureFont = KIUI::GetInfoFont( this );
+        wxGridSizer* structureVisibilitySizer = new wxGridSizer( 2, 2, 4, 4 );
+
+        const wxString visibilityLabels[] = { _( "Rigid regions" ), _( "Flex regions" ),
+                                              _( "Stiffeners" ), _( "Bend lines" ) };
+        for( int ii = 0; ii < 4; ++ii )
+        {
+            m_structureVisibility[ii] = new wxCheckBox( structurePage, wxID_ANY,
+                                                         visibilityLabels[ii] );
+            m_structureVisibility[ii]->SetFont( structureFont );
+            m_structureVisibility[ii]->SetValue( true );
+            m_structureVisibility[ii]->SetToolTip( _( "Show or hide this structure overlay" ) );
+            m_structureVisibility[ii]->Bind( wxEVT_CHECKBOX,
+                                             &APPEARANCE_CONTROLS::onStructureVisibility, this );
+            structureVisibilitySizer->Add( m_structureVisibility[ii], 0, wxEXPAND );
+        }
+        structureSizer->Add( structureVisibilitySizer, 0, wxEXPAND | wxBOTTOM, 4 );
+
+        wxGridSizer* structureActionSizer = new wxGridSizer( 0, 2, 4, 4 );
+        const wxString actionLabels[] = { _( "Draw boundary" ), _( "Assign stack" ),
+                                          _( "Draw stiffener" ), _( "Draw bend" ),
+                                          _( "Edit stackup" ), _( "Edit feature" ) };
+        for( int ii = 0; ii < 6; ++ii )
+        {
+            m_structureActions[ii] = new wxButton( structurePage, wxID_ANY,
+                                                   actionLabels[ii], wxDefaultPosition,
+                                                   wxDefaultSize, wxBU_EXACTFIT );
+            m_structureActions[ii]->SetFont( structureFont );
+            m_structureActions[ii]->Bind( wxEVT_BUTTON, &APPEARANCE_CONTROLS::onStructureAction,
+                                          this );
+            structureActionSizer->Add( m_structureActions[ii], 0, wxEXPAND );
+        }
+        structureSizer->Add( structureActionSizer, 0, wxEXPAND );
+
+        structurePageSizer->Add( structureSizer, 0, wxEXPAND | wxALL, 5 );
+        auto* help = new wxStaticText( structurePage, wxID_ANY,
+                _( "Edge.Cuts defines the board. Draw internal Stackup.Boundary lines to divide it, then click Assign stack and select a region.\n\nSelect Bend.Lines, F.Stiffener, or B.Stiffener in Layers and use the drawing tools. Escape cancels." ) );
+        help->Wrap( 225 );
+        structurePageSizer->Add( help, 0, wxEXPAND | wxALL, 8 );
+        const size_t structureTab = m_notebook->GetPageCount();
+        m_notebook->AddPage( structurePage, _( "Structure" ) );
+        auto* shortcut = new wxButton( m_panelLayers, wxID_ANY, _( "Rigid-flex tools…" ) );
+        shortcut->Bind( wxEVT_BUTTON, [this, structureTab]( wxCommandEvent& )
+        { m_notebook->SetSelection( structureTab ); } );
+        m_panelLayersSizer->Add( shortcut, 0, wxEXPAND | wxALL, 5 );
+    }
 
     // Create net display options
 
@@ -1122,6 +1192,95 @@ void APPEARANCE_CONTROLS::OnBoardChanged()
 }
 
 
+void APPEARANCE_CONTROLS::SelectConstructionLayer( CONSTRUCTION_LAYER layer )
+{
+    m_frame->GetCanvas()->SetActiveConstructionLayer( layer );
+    OnLayerChanged();
+    passOnFocus();
+}
+
+
+void APPEARANCE_CONTROLS::SetStructureVisibility( int aCategory, bool aVisible )
+{
+    if( aCategory < 0 || aCategory >= static_cast<int>( m_structureVisibility.size() ) )
+        return;
+
+    if( m_structureVisibility[aCategory] )
+        m_structureVisibility[aCategory]->SetValue( aVisible );
+}
+
+
+void APPEARANCE_CONTROLS::onStructureVisibility( wxCommandEvent& aEvent )
+{
+    int id = -1;
+
+    for( int ii = 0; ii < static_cast<int>( m_structureVisibility.size() ); ++ii )
+    {
+        if( m_structureVisibility[ii] == aEvent.GetEventObject() )
+        {
+            id = ii;
+            break;
+        }
+    }
+
+    if( id < 0 || id >= 4 )
+        return;
+
+    if( m_frame->GetCanvas() )
+    {
+        m_frame->GetCanvas()->SetStructureVisible( id, aEvent.IsChecked() );
+        m_frame->GetCanvas()->RefreshStructure();
+    }
+
+    passOnFocus();
+}
+
+
+void APPEARANCE_CONTROLS::onStructureAction( wxCommandEvent& aEvent )
+{
+    int id = -1;
+
+    for( int ii = 0; ii < static_cast<int>( m_structureActions.size() ); ++ii )
+    {
+        if( m_structureActions[ii] == aEvent.GetEventObject() )
+        {
+            id = ii;
+            break;
+        }
+    }
+
+    if( id < 0 || id >= 6 )
+        return;
+
+    passOnFocus();
+    const STRUCTURE_ACTION action = static_cast<STRUCTURE_ACTION>( id );
+
+    if( m_structureActionHandler )
+        m_structureActionHandler( action );
+    else if( action == STRUCTURE_ACTION::DRAW_BOUNDARY )
+        m_frame->GetToolManager()->PostAction( "pcbnew.BoardStructure.drawBoundary" );
+    else if( action == STRUCTURE_ACTION::ASSIGN_STACK )
+        m_frame->GetToolManager()->PostAction( "pcbnew.BoardStructure.assignStack" );
+    else if( action == STRUCTURE_ACTION::EDIT_FEATURE )
+        m_frame->GetToolManager()->RunAction( PCB_ACTIONS::editBoardStructureFeature );
+    else if( action == STRUCTURE_ACTION::DRAW_STIFFENER )
+    {
+        m_frame->GetToolManager()->RunAction( PCB_ACTIONS::drawBoardStructureStiffener );
+    }
+    else if( action == STRUCTURE_ACTION::DRAW_BEND )
+    {
+        m_frame->GetToolManager()->RunAction( PCB_ACTIONS::drawBoardStructureBend );
+    }
+    else if( action == STRUCTURE_ACTION::EDIT_STACKUP )
+    {
+        if( PCB_EDIT_FRAME* editFrame = dynamic_cast<PCB_EDIT_FRAME*>( m_frame ) )
+            editFrame->ShowBoardSetupDialog( _( "Rigid-Flex Structure" ), this );
+    }
+
+    passOnFocus();
+}
+
+
 void APPEARANCE_CONTROLS::OnBoardNetSettingsChanged( BOARD& aBoard )
 {
     handleBoardItemsChanged();
@@ -1297,6 +1456,18 @@ void APPEARANCE_CONTROLS::OnLayerChanged()
         g = wxChar( std::max( (int) g - 15, 0 ) );
         b = wxChar( std::max( (int) b - 15, 0 ) );
     }
+
+    const auto construction = m_frame->GetCanvas()->GetActiveConstructionLayer();
+    for( size_t i = 0; i < m_constructionRows.size(); ++i )
+    {
+        const bool selected = construction == static_cast<CONSTRUCTION_LAYER>( i + 1 );
+        m_constructionRows[i]->SetBackgroundColour( selected ? wxColour( r, g, b ) : m_layerPanelColour );
+        m_constructionIndicators[i]->SetIndicatorState( selected ? ROW_ICON_PROVIDER::STATE::ON : ROW_ICON_PROVIDER::STATE::OFF );
+        m_constructionEyes[i]->SetValue( m_frame->GetCanvas()->IsStructureVisible(
+                ConstructionLayerCategory( static_cast<CONSTRUCTION_LAYER>( i + 1 ) ) ) );
+    }
+    if( construction != CONSTRUCTION_LAYER::NONE )
+    { Refresh(); return; }
 
     PCB_LAYER_ID current = m_frame->GetActiveLayer();
 
@@ -1673,6 +1844,15 @@ void APPEARANCE_CONTROLS::rebuildLayers()
     if( !board )
         return;
 
+    for( wxPanel* row : m_constructionRows )
+    {
+        m_layersOuterSizer->Detach( row );
+        row->Destroy();
+    }
+    m_constructionRows.clear();
+    m_constructionIndicators.clear();
+    m_constructionEyes.clear();
+
     LSET enabled = board->GetEnabledLayers();
     LSET visible = getVisibleLayers();
 
@@ -1961,6 +2141,60 @@ void APPEARANCE_CONTROLS::rebuildLayers()
         }
 
         ++layer_it;
+    }
+
+    if( !m_isFpEditor )
+    {
+        size_t insertAt = m_layersOuterSizer->GetItemCount();
+        if( auto edge = m_layerSettingsMap.find( Edge_Cuts ); edge != m_layerSettingsMap.end() )
+            for( size_t i = 0; i < m_layersOuterSizer->GetItemCount(); ++i )
+                if( m_layersOuterSizer->GetItem( i )->GetWindow() == edge->second->ctl_panel )
+                { insertAt = i + 1; break; }
+
+        const COLOR4D colors[] = { COLOR4D( 0.2, 0.85, 1.0, 1.0 ),
+                                   COLOR4D( 1.0, 0.9, 0.15, 1.0 ),
+                                   COLOR4D( 0.72, 0.35, 0.95, 1.0 ),
+                                   COLOR4D( 0.95, 0.4, 0.7, 1.0 ) };
+        const char* drawActions[] = { "pcbnew.BoardStructure.drawBoundary",
+                                     "pcbnew.BoardStructure.drawBend",
+                                     "pcbnew.BoardStructure.drawStiffener",
+                                     "pcbnew.BoardStructure.drawStiffener" };
+        for( int i = 0; i < 4; ++i )
+        {
+            const auto layer = static_cast<CONSTRUCTION_LAYER>( i + 1 );
+            auto* panel = new wxPanel( m_windowLayers, wxID_ANY );
+            auto* row = new wxBoxSizer( wxHORIZONTAL );
+            panel->SetSizer( row );
+            panel->SetBackgroundColour( m_layerPanelColour );
+            auto* indicator = new INDICATOR_ICON( panel, *m_iconProvider,
+                                                  ROW_ICON_PROVIDER::STATE::OFF, wxID_ANY );
+            auto* swatch = new COLOR_SWATCH( panel, colors[i], wxID_ANY, bgColor,
+                                            colors[i], SWATCH_SMALL );
+            swatch->SetReadOnly( true );
+            auto* eye = new BITMAP_TOGGLE( panel, wxID_ANY, m_visibleBitmapBundle,
+                                           m_notVisibileBitmapBundle,
+                                           m_frame->GetCanvas()->IsStructureVisible( ConstructionLayerCategory( layer ) ) );
+            auto* label = new wxStaticText( panel, wxID_ANY, ConstructionLayerName( layer ) );
+            const wxString tooltip = _( "Construction layer: select to draw, double-click to start. Geometry is saved with the board companion." );
+            label->SetToolTip( tooltip );
+            eye->SetToolTip( _( "Show or hide this construction layer" ) );
+            row->AddSpacer( 1 ); row->Add( indicator, 0, wxALIGN_CENTER_VERTICAL | wxTOP, 2 );
+            row->AddSpacer( 5 ); row->Add( swatch, 0, wxALIGN_CENTER_VERTICAL | wxTOP, 2 );
+            row->AddSpacer( 6 ); row->Add( eye, 0, wxALIGN_CENTER_VERTICAL | wxTOP, 2 );
+            row->AddSpacer( 5 ); row->Add( label, 1, wxALIGN_CENTER_VERTICAL | wxTOP, 2 );
+            auto select = [this, layer]( wxMouseEvent& ) { SelectConstructionLayer( layer ); };
+            auto draw = [this, layer, action = std::string( drawActions[i] )]( wxMouseEvent& )
+            { SelectConstructionLayer( layer ); m_frame->GetToolManager()->PostAction( action ); };
+            for( wxWindow* target : { static_cast<wxWindow*>( panel ), static_cast<wxWindow*>( indicator ),
+                                     static_cast<wxWindow*>( swatch ), static_cast<wxWindow*>( label ) } )
+            { target->Bind( wxEVT_LEFT_DOWN, select ); target->Bind( wxEVT_LEFT_DCLICK, draw ); }
+            eye->Bind( TOGGLE_CHANGED, [this, layer, eye]( wxCommandEvent& )
+            { m_frame->GetCanvas()->SetStructureVisible( ConstructionLayerCategory( layer ), eye->GetValue() ); } );
+            m_layersOuterSizer->Insert( insertAt++, panel, 0, wxEXPAND );
+            m_constructionRows.push_back( panel );
+            m_constructionIndicators.push_back( indicator );
+            m_constructionEyes.push_back( eye );
+        }
     }
 
     m_layersOuterSizer->AddSpacer( 10 );

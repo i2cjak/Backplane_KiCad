@@ -38,6 +38,9 @@ set( PCBNEW_DIALOGS
     dialogs/dialog_filter_selection_base.cpp
     dialogs/dialog_barcode_properties.cpp
     dialogs/dialog_barcode_properties_base.cpp
+    dialogs/panel_setup_rigid_flex.cpp
+    dialogs/dialog_structure_properties.cpp
+    dialogs/dialog_structure_stack_preset.cpp
     dialogs/dialog_board_setup.cpp
     dialogs/dialog_board_statistics.cpp
     dialogs/dialog_board_statistics_base.cpp
@@ -507,6 +510,8 @@ set( PCBNEW_CLASS_SRCS
     api/pcb_context.cpp
 
     tools/array_tool.cpp
+    tools/board_structure_tool.cpp
+    tools/board_structure_edit.cpp
     tools/board_editor_control.cpp
     tools/board_inspection_tool.cpp
     tools/board_reannotate_tool.cpp

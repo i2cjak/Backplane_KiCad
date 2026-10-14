@@ -26,10 +26,13 @@
 #include <class_draw_panel_gal.h>
 #include <layer_ids.h>
 #include <pcb_view.h>
+#include <board_construction_layer.h>
+#include <array>
 
 class DS_PROXY_VIEW_ITEM;
 class RATSNEST_VIEW_ITEM;
 class CONNECTIVITY_DATA;
+class BOARD_STRUCTURE_VIEW_ITEM;
 class PROGRESS_REPORTER;
 
 /// Apply pcbnew's canonical GAL layer order (copper and zones below silk, fab
@@ -127,6 +130,12 @@ public:
     void RedrawRatsnest();
 
     /// @copydoc EDA_DRAW_PANEL_GAL::GetDefaultViewBBox()
+    void SetStructureVisible( int aCategory, bool aVisible );
+    bool IsStructureVisible( int aCategory ) const;
+    void RefreshStructure();
+    void SetActiveConstructionLayer( CONSTRUCTION_LAYER aLayer );
+    CONSTRUCTION_LAYER GetActiveConstructionLayer() const { return m_constructionLayer; }
+
     BOX2I GetDefaultViewBBox() const override;
 
     virtual KIGFX::PCB_VIEW* GetView() const override;
@@ -166,6 +175,9 @@ protected:
     bool m_highContrastHidden = false;
     std::unique_ptr<RATSNEST_VIEW_ITEM> m_ratsnest;      ///< Ratsnest view item
     std::unique_ptr<RATSNEST_VIEW_ITEM> m_localRatsnest; /**< Moving items' part, when split off */
+    std::unique_ptr<BOARD_STRUCTURE_VIEW_ITEM> m_structureView;
+    std::array<bool, 7> m_structureVisible{ true, true, true, true, true, true, true };
+    CONSTRUCTION_LAYER m_constructionLayer = CONSTRUCTION_LAYER::NONE;
 };
 
 #endif /* PCB_DRAW_PANEL_GAL_H_ */

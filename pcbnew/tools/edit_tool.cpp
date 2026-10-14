@@ -27,6 +27,7 @@
 #include <kiplatform/ui.h>
 #include <gal/graphics_abstraction_layer.h>
 #include <board.h>
+#include <board_construction_layer.h>
 #include <board_design_settings.h>
 #include <collectors.h>
 #include <footprint.h>
@@ -2263,6 +2264,22 @@ int EDIT_TOOL::BooleanPolygons( const TOOL_EVENT& aEvent )
 int EDIT_TOOL::Properties( const TOOL_EVENT& aEvent )
 {
     PCB_BASE_EDIT_FRAME* editFrame = getEditFrame<PCB_BASE_EDIT_FRAME>();
+    // A construction context owns the E gesture.  Do this before asking the
+    // native selection tool for BOARD_ITEMs so a boundary click can never
+    // open copper or footprint properties accidentally.
+    const CONSTRUCTION_LAYER construction = editFrame->GetCanvas()->GetActiveConstructionLayer();
+    if( construction == CONSTRUCTION_LAYER::STACKUP_BOUNDARY )
+    {
+        m_toolMgr->RunAction( PCB_ACTIONS::editStructureBoundary );
+        return 0;
+    }
+    if( construction == CONSTRUCTION_LAYER::BEND
+        || construction == CONSTRUCTION_LAYER::F_STIFFENER
+        || construction == CONSTRUCTION_LAYER::B_STIFFENER )
+    {
+        m_toolMgr->RunAction( PCB_ACTIONS::editBoardStructureFeature );
+        return 0;
+    }
 
     // A constraint selected by clicking its badge has no board selection, so Edit targets it here
     // before the normal properties path (mirrors the Delete hook for a badge-selected constraint).

@@ -42,6 +42,7 @@ using namespace std::placeholders;
 #include <tools/pcb_control.h>
 #include <tools/board_editor_control.h>
 #include <board_commit.h>
+#include <board_structure_undo_item.h>
 #include <drawing_sheet/ds_proxy_undo_item.h>
 #include <wx/msgdlg.h>
 #include <pcb_board_outline.h>
@@ -133,6 +134,7 @@ void PCB_BASE_EDIT_FRAME::saveCopyInUndoList( PICKED_ITEMS_LIST* commandToUndo,
         case UNDO_REDO::NEWITEM:
         case UNDO_REDO::DELETED:
         case UNDO_REDO::PAGESETTINGS:
+        case UNDO_REDO::BOARD_STRUCTURE:
             break;
 
         default:
@@ -451,7 +453,8 @@ void PCB_BASE_EDIT_FRAME::PutDataInPreviousState( PICKED_ITEMS_LIST* aList, bool
         if( status != UNDO_REDO::DELETED
                 && status != UNDO_REDO::DRILLORIGIN     // origin markers never on board
                 && status != UNDO_REDO::GRIDORIGIN      // origin markers never on board
-                && status != UNDO_REDO::PAGESETTINGS )  // nor are page settings proxy items
+                && status != UNDO_REDO::PAGESETTINGS
+                && status != UNDO_REDO::BOARD_STRUCTURE )
         {
             if( !GetBoard()->ResolveItem( eda_item->m_Uuid, true ) )
             {
@@ -630,6 +633,11 @@ void PCB_BASE_EDIT_FRAME::PutDataInPreviousState( PICKED_ITEMS_LIST* aList, bool
 
             break;
         }
+
+        case UNDO_REDO::BOARD_STRUCTURE:
+            std::swap( GetBoard()->GetBoardStructure(),
+                       static_cast<BOARD_STRUCTURE_UNDO_ITEM*>( eda_item )->structure );
+            break;
 
         case UNDO_REDO::PAGESETTINGS:
             if( eda_item->Type() == WS_PROXY_UNDO_ITEM_T || eda_item->Type() == WS_PROXY_UNDO_ITEM_PLUS_T )

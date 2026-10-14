@@ -124,6 +124,8 @@
 #include <tools/pcb_control.h>
 #include <tools/pcb_design_block_control.h>
 #include <tools/board_editor_control.h>
+#include <board_structure_undo_item.h>
+#include <tools/board_structure_tool.h>
 #include <tools/board_inspection_tool.h>
 #include <tools/pcb_editor_conditions.h>
 #include <tools/pcb_viewer_tools.h>
@@ -1098,6 +1100,7 @@ void PCB_EDIT_FRAME::setupTools()
     m_toolManager->RegisterTool( new PCB_CONTROL );
     m_toolManager->RegisterTool( new PCB_DESIGN_BLOCK_CONTROL );
     m_toolManager->RegisterTool( new BOARD_EDITOR_CONTROL );
+    m_toolManager->RegisterTool( new BOARD_STRUCTURE_TOOL );
     m_toolManager->RegisterTool( new BOARD_INSPECTION_TOOL );
     m_toolManager->RegisterTool( new BOARD_REANNOTATE_TOOL );
     m_toolManager->RegisterTool( new ALIGN_DISTRIBUTE_TOOL );
@@ -2093,9 +2096,11 @@ void PCB_EDIT_FRAME::SetGridColor( const COLOR4D& aColor )
 
 void PCB_EDIT_FRAME::SetActiveLayer( PCB_LAYER_ID aLayer, bool aForceRedraw )
 {
+    const bool wasConstruction = GetCanvas()->GetActiveConstructionLayer() != CONSTRUCTION_LAYER::NONE;
+    GetCanvas()->SetActiveConstructionLayer( CONSTRUCTION_LAYER::NONE );
     const PCB_LAYER_ID oldLayer = GetActiveLayer();
 
-    if( oldLayer == aLayer && !aForceRedraw )
+    if( oldLayer == aLayer && !aForceRedraw && !wasConstruction )
         return;
 
     PCB_BASE_FRAME::SetActiveLayer( aLayer );
@@ -2364,6 +2369,25 @@ void PCB_EDIT_FRAME::SetLastPath( LAST_PATH_TYPE aType, const wxString& aLastPat
 }
 
 
+void PCB_EDIT_FRAME::CommitBoardStructure( const BOARD_STRUCTURE& aStructure,
+                                          const wxString& aDescription )
+{
+    if( GetBoard()->GetBoardStructure().ToJson() == aStructure.ToJson() )
+        return;
+
+    PICKED_ITEMS_LIST command;
+    auto* snapshot = new BOARD_STRUCTURE_UNDO_ITEM( GetBoard()->GetBoardStructure() );
+    ITEM_PICKER wrapper( nullptr, snapshot, UNDO_REDO::BOARD_STRUCTURE );
+    wrapper.SetFlags( UR_TRANSIENT );
+    command.PushItem( wrapper );
+    command.SetDescription( aDescription );
+    SaveCopyInUndoList( command, UNDO_REDO::BOARD_STRUCTURE );
+    GetBoard()->GetBoardStructure() = aStructure;
+    GetBoard()->IncrementTimeStamp();
+    OnModify();
+}
+
+
 void PCB_EDIT_FRAME::OnModify()
 {
     PCB_BASE_FRAME::OnModify();
@@ -2377,6 +2401,7 @@ void PCB_EDIT_FRAME::OnModify()
     // Costs one integer comparison per chart when nothing drill related changed.
     RefreshGeneratedTables( *GetBoard() );
 
+    GetCanvas()->RefreshStructure();
     Update3DView( true, GetPcbNewSettings()->m_Display.m_Live3DRefresh );
 
     if( !GetTitle().StartsWith( wxT( "*" ) ) )
