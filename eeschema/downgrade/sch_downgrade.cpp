@@ -521,13 +521,13 @@ static void dropPositionExclusions( SCH_SCREEN* aScreen )
 }
 
 
-// Group locks shipped with group support (20250513) and predate general item locking, so
-// groups are the group rule's business, not this one's. A lock inherited from a locked group
-// survives through the group itself and is not a loss.
+// The 10.0 writer emits (locked yes) on groups, but the 10.0 parser has no case for it and
+// rejects the file, so a group lock is lost like any other lock before general item locking.
+// Groups are unlocked too; a lock inherited from a locked group is lost with the group's.
 static bool hasOwnLock( const SCH_ITEM* aItem )
 {
     if( aItem->Type() == SCH_GROUP_T )
-        return false;
+        return aItem->IsLocked();
 
     if( EDA_GROUP* group = aItem->GetParentGroup() )
     {
@@ -2302,8 +2302,8 @@ static constexpr DATED_TOKEN SCH_TOKENS[] = {
     { "body_styles", SCH_VER_BODY_STYLES },
     { "variant", SCH_VER_VARIANTS },
     { "field", SCH_VER_VARIANTS },
-    // Dated by the group lock, the oldest legal use. The unlock rule strips all others.
-    { "locked", SCH_VER_GROUPS },
+    // Dated by general item locking: stock 10.0 cannot parse a group lock either.
+    { "locked", SCH_VER_LOCKING },
     { "ellipse", SCH_VER_ELLIPSE },
     { "ellipse_arc", SCH_VER_ELLIPSE },
     { "rotation_angle", SCH_VER_ELLIPSE },
