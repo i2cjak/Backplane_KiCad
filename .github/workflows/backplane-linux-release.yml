@@ -33,7 +33,7 @@ jobs:
       - name: Prepare the build container
         run: |
           apt-get update
-          apt-get install --no-install-recommends -y sudo ca-certificates git git-lfs zstd file xz-utils
+          apt-get install --no-install-recommends -y sudo ca-certificates curl git git-lfs zstd file xz-utils
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Check out source
@@ -406,6 +406,45 @@ jobs:
           done
           if [ "${#failed[@]}" -ne 0 ]; then
             printf '::error::IPC regression failed: %s\n' "${failed[@]}"
+            exit 1
+          fi
+
+      # KiCad 10 hand-off (CONTRACT A6): exports from 'kicad-cli ... downgrade --target 10.0'
+      # must open in an unmodified KiCad 10.0.x. Uses the stock PPA build, unpacked, never installed.
+      - name: KiCad 10 round-trip in stock KiCad 10.0.x
+        if: always() && env.archive_root != ''
+        shell: bash
+        env:
+          STOCK_KICAD_DEB: https://ppa.launchpadcontent.net/kicad/kicad-10.0-releases/ubuntu/pool/main/k/kicad/kicad_10.0.7~ubuntu26.04.1_amd64.deb
+          STOCK_KICAD_SHA256: 0e0e03c74379be85f1e08ec27c047625f4490f357cb2896c962270e29bbb3099
+        run: |
+          set -euo pipefail
+          unset LD_LIBRARY_PATH
+          stock="$RUNNER_TEMP/stock-kicad-10"
+          mkdir -p "$stock"
+          curl -sSfL -o "$stock/kicad.deb" "$STOCK_KICAD_DEB"
+          echo "$STOCK_KICAD_SHA256  $stock/kicad.deb" | sha256sum -c -
+          dpkg -x "$stock/kicad.deb" "$stock/root"
+          cat > "$stock/kicad-cli" <<'WRAPPER'
+          #!/bin/sh
+          root=$(dirname "$(readlink -f "$0")")/root
+          export LD_LIBRARY_PATH="$root/usr/lib:$root/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          export KICAD_STOCK_DATA_HOME="$root/usr/share/kicad"
+          exec "$root/usr/bin/kicad-cli" "$@"
+          WRAPPER
+          chmod +x "$stock/kicad-cli"
+          "$stock/kicad-cli" --version
+          failed=()
+          for regression in $(grep -l -- '--stock-cli' scripts/backplane-*-regression.py); do
+            echo "::group::${regression} --stock-cli"
+            if ! "$RUNNER_TEMP/ipc-smoke-venv/bin/python" "$regression" \
+                "release/${archive_root}/bin/kicad-cli" --stock-cli "$stock/kicad-cli"; then
+              failed+=("$regression")
+            fi
+            echo "::endgroup::"
+          done
+          if [ "${#failed[@]}" -ne 0 ]; then
+            printf '::error::KiCad 10 round-trip failed: %s\n' "${failed[@]}"
             exit 1
           fi
 
