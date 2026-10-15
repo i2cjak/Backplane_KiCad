@@ -248,22 +248,7 @@ void API_HANDLER_BOARD::deleteItemsInternal( std::map<KIID, ItemDeletionStatus>&
 
     for( BOARD_ITEM* item : validatedItems )
     {
-        if( item->Type() == PCB_FIELD_T && !static_cast<PCB_FIELD*>( item )->IsMandatory()
-            && item->GetParentFootprint() )
-        {
-            FOOTPRINT* parentFootprint = item->GetParentFootprint();
-            commit->Modify( parentFootprint );
-
-            if( PCB_SELECTION_TOOL* selectionTool = toolManager()->GetTool<PCB_SELECTION_TOOL>() )
-                selectionTool->RemoveItemFromSel( item, true /* quiet */ );
-
-            if( KIGFX::VIEW* view = toolManager()->GetView() )
-                view->Remove( item );
-
-            parentFootprint->Remove( item );
-            delete item;
-        }
-        else if( item->Type() == PCB_TABLECELL_T )
+        if( item->Type() == PCB_TABLECELL_T )
         {
             // Cells are owned by their table; the commit removal path doesn't handle them.
             // Match the GUI delete: clear the cell contents (generated-table cells have no user text).

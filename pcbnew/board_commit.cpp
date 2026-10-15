@@ -481,10 +481,29 @@ void BOARD_COMMIT::Push( const wxString& aMessage, int aCommitFlags )
             switch( boardItem->Type() )
             {
             case PCB_FIELD_T:
-                static_cast<PCB_FIELD*>( boardItem )->SetVisible( false );
+                if( static_cast<PCB_FIELD*>( boardItem )->IsMandatory() )
+                {
+                    static_cast<PCB_FIELD*>( boardItem )->SetVisible( false );
 
-                if( view )
-                    view->Update( boardItem );
+                    if( view )
+                        view->Update( boardItem );
+                }
+                else if( !( changeFlags & CHT_DONE ) )
+                {
+                    if( view )
+                        view->Remove( boardItem );
+
+                    if( FOOTPRINT* parentFP = boardItem->GetParentFootprint() )
+                    {
+                        parentFP->Remove( boardItem );
+                        connectivity->Remove( boardItem );
+                    }
+                    else
+                    {
+                        board->Remove( boardItem, REMOVE_MODE::BULK );
+                        bulkRemovedItems.push_back( boardItem );
+                    }
+                }
 
                 break;
 
