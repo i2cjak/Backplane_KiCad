@@ -137,20 +137,37 @@ class IpcSession:
         path = Path(path)
         self.v10_exports = getattr(self, "v10_exports", 0) + 1
         out = self.root / f"v10-export-{self.v10_exports}"
-        out.mkdir()
         kind = "pcb" if path.suffix == ".kicad_pcb" else "sch"
+        if kind == "pcb":
+            out.mkdir()  # pcb downgrade writes a file into an existing folder
+        # sch downgrade creates the output folder itself and refuses an existing one.
         # pcb downgrade writes a file; sch downgrade writes the hierarchy into a folder.
         output = out / path.name if kind == "pcb" else out
-        export = subprocess.run(
-            [str(self.cli), kind, "downgrade", "--target", "10.0", "--force", "-o", str(output), str(path)],
-            env=self.env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
+        command = [str(self.cli), kind, "downgrade", "--target", "10.0", "--force", "-o", str(output), str(path)]
+        export = subprocess.run(command, env=self.env, text=True, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, timeout=120)
+        if export.returncode != 0 and "[block]" in export.stdout:
+            # Some features cannot be approximated in 10.0 (e.g. styled line endings); the
+            # export then needs --drop-approximations as well as --force.
+            print(f"v10 export of {path.name} needs --drop-approximations: "
+                  + " ".join(line.strip() for line in export.stdout.splitlines() if "[block]" in line),
+                  flush=True)
+            shutil.rmtree(out, ignore_errors=True)
+            if kind == "pcb":
+                out.mkdir()
+            export = subprocess.run(command[:6] + ["--drop-approximations"] + command[6:],
+                                    env=self.env, text=True, stdout=subprocess.PIPE,
+                                    stderr=subprocess.STDOUT, timeout=120)
         assert export.returncode == 0, f"downgrade to 10.0 failed: {export.stdout}"
         copy = out / path.name
         assert copy.is_file(), f"downgrade did not write {copy}: {export.stdout}"
         stock = subprocess.run([str(stock_cli), kind, "upgrade", "--force", str(copy)],
                                env=self.env, text=True, stdout=subprocess.PIPE,
                                stderr=subprocess.STDOUT, timeout=120)
-        assert stock.returncode == 0, f"stock KiCad 10 rejected the exported copy: {stock.stdout}"
+        if stock.returncode != 0:
+            kept = Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir())) / f"rejected-v10-{copy.name}"
+            shutil.copy2(copy, kept)
+            raise AssertionError(f"stock KiCad 10 rejected the exported copy (kept at {kept}): {stock.stdout}")
         return copy
 
     def __exit__(self, exc_type, exc, traceback):
