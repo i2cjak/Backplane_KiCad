@@ -839,6 +839,12 @@ EDA_ITEM* BOARD_COMMIT::undoLevelItem( EDA_ITEM* aItem ) const
     // is to only ever add the parent when either can be legal (ie: in the board editor).
     if( m_isBoardEditor && aItem->IsBOARD_ITEM() )
     {
+        // Fields are owned by footprints, but updating one does not change the footprint's
+        // child list.  Keep the field itself as the undo level so IPC update rollback does not
+        // replace the footprint's field vector and lose the field from UUID resolution.
+        if( aItem->Type() == PCB_FIELD_T )
+            return aItem;
+
         if( FOOTPRINT* footprint = static_cast<BOARD_ITEM*>( aItem )->GetParentFootprint() )
             return footprint;
     }
