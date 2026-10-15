@@ -125,11 +125,20 @@ def main():
     with IpcSession(args.kicad_cli) as session:
         bp = BackplaneIpc(session)
         project, types = bp.project, bp.types
-        work = session.copy_project("demos/backplane-structure", "originals")
-        probes = session.copy_project("demos/backplane-structure", "legacy-item-probes")
-        for board_path in sorted(work.glob("*.kicad_pcb")):
+        work = session.root / "originals"
+        probes = session.root / "legacy-item-probes"
+        # Project downgrade checks every file beside the project.  Isolate each
+        # fixture so an earlier migrated board is not an unhandled newer file
+        # in the next fixture's downgrade input.
+        for destination in (work, probes):
+            for board_path in sorted(source.glob("*.kicad_pcb")):
+                project_dir = destination / board_path.stem
+                project_dir.mkdir(parents=True)
+                for fixture in (board_path, companion(board_path), board_path.with_suffix(".kicad_pro")):
+                    shutil.copy2(fixture, project_dir / fixture.name)
+        for board_path in sorted(work.glob("*/*.kicad_pcb")):
             original = json.loads(companion(board_path).read_text())["items"]["root"]["board_structure"]
-            for path, probe in ((board_path, False), (probes / board_path.name, True)):
+            for path, probe in ((board_path, False), (probes / board_path.parent.name / board_path.name, True)):
                 if probe:
                     inject_legacy_items(path)
                 before_bytes = path.read_bytes(), companion(path).read_bytes()
