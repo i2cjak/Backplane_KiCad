@@ -191,7 +191,9 @@ def main():
                     restored_native = verify_v2(path, structure)
                     assert f'(property "{ROOT_PROPERTY}" "legacy-root")' in restored_native, path
                     # Removing the last extension deletes the companion, keeping native fields.
-                    bp.json_set("SetBoardStructure", "BoardStructureResponse", document, "{}")
+                    # Even an empty structure must identify its JSON schema.
+                    bp.json_set("SetBoardStructure", "BoardStructureResponse", document,
+                                json.dumps({"schema_version": structure["schema_version"]}))
                     session.request(project.SaveDocument(document=document), Empty)
                     assert not companion(path).exists(), path
                     bp.close(document)
