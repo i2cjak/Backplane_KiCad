@@ -46,7 +46,8 @@ kicad-cli api-server --describe
 This prints one JSON object and exits without starting an API server. It
 contains the manifest version, source repository and commit, pinned upstream
 commit, fork and KiCad versions, API version, shared capability names, native
-file-format versions, downgrade target IDs, platform when known, and
+file-format versions, downgrade target IDs, the relative protobuf descriptor
+path `apiDescriptor: "share/backplane/api.desc"`, platform when known, and
 `GPL-3.0-or-later`.
 
 ## Live capabilities
@@ -55,6 +56,19 @@ After connecting, call the protobuf command
 `kiapi.backplane.GetCapabilities`. Its response repeats the fork identity and
 capabilities, gives the board and schematic file-format versions, and lists
 every fully-qualified command type registered by every running API handler.
+
+The lifecycle capabilities are:
+
+- `idle-exit`: `--idle-exit <seconds>` exits through the normal close-without-save
+  path after no API request has been handled for the given positive integer
+  number of seconds. Each handled request resets the timer.
+- `shutdown`: `kiapi.backplane.Shutdown` returns `AS_BAD_REQUEST` when `force`
+  is false and an open document has unsaved changes. A successful response is
+  sent before the server closes documents and exits; `force: true` permits the
+  close without saving.
+- `api-descriptor`: the descriptor named by `apiDescriptor` contains the
+  complete protobuf schema registered by the runtime, including the
+  `kiapi.backplane` commands.
 
 ## Open in stock KiCad 10
 

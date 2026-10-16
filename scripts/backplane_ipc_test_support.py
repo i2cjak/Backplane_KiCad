@@ -22,7 +22,7 @@ def resolve_stock_cli(path):
 
 
 class IpcSession:
-    def __init__(self, cli, timeout=180000, api_socket=None):
+    def __init__(self, cli, timeout=180000, api_socket=None, server_args=None):
         """Create an isolated session, or attach to an existing API socket.
 
         ``api_socket`` is useful for GUI regressions: the caller owns the GUI
@@ -33,6 +33,7 @@ class IpcSession:
         self.api_socket = Path(api_socket).resolve() if api_socket else None
         self.source = Path(__file__).resolve().parents[1]
         self.timeout = timeout
+        self.server_args = list(server_args or [])
         self.token = ""
         self.server = None
         self.connection = None
@@ -64,7 +65,7 @@ class IpcSession:
             if self.api_socket is None:
                 self.log = (self.root / "server.log").open("w+")
                 self.server = subprocess.Popen(
-                    [str(self.cli), "api-server", "--socket", str(self.socket)],
+                    [str(self.cli), "api-server", "--socket", str(self.socket), *self.server_args],
                     env=self.env, stdout=self.log, stderr=subprocess.STDOUT,
                 )
             deadline = time.monotonic() + 30
