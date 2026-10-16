@@ -917,8 +917,17 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
                                .count()
                        >= idleExitSeconds )
         {
-            g_apiServerExitRequested.store( true );
-            continue;
+            // Idle exit must never lose work: a server holding unsaved changes is not idle.
+            // Check again after another full idle period.
+            if( hasUnsavedChanges() )
+            {
+                lastRequestTime = std::chrono::steady_clock::now();
+            }
+            else
+            {
+                g_apiServerExitRequested.store( true );
+                continue;
+            }
         }
 
         if( parentPid > 0 && ++parentPollTicks >= 50 )

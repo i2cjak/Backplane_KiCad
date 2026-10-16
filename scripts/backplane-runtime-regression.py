@@ -118,6 +118,29 @@ def check_idle_exit(cli):
         print("PASS --idle-exit: active requests keep the server up, then idle shutdown exits", flush=True)
 
 
+def check_idle_exit_keeps_unsaved_work(cli):
+    with IpcSession(cli, server_args=["--idle-exit", "2"]) as api:
+        project = api.module("common.commands.project_commands")
+        commands = api.module("board.board_commands")
+        types = api.module("common.types.base_types")
+        design = api.copy_project("demos/ecc83", "idle-dirty")
+        board_path = design / "ecc83-pp.kicad_pcb"
+        document = api.request(project.OpenDocument(type=types.DOCTYPE_PCB, path=str(board_path)),
+                               project.OpenDocumentResponse).document
+        api.request(commands.SetBoardOrigin(
+            board=document, type=commands.BOT_GRID,
+            origin=types.Vector2(x_nm=13000000, y_nm=14000000)), Empty)
+
+        # Several idle periods pass without a request; unsaved changes keep the server up.
+        time.sleep(7)
+        assert api.server.poll() is None, "idle-exit closed a server holding unsaved changes"
+
+        api.request(project.SaveDocument(document=document), Empty)
+        api.server.wait(timeout=8)
+        assert api.server.returncode == 0, api.server.returncode
+        print("PASS --idle-exit: unsaved changes keep the server up; it exits once saved", flush=True)
+
+
 def check_shutdown(cli):
     with IpcSession(cli) as api:
         lifecycle = api.module("backplane.lifecycle")
@@ -186,6 +209,7 @@ def main():
         check_capabilities(api, manifest)
         check_invalid_idle_exit(api.cli, api.env)
         check_idle_exit(api.cli)
+        check_idle_exit_keeps_unsaved_work(api.cli)
         check_shutdown(api.cli)
         check_shutdown_dirty_guard(api.cli)
         check_parent_pid(api.cli, api.root, api.env)

@@ -61,7 +61,9 @@ The lifecycle capabilities are:
 
 - `idle-exit`: `--idle-exit <seconds>` exits through the normal close-without-save
   path after no API request has been handled for the given positive integer
-  number of seconds. Each handled request resets the timer.
+  number of seconds. Each handled request resets the timer. A server holding
+  unsaved changes is never idle: it stays up until the changes are saved (or
+  discarded with a forced close or `Shutdown{force: true}`), then idles out.
 - `shutdown`: `kiapi.backplane.Shutdown` returns `AS_BAD_REQUEST` when `force`
   is false and an open document has unsaved changes. A successful response is
   sent before the server closes documents and exits; `force: true` permits the
