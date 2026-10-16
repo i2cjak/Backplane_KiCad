@@ -47,7 +47,7 @@ set( BACKPLANE_FORK_VERSION "10.99.0-bp.0" CACHE STRING
     "Backplane fork version exposed through the API." )
 set( BACKPLANE_UPSTREAM_COMMIT "unknown" CACHE STRING
     "Pinned upstream KiCad commit used for this Backplane build." )
-set( BACKPLANE_API_VERSION 1 CACHE STRING
+set( BACKPLANE_API_VERSION 2 CACHE STRING
     "Backplane IPC API version." )
 
 # Native file-format versions, read from their headers so kicommon and kicad-cli
