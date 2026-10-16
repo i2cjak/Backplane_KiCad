@@ -1,0 +1,15 @@
+/*
+ * Backplane API-server lifecycle commands.
+ */
+syntax = "proto3";
+
+package kiapi.backplane;
+
+message Shutdown
+{
+  bool force = 1;
+}
+
+message ShutdownResponse
+{
+}

@@ -800,6 +800,20 @@ static struct IFACE : public KIFACE_BASE, public UNITS_PROVIDER
     void RegisterLibraryHandlers( KICAD_API_SERVER* aServer ) override;
     bool LoadAllLibraries() override;
 
+    bool HasApiUnsavedChanges() const override
+    {
+        if( m_openContext && m_openSchematic )
+        {
+            if( m_openSchematic->HasHierarchy() )
+                return m_openSchematic->Hierarchy().IsModified();
+
+            if( SCH_SCREEN* screen = m_openSchematic->RootScreen() )
+                return screen->IsContentModified();
+        }
+
+        return m_openSymbolContext && m_openSymbolContext->IsContentModified();
+    }
+
 
 private:
     std::unique_ptr<EESCHEMA_JOBS_HANDLER> m_jobHandler;

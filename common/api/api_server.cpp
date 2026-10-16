@@ -287,6 +287,8 @@ void KICAD_API_SERVER::handleApiEvent( wxCommandEvent& aEvent )
 
 void KICAD_API_SERVER::handleApiRequestString( std::string& aRequestString )
 {
+    m_handledRequestCount.fetch_add( 1, std::memory_order_relaxed );
+
     ApiRequest request;
 
     if( !request.ParseFromString( aRequestString ) )

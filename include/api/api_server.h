@@ -22,6 +22,7 @@
 #define KICAD_API_SERVER_H
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <set>
@@ -86,6 +87,14 @@ public:
      */
     std::vector<std::string> RegisteredCommands() const;
 
+    /**
+     * Return the number of API requests processed by the main thread.
+     */
+    std::uint64_t HandledRequestCount() const
+    {
+        return m_handledRequestCount.load( std::memory_order_relaxed );
+    }
+
     const std::string& Token() const { return m_token; }
 
     /**
@@ -149,6 +158,8 @@ private:
     std::string m_token;
 
     std::atomic<bool> m_readyToReply;
+
+    std::atomic<std::uint64_t> m_handledRequestCount{ 0 };
 
     std::function<void( kiapi::common::types::DocumentType, const wxString&, const wxString& )> m_renameListener;
 

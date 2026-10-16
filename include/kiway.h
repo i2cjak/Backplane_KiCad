@@ -314,6 +314,13 @@ struct KIFACE
      * Returns true if a load was started.
      */
     virtual bool LoadAllLibraries() { return false; }
+
+    /**
+     * Return whether a document opened through the API has unsaved changes.
+     * This is used by headless API-server lifecycle commands; faces without an
+     * API document return false.
+     */
+    virtual bool HasApiUnsavedChanges() const { return false; }
 };
 
 

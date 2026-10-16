@@ -21,6 +21,7 @@ set( Protobuf_IMPORT_DIRS ${Protobuf_INCLUDE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/pr
 set( KIAPI_PROTO_SRCS
     common/envelope.proto
     backplane/capabilities.proto
+    backplane/lifecycle.proto
     backplane/assembly.proto
 
     common/types/base_types.proto
@@ -77,12 +78,44 @@ add_custom_command( COMMAND ${CMAKE_COMMAND} -E make_directory ${KIAPI_CPP_BASEP
     OUTPUT ${KIAPI_CPP_SRCS} ${KIAPI_CPP_HEADERS}
     )
 
+# Ship the complete API schema with the runtime so clients can build protobuf messages without
+# vendoring a copy of the KiCad API.  Keep this list independent from KIAPI_PROTO_SRCS so every
+# .proto under api/proto is represented, including future descriptor-only definitions.
+file( GLOB_RECURSE KIAPI_DESCRIPTOR_PROTO_SRCS CONFIGURE_DEPENDS
+      RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/proto
+      ${CMAKE_CURRENT_SOURCE_DIR}/proto/*.proto )
+list( SORT KIAPI_DESCRIPTOR_PROTO_SRCS )
+
+set( KIAPI_DESCRIPTOR_PROTO_FULLPATHS )
+foreach( PROTO_SRC ${KIAPI_DESCRIPTOR_PROTO_SRCS} )
+    list( APPEND KIAPI_DESCRIPTOR_PROTO_FULLPATHS
+          ${CMAKE_CURRENT_SOURCE_DIR}/proto/${PROTO_SRC} )
+endforeach()
+
+set( KIAPI_DESCRIPTOR_PATH ${CMAKE_CURRENT_BINARY_DIR}/api.desc )
+
+add_custom_command(
+    COMMAND ${Protobuf_PROTOC_EXECUTABLE}
+            --include_imports
+            --descriptor_set_out=${KIAPI_DESCRIPTOR_PATH}
+            --proto_path=${CMAKE_CURRENT_SOURCE_DIR}/proto
+            ${KIAPI_DESCRIPTOR_PROTO_SRCS}
+    COMMENT "Generating the API protobuf descriptor set..."
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+    DEPENDS ${KIAPI_DESCRIPTOR_PROTO_FULLPATHS}
+    OUTPUT ${KIAPI_DESCRIPTOR_PATH}
+    )
+
+add_custom_target( api_descriptor ALL DEPENDS ${KIAPI_DESCRIPTOR_PATH} )
+
 # kiapi must be a shared DLL because the protobuf messages can only be initialized once
 add_library( kiapi SHARED
     ${CMAKE_CURRENT_SOURCE_DIR}/../include/import_export.h
     ${KIAPI_CPP_SRCS}
     ${KIAPI_CPP_HEADERS}
     )
+
+add_dependencies( kiapi api_descriptor )
 
 target_compile_definitions( kiapi PRIVATE KIAPI_IMPORTEXPORT=APIEXPORT )
 target_compile_definitions( kiapi INTERFACE KIAPI_IMPORTEXPORT=APIIMPORT )
@@ -188,5 +221,10 @@ endif()
 INSTALL( DIRECTORY
     schemas
     DESTINATION ${KICAD_DATA}
+    COMPONENT Runtime
+)
+
+install( FILES ${KIAPI_DESCRIPTOR_PATH}
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/backplane
     COMPONENT Runtime
 )

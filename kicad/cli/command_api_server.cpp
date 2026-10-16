@@ -22,12 +22,16 @@
 #include <atomic>
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <cstdlib>
+#include <functional>
 #include <nlohmann/json.hpp>
 #include <vector>
 
+#include <api/api_handler.h>
 #include <api/api_handler_common.h>
 #include <api/api_handler_libraries.h>
+#include <api/backplane/lifecycle.pb.h>
 #include <libraries/library_table.h>
 #include <api/api_utils.h>
 #include <api/api_server.h>
@@ -53,6 +57,7 @@
 #define ARG_SOCKET "--socket"
 #define ARG_DESCRIBE "--describe"
 #define ARG_PARENT_PID "--parent-pid"
+#define ARG_IDLE_EXIT "--idle-exit"
 
 
 std::atomic_bool g_apiServerExitRequested{ false };
@@ -61,6 +66,38 @@ void apiServerSignalHandler( int )
 {
     g_apiServerExitRequested.store( true );
 }
+
+
+class API_HANDLER_LIFECYCLE : public API_HANDLER
+{
+public:
+    using SHUTDOWN_HANDLER = std::function<HANDLER_RESULT<kiapi::backplane::ShutdownResponse>(
+            const kiapi::backplane::Shutdown& )>;
+
+    explicit API_HANDLER_LIFECYCLE( SHUTDOWN_HANDLER aShutdownHandler ) :
+            m_shutdownHandler( std::move( aShutdownHandler ) )
+    {
+        registerHandler<kiapi::backplane::Shutdown, kiapi::backplane::ShutdownResponse>(
+                &API_HANDLER_LIFECYCLE::handleShutdown );
+    }
+
+private:
+    HANDLER_RESULT<kiapi::backplane::ShutdownResponse> handleShutdown(
+            const HANDLER_CONTEXT<kiapi::backplane::Shutdown>& aCtx )
+    {
+        if( !m_shutdownHandler )
+        {
+            ApiResponseStatus e;
+            e.set_status( ApiStatusCode::AS_UNIMPLEMENTED );
+            e.set_error_message( "Shutdown is not available in this KiCad mode" );
+            return tl::unexpected( e );
+        }
+
+        return m_shutdownHandler( aCtx.Request );
+    }
+
+    SHUTDOWN_HANDLER m_shutdownHandler;
+};
 
 
 static const char* backplanePlatform()
@@ -95,6 +132,7 @@ static int printBackplaneDescription()
         { "apiVersion", BACKPLANE_API_VERSION },
         { "fileFormats", { { "board", BACKPLANE_BOARD_FILE_VERSION },
                            { "schematic", BACKPLANE_SCHEMATIC_FILE_VERSION } } },
+        { "apiDescriptor", "share/backplane/api.desc" },
         { "license", "GPL-3.0-or-later" },
     };
 
@@ -143,6 +181,11 @@ CLI::API_SERVER_COMMAND::API_SERVER_COMMAND() :
             .help( UTF8STDSTR( _( "Exit when this parent process ID disappears" ) ) )
             .metavar( "PID" );
 
+    m_argParser.add_argument( ARG_IDLE_EXIT )
+            .default_value( std::string() )
+            .help( UTF8STDSTR( _( "Exit after this many seconds without a handled API request" ) ) )
+            .metavar( "SECONDS" );
+
 }
 
 
@@ -164,6 +207,22 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
         if( end == parentPidText.c_str() || *end != '\0' || parentPid <= 0 )
         {
             wxFprintf( stderr, _( "Invalid parent process ID\n" ) );
+            return EXIT_CODES::ERR_ARGS;
+        }
+    }
+
+    long long idleExitSeconds = 0;
+    std::string idleExitText = m_argParser.get<std::string>( ARG_IDLE_EXIT );
+
+    if( !idleExitText.empty() )
+    {
+        char* end = nullptr;
+        errno = 0;
+        idleExitSeconds = std::strtoll( idleExitText.c_str(), &end, 10 );
+
+        if( errno == ERANGE || end == idleExitText.c_str() || *end != '\0' || idleExitSeconds <= 0 )
+        {
+            wxFprintf( stderr, _( "Invalid idle-exit seconds\n" ) );
             return EXIT_CODES::ERR_ARGS;
         }
     }
@@ -711,6 +770,41 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
     commonHandler.SetCloseDocumentHandler( closeDocument );
     commonHandler.SetCloseAllDocumentsHandler( closeAllDocuments );
 
+    auto hasUnsavedChanges = [&]()
+    {
+        for( const OPEN_DOCUMENT& doc : openDocuments )
+        {
+            if( doc.type == types::DOCTYPE_PROJECT )
+                continue;
+
+            if( KIFACE* kiface = aKiway.KiFACE( faceForDocument( doc.type ), false ) )
+            {
+                if( kiface->HasApiUnsavedChanges() )
+                    return true;
+            }
+        }
+
+        return false;
+    };
+
+    API_HANDLER_LIFECYCLE lifecycleHandler(
+            [&]( const kiapi::backplane::Shutdown& aRequest )
+                    -> HANDLER_RESULT<kiapi::backplane::ShutdownResponse>
+            {
+                if( !aRequest.force() && hasUnsavedChanges() )
+                {
+                    ApiResponseStatus e;
+                    e.set_status( ApiStatusCode::AS_BAD_REQUEST );
+                    e.set_error_message( "unsaved changes; save first or pass force" );
+                    return tl::unexpected( e );
+                }
+
+                // KICAD_API_SERVER sends the successful response before the main loop observes
+                // this flag and runs the normal document-close path.
+                g_apiServerExitRequested.store( true );
+                return kiapi::backplane::ShutdownResponse();
+            } );
+
     server->SetRenameListener(
             [&]( types::DocumentType aType, const wxString& aOldPath, const wxString& aNewPath )
             {
@@ -739,6 +833,7 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
 
     server->RegisterHandler( &commonHandler );
     server->RegisterHandler( &designBlockLibrariesHandler );
+    server->RegisterHandler( &lifecycleHandler );
     server->Start();
 
     if( !server->Running() )
@@ -772,6 +867,7 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
             wxFprintf( stderr, "%s\n", preloadResult.error().error_message() );
             server->DeregisterHandler( &commonHandler );
             server->DeregisterHandler( &designBlockLibrariesHandler );
+            server->DeregisterHandler( &lifecycleHandler );
             return EXIT_CODES::ERR_ARGS;
         }
     }
@@ -789,10 +885,30 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
     g_apiServerExitRequested.store( false );
 
     int parentPollTicks = 0;
+    std::uint64_t lastRequestCount = server->HandledRequestCount();
+    auto lastRequestTime = std::chrono::steady_clock::now();
 
     while( !g_apiServerExitRequested.load() )
     {
         wxTheApp->ProcessPendingEvents();
+
+        std::uint64_t requestCount = server->HandledRequestCount();
+
+        if( requestCount != lastRequestCount )
+        {
+            lastRequestCount = requestCount;
+            lastRequestTime = std::chrono::steady_clock::now();
+        }
+
+        if( idleExitSeconds > 0
+            && std::chrono::duration_cast<std::chrono::seconds>(
+                       std::chrono::steady_clock::now() - lastRequestTime )
+                               .count()
+                       >= idleExitSeconds )
+        {
+            g_apiServerExitRequested.store( true );
+            continue;
+        }
 
         if( parentPid > 0 && ++parentPollTicks >= 50 )
         {
@@ -820,6 +936,7 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
     closeAllDocuments( closeAllReq );
     server->DeregisterHandler( &commonHandler );
     server->DeregisterHandler( &designBlockLibrariesHandler );
+    server->DeregisterHandler( &lifecycleHandler );
 
     return EXIT_CODES::OK;
 }

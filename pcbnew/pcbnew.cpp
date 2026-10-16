@@ -696,6 +696,16 @@ static struct IFACE : public KIFACE_BASE, public UNITS_PROVIDER
     void RegisterLibraryHandlers( KICAD_API_SERVER* aServer ) override;
     bool LoadAllLibraries() override;
 
+    bool HasApiUnsavedChanges() const override
+    {
+        if( m_openContext && m_openContext->IsContentModified() )
+            return true;
+
+        return m_openFpContext && m_openFpContext->GetBoard()
+               && m_openFpContext->GetBoard()->GetFirstFootprint()
+               && m_openFpContext->GetBoard()->GetFirstFootprint()->IsModified();
+    }
+
 
 private:
     std::unique_ptr<PCBNEW_JOBS_HANDLER> m_jobHandler;
