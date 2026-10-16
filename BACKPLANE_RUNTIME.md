@@ -62,13 +62,18 @@ The manual-work export command is:
 
 ```sh
 kicad-cli project downgrade --target 10.0 \
-  -o <project>/backplane-export-v10 <project>.kicad_pro \
-  --report-json <dir>/downgrade-report.json
+  -o <exports>/<project-name>/kicad10 <project>.kicad_pro \
+  --report-json <exports>/<project-name>/downgrade-report.json
 ```
 
-The command exits nonzero without writing an export when the report contains a
-blocked or lossy change. The caller can show the report and retry with
-`--force`; `--dry-run` produces the report only. Backplane companion files
+The output folder must be outside the project folder and must be new or empty;
+`downgrade` creates it. The command also refuses a project folder that holds any
+other file KiCad 10 cannot read.
+
+It exits nonzero without writing an export when the report contains a lossy
+change. The caller can show the report and retry with `--force`; items in the
+`block` bucket (for example styled line endings) also need
+`--drop-approximations`. `--dry-run` produces the report only. Backplane companion files
 (`*.backplane.json` and `*.backplane-assembly.json`) are copied beside the
 export and reported as kept because stock KiCad ignores them.
 
