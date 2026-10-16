@@ -291,9 +291,36 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
         }
     };
 
+    auto hasUnsavedChanges = [&]()
+    {
+        for( const OPEN_DOCUMENT& doc : openDocuments )
+        {
+            if( doc.type == types::DOCTYPE_PROJECT )
+                continue;
+
+            if( KIFACE* kiface = aKiway.KiFACE( faceForDocument( doc.type ), false ) )
+            {
+                if( kiface->HasApiUnsavedChanges() )
+                    return true;
+            }
+        }
+
+        return false;
+    };
+
     auto closeAllDocuments =
             [&]( const commands::CloseAllDocuments& aRequest ) -> HANDLER_RESULT<google::protobuf::Empty>
     {
+        // Honour CloseAllDocuments.force as documented in project_commands.proto: without it,
+        // refuse to discard unsaved changes.  Upstream closed modified documents regardless.
+        if( !aRequest.force() && hasUnsavedChanges() )
+        {
+            ApiResponseStatus e;
+            e.set_status( ApiStatusCode::AS_BAD_REQUEST );
+            e.set_error_message( "unsaved changes; save first or pass force" );
+            return tl::unexpected( e );
+        }
+
         wxString errors;
 
         for( const OPEN_DOCUMENT& doc : openDocuments )
@@ -770,22 +797,6 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
     commonHandler.SetCloseDocumentHandler( closeDocument );
     commonHandler.SetCloseAllDocumentsHandler( closeAllDocuments );
 
-    auto hasUnsavedChanges = [&]()
-    {
-        for( const OPEN_DOCUMENT& doc : openDocuments )
-        {
-            if( doc.type == types::DOCTYPE_PROJECT )
-                continue;
-
-            if( KIFACE* kiface = aKiway.KiFACE( faceForDocument( doc.type ), false ) )
-            {
-                if( kiface->HasApiUnsavedChanges() )
-                    return true;
-            }
-        }
-
-        return false;
-    };
 
     API_HANDLER_LIFECYCLE lifecycleHandler(
             [&]( const kiapi::backplane::Shutdown& aRequest )
