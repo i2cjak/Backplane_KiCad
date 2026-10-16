@@ -431,7 +431,8 @@ jobs:
           unset LD_LIBRARY_PATH
           stock="$RUNNER_TEMP/stock-kicad-10"
           mkdir -p "$stock"
-          curl -sSfL -o "$stock/kicad.deb" "$STOCK_KICAD_DEB"
+          # Launchpad occasionally answers 503; retry before failing the build.
+          curl -sSfL --retry 6 --retry-delay 20 --retry-all-errors -o "$stock/kicad.deb" "$STOCK_KICAD_DEB"
           echo "$STOCK_KICAD_SHA256  $stock/kicad.deb" | sha256sum -c -
           dpkg -x "$stock/kicad.deb" "$stock/root"
           cat > "$stock/kicad-cli" <<'WRAPPER'
