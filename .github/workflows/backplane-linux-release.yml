@@ -172,6 +172,7 @@ jobs:
           ccache --max-size=4G
           fork_version="10.99.0-bp.0"
           case "${GITHUB_REF_NAME}" in backplane-kicad-v*) fork_version="${GITHUB_REF_NAME#backplane-kicad-v}" ;; esac
+          echo "BACKPLANE_FORK_VERSION=${fork_version}" >> "$GITHUB_ENV"
           upstream_commit="$(cat BACKPLANE_UPSTREAM)"
           cmake -S . -B build/backplane-linux -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
@@ -211,7 +212,9 @@ jobs:
           set -euo pipefail
           # Resolve KiCad's installed shared libraries while assembling the ELF closure.
           export LD_LIBRARY_PATH="$PWD/stage/lib:/usr/lib/x86_64-linux-gnu:/lib/x86_64-linux-gnu:/usr/lib:/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          version="$(stage/bin/kicad-cli --version | head -n 1 | tr ' /' '__')"
+          # Name the archive by the fork version (e.g. 10.99.0-bp.1); kicad-cli --version
+          # only reports the KiCad base version.
+          version="${BACKPLANE_FORK_VERSION:-$(stage/bin/kicad-cli --version | head -n 1 | tr ' /' '__')}"
           archive_root="backplane-kicad-linux-x86_64-${version}"
           mkdir -p "release/${archive_root}/licenses"
           cp -a stage/. "release/${archive_root}/"
@@ -471,6 +474,8 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           draft: true
+          # Master-based runtimes ship as pre-releases.
+          prerelease: true
           generate_release_notes: true
           files: |
             release/*.tar.gz
