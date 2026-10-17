@@ -791,70 +791,81 @@ bool FOOTPRINT::Deserialize( const google::protobuf::Any &aContainer )
         GetField( FIELD_T::DESCRIPTION )->Deserialize( buf );
     }
 
-    m_attributes = 0;
-
-    switch( footprint.attributes().mounting_style() )
+    if( footprint.has_attributes() )
     {
-    case types::FootprintMountingStyle::FMS_THROUGH_HOLE:
-        m_attributes |= FP_THROUGH_HOLE;
-        break;
+        m_attributes = 0;
 
-    case types::FootprintMountingStyle::FMS_SMD:
-        m_attributes |= FP_SMD;
-        break;
+        switch( footprint.attributes().mounting_style() )
+        {
+        case types::FootprintMountingStyle::FMS_THROUGH_HOLE:
+            m_attributes |= FP_THROUGH_HOLE;
+            break;
 
-    default:
-        break;
+        case types::FootprintMountingStyle::FMS_SMD:
+            m_attributes |= FP_SMD;
+            break;
+
+        default:
+            break;
+        }
+
+        SetBoardOnly( footprint.attributes().not_in_schematic() );
+        SetExcludedFromBOM( footprint.attributes().exclude_from_bill_of_materials() );
+        SetExcludedFromSim( footprint.attributes().exclude_from_simulation() );
+        SetExcludedFromPosFiles( footprint.attributes().exclude_from_position_files() );
+        SetAllowMissingCourtyard( footprint.attributes().exempt_from_courtyard_requirement() );
+        SetDNP( footprint.attributes().do_not_populate() );
+        SetAllowSolderMaskBridges( footprint.attributes().allow_soldermask_bridges() );
     }
-
-    SetBoardOnly( footprint.attributes().not_in_schematic() );
-    SetExcludedFromBOM( footprint.attributes().exclude_from_bill_of_materials() );
-    SetExcludedFromSim( footprint.attributes().exclude_from_simulation() );
-    SetExcludedFromPosFiles( footprint.attributes().exclude_from_position_files() );
-    SetAllowMissingCourtyard( footprint.attributes().exempt_from_courtyard_requirement() );
-    SetDNP( footprint.attributes().do_not_populate() );
-    SetAllowSolderMaskBridges( footprint.attributes().allow_soldermask_bridges() );
 
     // Definition
-    DeserializeDefinition( footprint.definition() );
+    if( footprint.has_definition() )
+        DeserializeDefinition( footprint.definition() );
 
-    const types::FootprintDesignRuleOverrides& overrides = footprint.overrides();
-
-    if( overrides.has_copper_clearance() )
-        SetLocalClearance( overrides.copper_clearance().value_nm() );
-    else
-        SetLocalClearance( std::nullopt );
-
-    if( overrides.has_solder_mask() && overrides.solder_mask().has_solder_mask_margin() )
-        SetLocalSolderMaskMargin( overrides.solder_mask().solder_mask_margin().value_nm() );
-    else
-        SetLocalSolderMaskMargin( std::nullopt );
-
-    if( overrides.has_solder_paste() )
+    if( footprint.has_overrides() )
     {
-        const types::SolderPasteOverrides& pasteSettings = overrides.solder_paste();
+        const types::FootprintDesignRuleOverrides& overrides = footprint.overrides();
 
-        if( pasteSettings.has_solder_paste_margin() )
-            SetLocalSolderPasteMargin( pasteSettings.solder_paste_margin().value_nm() );
+        if( overrides.has_copper_clearance() )
+            SetLocalClearance( overrides.copper_clearance().value_nm() );
         else
-            SetLocalSolderPasteMargin( std::nullopt );
+            SetLocalClearance( std::nullopt );
 
-        if( pasteSettings.has_solder_paste_margin_ratio() )
-            SetLocalSolderPasteMarginRatio( pasteSettings.solder_paste_margin_ratio().value() );
+        if( overrides.has_solder_mask() && overrides.solder_mask().has_solder_mask_margin() )
+            SetLocalSolderMaskMargin( overrides.solder_mask().solder_mask_margin().value_nm() );
         else
-            SetLocalSolderPasteMarginRatio( std::nullopt );
+            SetLocalSolderMaskMargin( std::nullopt );
+
+        if( overrides.has_solder_paste() )
+        {
+            const types::SolderPasteOverrides& pasteSettings = overrides.solder_paste();
+
+            if( pasteSettings.has_solder_paste_margin() )
+                SetLocalSolderPasteMargin( pasteSettings.solder_paste_margin().value_nm() );
+            else
+                SetLocalSolderPasteMargin( std::nullopt );
+
+            if( pasteSettings.has_solder_paste_margin_ratio() )
+                SetLocalSolderPasteMarginRatio( pasteSettings.solder_paste_margin_ratio().value() );
+            else
+                SetLocalSolderPasteMarginRatio( std::nullopt );
+        }
+
+        SetLocalZoneConnection( FromProtoEnum<ZONE_CONNECTION>( overrides.zone_connection() ) );
     }
 
-    SetLocalZoneConnection( FromProtoEnum<ZONE_CONNECTION>( overrides.zone_connection() ) );
-
-    m_path = kiapi::common::UnpackSheetPath( footprint.symbol_path() );
-    m_sheetname = wxString::FromUTF8( footprint.symbol_sheet_name() );
-    m_sheetfile = wxString::FromUTF8( footprint.symbol_sheet_filename() );
-    m_filters = wxString::FromUTF8( footprint.symbol_footprint_filters() );
+    if( footprint.has_symbol_path() )
+    {
+        m_path = kiapi::common::UnpackSheetPath( footprint.symbol_path() );
+        m_sheetname = wxString::FromUTF8( footprint.symbol_sheet_name() );
+        m_sheetfile = wxString::FromUTF8( footprint.symbol_sheet_filename() );
+        m_filters = wxString::FromUTF8( footprint.symbol_footprint_filters() );
+    }
 
     kiapi::common::UnpackCustomProperties( footprint.custom_properties(), *this );
 
-    if( !kiapi::board::UnpackEmbeddedFiles( *this, footprint.embedded_files() ) )
+    if( footprint.has_embedded_files()
+        && !kiapi::board::UnpackEmbeddedFiles( *this, footprint.embedded_files() ) )
         return false;
 
     m_variants.clear();

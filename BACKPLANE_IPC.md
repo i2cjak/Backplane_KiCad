@@ -42,6 +42,9 @@ with pynng.Req0(dial="ipc:///run/user/1000/backplane/kicad/<hash>/api.sock") as 
   does not wait for open commits: end yours first.
   `CloseAllDocuments` without `force` (and closing the project document) refuses while a document has
   unsaved changes; save first or pass `force: true`.
+- A PCB footprint update may contain only the footprint ID, position, and layer. If its
+  `FootprintInstance` omits `definition`, the existing footprint body is kept; an explicitly
+  present empty `definition` replaces the body with an empty definition.
 - Schematic: all item types are serialized (wires, junctions, labels, symbols and pins, sheets,
   tables, rule areas, groups ...); `GetSchematicHierarchy`, `GetSchematicNetlist`.
 - Board: nets and connectivity, design rules (`board_rules.proto`), stackup (read only),
