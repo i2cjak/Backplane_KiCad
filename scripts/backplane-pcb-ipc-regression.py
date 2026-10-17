@@ -56,10 +56,28 @@ def main():
                     footprint.layer,
                     sum(item.type_url == model_type_url for item in footprint.definition.items),
                     sum(item.type_url == pad_type_url for item in footprint.definition.items),
+                    round(footprint.orientation.value_degrees, 6),
+                    footprint.locked,
                 )
             return state
 
+        # Give one footprint a non-default rotation and lock with a full update first, so the
+        # partial update below must keep them.
+        packed_first = items(enums.KOT_PCB_FOOTPRINT)[0]
+        first = board.FootprintInstance()
+        assert packed_first.Unpack(first)
+        first.orientation.value_degrees = 90.0
+        first.locked = types.LS_LOCKED
+        transaction = api.request(editor.BeginCommit(header=header), editor.BeginCommitResponse)
+        full = editor.UpdateItems(header=header)
+        full.items.add().Pack(first)
+        assert api.request(full, editor.UpdateItemsResponse).updated_items[0].status.code == editor.ISC_OK
+        api.request(editor.EndCommit(header=header, id=transaction.id, action=editor.CMA_COMMIT,
+                                     message="Rotate and lock before partial update"), editor.EndCommitResponse)
+
         before_footprints = footprint_state()
+        assert before_footprints[first.id.value][5] == 90.0, before_footprints[first.id.value]
+        assert before_footprints[first.id.value][6] == types.LS_LOCKED, before_footprints[first.id.value]
         original_footprint_count = len(before_footprints)
         original_model_count = sum(state[3] for state in before_footprints.values())
         original_pad_count = sum(state[4] for state in before_footprints.values())
@@ -71,7 +89,6 @@ def main():
             partial.id.value = footprint_id
             partial.position.x_nm = state[0] + 1000000
             partial.position.y_nm = state[1]
-            partial.layer = state[2]
             partial_updates.append(partial)
 
         transaction = api.request(editor.BeginCommit(header=header), editor.BeginCommitResponse)
@@ -91,8 +108,11 @@ def main():
             updated = after_footprints[footprint_id]
             assert updated[0] == state[0] + 1000000
             assert updated[1] == state[1]
+            assert updated[2] == state[2], "partial update changed the layer"
             assert updated[3] == state[3]
             assert updated[4] == state[4]
+            assert updated[5] == state[5], "partial update changed the rotation"
+            assert updated[6] == state[6], "partial update changed the lock"
         assert sum(state[3] for state in after_footprints.values()) == original_model_count
         assert sum(state[4] for state in after_footprints.values()) == original_pad_count
 
@@ -107,11 +127,15 @@ def main():
             updated = reopened_footprints[footprint_id]
             assert updated[0] == state[0] + 1000000
             assert updated[1] == state[1]
+            assert updated[2] == state[2], "partial update changed the layer"
             assert updated[3] == state[3]
             assert updated[4] == state[4]
+            assert updated[5] == state[5], "partial update changed the rotation"
+            assert updated[6] == state[6], "partial update changed the lock"
         assert sum(state[3] for state in reopened_footprints.values()) == original_model_count
         assert sum(state[4] for state in reopened_footprints.values()) == original_pad_count
-        print("PASS partial footprint updates preserve pads/models in memory and after save/reopen", flush=True)
+        print("PASS partial footprint updates keep pads, models, layer, rotation and lock "
+              "in memory and after save/reopen", flush=True)
 
         layers = request(commands.GetBoardEnabledLayers, commands.BoardEnabledLayersResponse)
         changed_layers = request(commands.SetBoardEnabledLayers, commands.BoardEnabledLayersResponse,

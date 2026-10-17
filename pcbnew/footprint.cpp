@@ -751,10 +751,19 @@ bool FOOTPRINT::Deserialize( const google::protobuf::Any &aContainer )
         return false;
 
     SetUuidDirect( KIID( footprint.id().value() ) );
-    SetPosition( VECTOR2I( footprint.position().x_nm(), footprint.position().y_nm() ) );
-    SetOrientationDegrees( footprint.orientation().value_degrees() );
-    SetLayer( FromProtoEnum<PCB_LAYER_ID, types::BoardLayer>( footprint.layer() ) );
-    SetLocked( footprint.locked() == kiapi::common::types::LockedState::LS_LOCKED );
+    // A partial FootprintInstance (e.g. id + position) keeps whatever it does not carry:
+    // message fields by presence, enum fields when they are left at their UNKNOWN zero value.
+    if( footprint.has_position() )
+        SetPosition( VECTOR2I( footprint.position().x_nm(), footprint.position().y_nm() ) );
+
+    if( footprint.has_orientation() )
+        SetOrientationDegrees( footprint.orientation().value_degrees() );
+
+    if( footprint.layer() != types::BoardLayer::BL_UNKNOWN )
+        SetLayer( FromProtoEnum<PCB_LAYER_ID, types::BoardLayer>( footprint.layer() ) );
+
+    if( footprint.locked() != kiapi::common::types::LockedState::LS_UNKNOWN )
+        SetLocked( footprint.locked() == kiapi::common::types::LockedState::LS_LOCKED );
 
     google::protobuf::Any buf;
     types::Field mandatoryField;
