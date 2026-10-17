@@ -554,6 +554,26 @@ HANDLER_RESULT<ItemRequestStatus> API_HANDLER_BOARD::handleCreateUpdateItemsInte
             continue;
         }
 
+        if( !aCreate && ( *optItem )->Type() == PCB_FOOTPRINT_T )
+        {
+            // Deserialize footprint updates onto the existing item so fields omitted from a
+            // partial FootprintInstance, such as the definition, can retain their current data.
+            std::unique_ptr<BOARD_ITEM> updated(
+                    static_cast<BOARD_ITEM*>( ( *optItem )->Clone() ) );
+
+            if( !updated->Deserialize( anyItem ) )
+            {
+                commit->RevertToCheckpoint( commitCheckpoint );
+
+                e.set_status( ApiStatusCode::AS_BAD_REQUEST );
+                e.set_error_message( fmt::format( "could not unpack {} from request",
+                                                  updated->GetClass().ToStdString() ) );
+                return tl::unexpected( e );
+            }
+
+            item = std::move( updated );
+        }
+
         if( aCreate
             && !item->FitsEnabledLayers( board->GetEnabledLayers(), board->GetCopperLayerCount() ) )
         {
