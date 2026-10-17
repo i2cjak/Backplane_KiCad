@@ -39,6 +39,7 @@ Classes: **DROP-UPSTREAM** = master has it; **DROP-OBSOLETE** = only meaningful 
 | N2 | `kiapi.backplane.GetCapabilities` IPC command (own proto package) | Lists fork version, upstream commit, registered API commands, file-format versions. |
 | N3 | `api-server --parent-pid PID` | Server exits when the Backplane hub dies; no orphan servers. |
 | N4 | downgrade carries `.backplane.json` companions | `project downgrade --target 10.0` copies fork sidecars beside the output and reports them as preserved-but-ignored by stock KiCad. |
+| N5 | partial PCB footprint updates preserve omitted data | `UpdateItems` requests without `FootprintInstance.definition` retain the existing footprint body and other presence-tracked fields; the PCB IPC regression covers memory and save/reopen. |
 
 ## Patch set on backplane/master (base fe761fb867; see `git log $(cat BACKPLANE_UPSTREAM)..backplane/master`)
 | Commit | Patch | Source |
@@ -73,6 +74,7 @@ Tests print `KNOWN GAP ...` for these instead of failing; each needs a focused p
 |---|---|---|
 | `CloseAllDocuments(force=False)` ignores `force` and discards unsaved changes | data loss risk for agents | **fixed** in the fork (honours `force`; also guards closing the project document); upstream candidate |
 | Footprint/pad children created in a footprint are not found after commit | footprint editing over IPC | **fixed** in the fork (PR #7: 307c41268d, f14a2d270f, f7898cdaf3, 68f5db0933); upstream candidate (GUI undo not checked: non-goal) |
+| Partial `FootprintInstance` update clears the footprint body | pads, graphics, zones, groups, constraints, models, and points are lost on update/save | **fixed** in `impl/footprint-partial-update`; upstream candidate |
 | Sheet symbol created over IPC (reusing a sheet file) makes the next save fail | schematic becomes unsaveable | candidate patch |
 | Placed-symbol update detaches its library link (`ecc83-pp:R` → `:R_1`) | silent library-link loss | candidate patch |
 | Headless footprint modified state reflects the board context | wrong dirty flag | candidate patch |

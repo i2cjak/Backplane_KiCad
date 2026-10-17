@@ -4,6 +4,7 @@
 
 import argparse
 from pathlib import Path
+import subprocess
 import uuid
 import re
 
@@ -40,6 +41,77 @@ def main():
             result = api.request(editor.GetItems(header=header, types=[kind]), editor.GetItemsResponse)
             assert result.status == types.IRS_OK, result
             return result.items
+
+        model_type_url = "type.googleapis.com/kiapi.board.types.Footprint3DModel"
+        pad_type_url = "type.googleapis.com/kiapi.board.types.Pad"
+
+        def footprint_state():
+            state = {}
+            for packed in items(enums.KOT_PCB_FOOTPRINT):
+                footprint = board.FootprintInstance()
+                assert packed.Unpack(footprint)
+                state[footprint.id.value] = (
+                    footprint.position.x_nm,
+                    footprint.position.y_nm,
+                    footprint.layer,
+                    sum(item.type_url == model_type_url for item in footprint.definition.items),
+                    sum(item.type_url == pad_type_url for item in footprint.definition.items),
+                )
+            return state
+
+        before_footprints = footprint_state()
+        original_footprint_count = len(before_footprints)
+        original_model_count = sum(state[3] for state in before_footprints.values())
+        original_pad_count = sum(state[4] for state in before_footprints.values())
+        original_model_entries = board_path.read_text(encoding="utf-8").count("(model ")
+
+        partial_updates = []
+        for footprint_id, state in before_footprints.items():
+            partial = board.FootprintInstance()
+            partial.id.value = footprint_id
+            partial.position.x_nm = state[0] + 1000000
+            partial.position.y_nm = state[1]
+            partial.layer = state[2]
+            partial_updates.append(partial)
+
+        transaction = api.request(editor.BeginCommit(header=header), editor.BeginCommitResponse)
+        update = editor.UpdateItems(header=header)
+        for partial in partial_updates:
+            update.items.add().Pack(partial)
+        update_result = api.request(update, editor.UpdateItemsResponse)
+        assert update_result.status == types.IRS_OK, update_result
+        assert len(update_result.updated_items) == len(partial_updates), update_result
+        assert all(item.status.code == editor.ISC_OK for item in update_result.updated_items), update_result
+        api.request(editor.EndCommit(header=header, id=transaction.id, action=editor.CMA_COMMIT,
+                                     message="Partial footprint update regression"), editor.EndCommitResponse)
+
+        after_footprints = footprint_state()
+        assert set(after_footprints) == set(before_footprints)
+        for footprint_id, state in before_footprints.items():
+            updated = after_footprints[footprint_id]
+            assert updated[0] == state[0] + 1000000
+            assert updated[1] == state[1]
+            assert updated[3] == state[3]
+            assert updated[4] == state[4]
+        assert sum(state[3] for state in after_footprints.values()) == original_model_count
+        assert sum(state[4] for state in after_footprints.values()) == original_pad_count
+
+        api.request(project.SaveDocument(document=document), Empty)
+        assert board_path.read_text(encoding="utf-8").count("(model ") == original_model_entries
+        api.request(project.CloseDocument(document=document), Empty)
+        document = api.request(project.OpenDocument(type=types.DOCTYPE_PCB, path=str(board_path)),
+                               project.OpenDocumentResponse).document
+        header = types.ItemHeader(document=document)
+        reopened_footprints = footprint_state()
+        for footprint_id, state in before_footprints.items():
+            updated = reopened_footprints[footprint_id]
+            assert updated[0] == state[0] + 1000000
+            assert updated[1] == state[1]
+            assert updated[3] == state[3]
+            assert updated[4] == state[4]
+        assert sum(state[3] for state in reopened_footprints.values()) == original_model_count
+        assert sum(state[4] for state in reopened_footprints.values()) == original_pad_count
+        print("PASS partial footprint updates preserve pads/models in memory and after save/reopen", flush=True)
 
         layers = request(commands.GetBoardEnabledLayers, commands.BoardEnabledLayersResponse)
         changed_layers = request(commands.SetBoardEnabledLayers, commands.BoardEnabledLayersResponse,
@@ -196,6 +268,59 @@ def main():
         assert request(commands.GetBoardPlotSettings, commands.BoardPlotSettingsResponse).plot_settings.mirror == plot.mirror
         assert request(commands.GetBoardDesignRules, commands.BoardDesignRulesResponse).rules.teardrops == design_rules.teardrops
         print("PASS netlist dry-run/update and save/reopen persistence", flush=True)
+
+        fresh_board_path = design / "fresh.kicad_pcb"
+        api.request(project.CreateDocument(type=types.DOCTYPE_PCB, path=str(fresh_board_path)),
+                    project.OpenDocumentResponse)
+        opened_boards = api.request(editor.GetOpenDocuments(type=types.DOCTYPE_PCB),
+                                    editor.GetOpenDocumentsResponse)
+        assert len(opened_boards.documents) == 1, opened_boards
+        fresh_document = opened_boards.documents[0]
+        assert fresh_document.board_filename == fresh_board_path.name, fresh_document
+
+        fresh_netlist_path = design / "fresh-netlist.net"
+        netlist_export = subprocess.run(
+            [str(api.cli), "sch", "export", "netlist", "--format", "kicadsexpr",
+             "-o", str(fresh_netlist_path), str(schematic_path)],
+            env=api.env, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            timeout=120,
+        )
+        assert netlist_export.returncode == 0, netlist_export.stdout
+
+        fresh_import = api.request(
+            commands.ImportNetlist(board=fresh_document, netlist_path=str(fresh_netlist_path),
+                                   match_mode=commands.NMM_REFERENCE),
+            commands.ImportNetlistResponse,
+        )
+        assert fresh_import.error_count == 0, fresh_import.report
+        expected_new_footprints = 15 if original_footprint_count == 15 else original_footprint_count
+        expected_models = 11 if original_model_count == 11 else original_model_count
+        assert fresh_import.new_footprint_count == expected_new_footprints, fresh_import
+
+        fresh_header = types.ItemHeader(document=fresh_document)
+        fresh_items = api.request(
+            editor.GetItems(header=fresh_header, types=[enums.KOT_PCB_FOOTPRINT]),
+            editor.GetItemsResponse,
+        )
+        assert fresh_items.status == types.IRS_OK, fresh_items
+        model_paths = []
+        for packed in fresh_items.items:
+            footprint = board.FootprintInstance()
+            assert packed.Unpack(footprint)
+            for item in footprint.definition.items:
+                if item.type_url != model_type_url:
+                    continue
+                model = board.Footprint3DModel()
+                assert item.Unpack(model)
+                assert model.filename.startswith("${KICAD10_3DMODEL_DIR}/"), model
+                model_paths.append(model.filename)
+        assert len(model_paths) == expected_models, model_paths
+
+        api.request(project.SaveDocument(document=fresh_document), Empty)
+        fresh_text = fresh_board_path.read_text(encoding="utf-8")
+        assert fresh_text.count("(model ") == expected_models
+        assert all(f'(model "{path}"' in fresh_text for path in model_paths)
+        print("PASS fresh-board netlist import creates footprints with relocatable models", flush=True)
         api.request(project.CloseAllDocuments(force=True), Empty)
 
 
