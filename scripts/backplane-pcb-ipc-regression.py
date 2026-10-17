@@ -329,7 +329,6 @@ def main():
         assert fresh_text.count("(model ") == expected_models
         assert all(f'(model "{path}"' in fresh_text for path in model_paths)
         print("PASS fresh-board netlist import creates footprints with relocatable models", flush=True)
-        api.request(project.CloseAllDocuments(force=True), Empty)
 
 
 if __name__ == "__main__":
