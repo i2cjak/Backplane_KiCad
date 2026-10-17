@@ -53,6 +53,14 @@ with pynng.Req0(dial="ipc:///run/user/1000/backplane/kicad/<hash>/api.sock") as 
   `Get/SetBoardEditorAppearanceSettings`), `HighlightNets`, `RunAction`, `RevertDocument`,
   `OpenLibraryItem` and `InteractiveMoveItems`. Name items by ID instead of selecting them; to
   undo unsaved work, drop the commit or close the document with `force` and reopen it.
+- Schematic symbols can be created from a library ID: send `CreateItems` with a
+  `SchematicSymbolInstance` whose `definition.id` identifies the library symbol, even when
+  `definition.items` is empty. The server loads the requested library synchronously, expands the
+  definition, and keeps explicit instance placement, orientation, unit, and field values. If the
+  library symbol cannot be found, that item receives `ISC_INVALID_DATA` and no hollow symbol is
+  added.
+- `PlaceSymbolFromLibrary` also loads its requested symbol library on demand, so it succeeds
+  immediately in headless mode without waiting for `LoadAllLibraries`.
 - ERC and DRC are not IPC commands: use `kicad-cli sch erc` and `kicad-cli pcb drc`.
 
 Full command list and what master lacks: `bp-coord/kicad-fork/IPC-MAP.md` (coordination repo),

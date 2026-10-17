@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """Exercise schematic IPC fidelity against an isolated KiCad CLI.
 
-This is deliberately separate from the broad release smoke.  It keeps a
-complete symbol definition in the update request, changes one instance field,
-and verifies that graphics, library identity, pins, variants, fields and
-custom properties survive rollback, commit, save and reopen.  With --stock-cli it
-also checks that a KiCad 10 export of each saved file opens in stock KiCad 10.0.x.
+This is deliberately separate from the broad release smoke.  It checks headless
+library-ID symbol placement and creation, then keeps a complete symbol definition
+in an update request and verifies that graphics, library identity, pins, variants,
+fields and custom properties survive rollback, commit, save and reopen.  With
+--stock-cli it also checks that a KiCad 10 export of each saved file opens in stock
+KiCad 10.0.x.
 """
 
 import argparse
 from pathlib import Path
 import subprocess
+import uuid
 
 from google.protobuf import descriptor_pb2, descriptor_pool, message_factory
 
@@ -91,6 +93,7 @@ def main(cli, stock_cli=None):
         # Import generated modules only after IpcSession has created its
         # isolated binding directory.
         editor = api.module("common.commands.editor_commands")
+        library_api = api.module("common.commands.library_commands")
         project = api.module("common.commands.project_commands")
         variants_api = api.module("common.commands.variant_commands")
         types = api.module("common.types.base_types")
@@ -110,6 +113,89 @@ def main(cli, stock_cli=None):
         netlist = api.request(commands.GetSchematicNetlist(document=document),
                               commands.SchematicNetlistResponse)
         assert netlist.nets, "corrected GetSchematicNetlist returned no nets"
+
+        # Headless servers start with symbol libraries unloaded.  Placement must load the
+        # requested library synchronously, without requiring the asynchronous bulk-load command.
+        library_id = types.LibraryIdentifier(library_nickname="Device", entry_name="R")
+        placed_response = api.request(
+            commands.PlaceSymbolFromLibrary(
+                header=header,
+                lib_id=library_id,
+                position=types.Vector2(x=4000, y=3000),
+            ),
+            library_api.PlaceFromLibraryResponse,
+        )
+        placed = schematic.SchematicSymbolInstance()
+        assert placed_response.item.Unpack(placed)
+        assert placed.definition.items, "PlaceSymbolFromLibrary returned a hollow symbol"
+        assert any(child.item.type_url.endswith("SchematicPin") for child in placed.definition.items), \
+            "PlaceSymbolFromLibrary returned no pins"
+        assert placed.value_field.text.text, "placed symbol has no default value"
+
+        # A create request may carry only the instance identity, placement and library ID.  It
+        # must be expanded from the library before entering the schematic commit.
+        created_id = str(uuid.uuid4())
+        library_only = schematic.SchematicSymbolInstance()
+        library_only.id.value = created_id
+        library_only.position.x = 5000
+        library_only.position.y = 3000
+        library_only.definition.id.CopyFrom(library_id)
+
+        transaction = api.request(editor.BeginCommit(header=header), editor.BeginCommitResponse)
+        create = editor.CreateItems(header=header)
+        create.items.add().Pack(library_only)
+        response = api.request(create, editor.CreateItemsResponse)
+        assert len(response.created_items) == 1, response
+        assert response.created_items[0].status.code == editor.ISC_OK, response
+        created = schematic.SchematicSymbolInstance()
+        assert response.created_items[0].item.Unpack(created)
+        assert created.definition.items, "library-ID-only CreateItems returned a hollow symbol"
+        assert any(child.item.type_url.endswith("SchematicPin") for child in created.definition.items), \
+            "library-ID-only CreateItems returned no pins"
+        assert created.definition.id.entry_name == "R", created.definition.id
+        assert created.value_field.text.text, "library-ID-only symbol has no default value"
+        api.request(editor.EndCommit(header=header, id=transaction.id, action=editor.CMA_COMMIT,
+                                     message="Create symbol from library ID"), editor.EndCommitResponse)
+
+        created_items = api.request(editor.GetItemsById(header=header, items=[library_only.id]),
+                                    editor.GetItemsResponse)
+        assert len(created_items.items) == 1, created_items
+
+        # A missing library symbol must reject only that item and must not add a hollow symbol.
+        missing_id = str(uuid.uuid4())
+        missing = schematic.SchematicSymbolInstance()
+        missing.id.value = missing_id
+        missing.position.x = 6000
+        missing.position.y = 3000
+        missing.definition.id.library_nickname = "BackplaneMissingLibrary"
+        missing.definition.id.entry_name = "DefinitelyMissing"
+        transaction = api.request(editor.BeginCommit(header=header), editor.BeginCommitResponse)
+        create = editor.CreateItems(header=header)
+        create.items.add().Pack(missing)
+        response = api.request(create, editor.CreateItemsResponse)
+        assert len(response.created_items) == 1, response
+        assert response.created_items[0].status.code == editor.ISC_INVALID_DATA, response
+        assert "not found" in response.created_items[0].status.error_message
+        api.request(editor.EndCommit(header=header, id=transaction.id, action=editor.CMA_COMMIT,
+                                     message="Reject missing library symbol"), editor.EndCommitResponse)
+        missing_items = api.request(editor.GetItemsById(header=header, items=[missing.id]),
+                                    editor.GetItemsResponse)
+        assert not missing_items.items, "missing library symbol was added"
+
+        api.request(project.SaveDocument(document=document), Empty)
+        api.request(project.CloseDocument(document=document), Empty)
+        document = api.request(project.OpenDocument(type=types.DOCTYPE_SCHEMATIC, path=str(path)),
+                               project.OpenDocumentResponse).document
+        header = types.ItemHeader(document=document)
+        reopened_created = api.request(editor.GetItemsById(header=header, items=[library_only.id]),
+                                       editor.GetItemsResponse)
+        assert len(reopened_created.items) == 1, reopened_created
+        reopened_symbol = schematic.SchematicSymbolInstance()
+        assert reopened_created.items[0].Unpack(reopened_symbol)
+        assert reopened_symbol.definition.id.entry_name == "R", reopened_symbol.definition.id
+        assert reopened_symbol.definition.items, "saved library-ID-only symbol lost its definition"
+        assert any(child.item.type_url.endswith("SchematicPin") for child in reopened_symbol.definition.items), \
+            "saved library-ID-only symbol lost its pins"
 
 
         variant_name = "Backplane IPC Fidelity"

@@ -61,6 +61,7 @@ Classes: **DROP-UPSTREAM** = master has it; **DROP-OBSOLETE** = only meaningful 
 | fix(pcbnew) | copy teardrop settings in `BOARD_DESIGN_SETTINGS::initFromOther` (SetBoardDesignRules dropped them) | from 1c193606ed; upstream candidate |
 | fix(api) | reply `AS_INTERNAL_ERROR` when a handler throws (clients hung forever) | new; upstream candidate |
 | fix(eeschema) | parse `custom_property` on schematic graphic polylines (saved files failed to load) | new; upstream candidate |
+| fix(eeschema) | resolve headless symbol library IDs synchronously for placement and library-only `CreateItems` | this branch; CI regression below |
 | docs | BACKPLANE_IPC.md agent guide for master | new |
 
 ## Upstream gaps found by the IPC regressions (fork-patch candidates)

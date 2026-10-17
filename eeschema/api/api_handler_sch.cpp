@@ -52,6 +52,7 @@
 #include <sch_io/kicad_sexpr/sch_io_kicad_sexpr.h>
 
 #include <sch_label.h>
+#include <lib_symbol.h>
 #include <sch_screen.h>
 #include <sch_sheet.h>
 #include <sch_sheet_path.h>
@@ -78,6 +79,79 @@ using namespace kiapi::common::commands;
 using kiapi::common::types::CommandStatus;
 using kiapi::common::types::DocumentType;
 using kiapi::common::types::ItemRequestStatus;
+
+
+static LIB_SYMBOL* LoadSymbolOnDemand( SYMBOL_LIBRARY_ADAPTER* aAdapter, const LIB_ID& aLibId )
+{
+    if( !aAdapter->IsLibraryLoaded( aLibId.GetLibNickname() ) )
+        aAdapter->LoadOne( aLibId.GetLibNickname() );
+
+    return aAdapter->LoadSymbol( aLibId );
+}
+
+
+static void CopyLibraryFieldDefault( kiapi::schematic::types::SchematicField* aTarget,
+                                     const kiapi::schematic::types::SchematicField& aSource,
+                                     const kiapi::common::types::Vector2& aSymbolPosition )
+{
+    aTarget->CopyFrom( aSource );
+
+    // Library field positions are relative to the symbol origin; instance field positions are
+    // absolute on the schematic sheet.
+    aTarget->mutable_text()->mutable_position()->set_x(
+            aTarget->text().position().x() + aSymbolPosition.x() );
+    aTarget->mutable_text()->mutable_position()->set_y(
+            aTarget->text().position().y() + aSymbolPosition.y() );
+}
+
+
+static bool ResolveLibraryOnlySymbol( kiapi::schematic::types::SchematicSymbolInstance& aSymbol,
+                                      SYMBOL_LIBRARY_ADAPTER* aAdapter, std::string& aError )
+{
+    if( !aSymbol.has_definition() || !aSymbol.definition().items().empty() )
+        return true;
+
+    LIB_ID libId = UnpackLibId( aSymbol.definition().id() );
+
+    if( !libId.IsValid() )
+        return true;
+
+    LIB_SYMBOL* librarySymbol = LoadSymbolOnDemand( aAdapter, libId );
+
+    if( !librarySymbol )
+    {
+        aError = fmt::format( "symbol '{}' not found in the configured symbol libraries",
+                              libId.Format().ToStdString() );
+        return false;
+    }
+
+    kiapi::schematic::types::SchematicSymbol libraryDefinition;
+    librarySymbol->Serialize( libraryDefinition );
+    aSymbol.mutable_definition()->CopyFrom( libraryDefinition );
+
+    // A minimal instance gets the library defaults, while explicit client fields remain intact.
+    const kiapi::common::types::Vector2& position = aSymbol.position();
+
+    if( !aSymbol.has_reference_field() )
+        CopyLibraryFieldDefault( aSymbol.mutable_reference_field(), libraryDefinition.reference_field(), position );
+
+    if( !aSymbol.has_value_field() )
+        CopyLibraryFieldDefault( aSymbol.mutable_value_field(), libraryDefinition.value_field(), position );
+
+    if( !aSymbol.has_footprint_field() )
+        CopyLibraryFieldDefault( aSymbol.mutable_footprint_field(), libraryDefinition.footprint_field(), position );
+
+    if( !aSymbol.has_datasheet_field() )
+        CopyLibraryFieldDefault( aSymbol.mutable_datasheet_field(), libraryDefinition.datasheet_field(), position );
+
+    if( !aSymbol.has_description_field() )
+    {
+        CopyLibraryFieldDefault( aSymbol.mutable_description_field(), libraryDefinition.description_field(),
+                                 position );
+    }
+
+    return true;
+}
 
 
 std::set<KICAD_T> API_HANDLER_SCH::s_allowedTypes = {
@@ -1193,8 +1267,23 @@ HANDLER_RESULT<ItemRequestStatus> API_HANDLER_SCH::handleCreateUpdateItemsIntern
 
         if( *type == SCH_SYMBOL_T )
         {
-            unpacked = anyItem.UnpackTo( &symbolProto )
-                       && UnpackSymbol( static_cast<SCH_SYMBOL*>( item.get() ), symbolProto );
+            unpacked = anyItem.UnpackTo( &symbolProto );
+
+            if( unpacked )
+            {
+                std::string symbolError;
+
+                if( !ResolveLibraryOnlySymbol( symbolProto, PROJECT_SCH::SymbolLibAdapter( &project() ),
+                                                symbolError ) )
+                {
+                    status.set_code( ItemStatusCode::ISC_INVALID_DATA );
+                    status.set_error_message( symbolError );
+                    aItemHandler( status, anyItem );
+                    continue;
+                }
+
+                unpacked = UnpackSymbol( static_cast<SCH_SYMBOL*>( item.get() ), symbolProto );
+            }
         }
         else if( *type == SCH_SHEET_T )
         {
@@ -3172,7 +3261,7 @@ HANDLER_RESULT<PlaceFromLibraryResponse> API_HANDLER_SCH::handlePlaceSymbolFromL
     }
 
     SYMBOL_LIBRARY_ADAPTER* adapter = PROJECT_SCH::SymbolLibAdapter( &project() );
-    LIB_SYMBOL* libSymbol = adapter->LoadSymbol( libId );
+    LIB_SYMBOL* libSymbol = LoadSymbolOnDemand( adapter, libId );
 
     if( !libSymbol )
     {
