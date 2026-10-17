@@ -121,7 +121,7 @@ def main(cli, stock_cli=None):
             commands.PlaceSymbolFromLibrary(
                 header=header,
                 lib_id=library_id,
-                position=types.Vector2(x=4000, y=3000),
+                position=types.Vector2(x_nm=4000, y_nm=3000),
             ),
             library_api.PlaceFromLibraryResponse,
         )
@@ -137,8 +137,8 @@ def main(cli, stock_cli=None):
         created_id = str(uuid.uuid4())
         library_only = schematic.SchematicSymbolInstance()
         library_only.id.value = created_id
-        library_only.position.x = 5000
-        library_only.position.y = 3000
+        library_only.position.x_nm = 5000
+        library_only.position.y_nm = 3000
         library_only.definition.id.CopyFrom(library_id)
 
         transaction = api.request(editor.BeginCommit(header=header), editor.BeginCommitResponse)
@@ -165,8 +165,8 @@ def main(cli, stock_cli=None):
         missing_id = str(uuid.uuid4())
         missing = schematic.SchematicSymbolInstance()
         missing.id.value = missing_id
-        missing.position.x = 6000
-        missing.position.y = 3000
+        missing.position.x_nm = 6000
+        missing.position.y_nm = 3000
         missing.definition.id.library_nickname = "BackplaneMissingLibrary"
         missing.definition.id.entry_name = "DefinitelyMissing"
         transaction = api.request(editor.BeginCommit(header=header), editor.BeginCommitResponse)
