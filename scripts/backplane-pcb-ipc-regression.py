@@ -304,6 +304,8 @@ def main():
         )
         assert fresh_items.status == types.IRS_OK, fresh_items
         model_paths = []
+        kicad10_model_prefix = "${KICAD10_3DMODEL_DIR}/"
+        legacy_model_prefix = "${KICAD6_3DMODEL_DIR}/"
         for packed in fresh_items.items:
             footprint = board.FootprintInstance()
             assert packed.Unpack(footprint)
@@ -312,9 +314,12 @@ def main():
                     continue
                 model = board.Footprint3DModel()
                 assert item.Unpack(model)
-                assert model.filename.startswith("${KICAD10_3DMODEL_DIR}/"), model
+                # The fixture's local Altech footprint still uses the legacy KICAD6 token;
+                # imported official-library models use the current KICAD10 token.
+                assert model.filename.startswith((kicad10_model_prefix, legacy_model_prefix)), model
                 model_paths.append(model.filename)
         assert len(model_paths) == expected_models, model_paths
+        assert any(path.startswith(kicad10_model_prefix) for path in model_paths), model_paths
 
         api.request(project.SaveDocument(document=fresh_document), Empty)
         fresh_text = fresh_board_path.read_text(encoding="utf-8")
