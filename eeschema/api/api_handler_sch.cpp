@@ -1273,8 +1273,11 @@ HANDLER_RESULT<ItemRequestStatus> API_HANDLER_SCH::handleCreateUpdateItemsIntern
             {
                 std::string symbolError;
 
-                if( !ResolveLibraryOnlySymbol( symbolProto, PROJECT_SCH::SymbolLibAdapter( &project() ),
-                                                symbolError ) )
+                // Only a create builds a symbol from its library id; an update keeps the
+                // existing (possibly edited) definition.
+                if( aCreate
+                    && !ResolveLibraryOnlySymbol( symbolProto, PROJECT_SCH::SymbolLibAdapter( &project() ),
+                                                  symbolError ) )
                 {
                     status.set_code( ItemStatusCode::ISC_INVALID_DATA );
                     status.set_error_message( symbolError );
