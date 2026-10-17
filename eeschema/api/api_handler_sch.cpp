@@ -98,10 +98,10 @@ static void CopyLibraryFieldDefault( kiapi::schematic::types::SchematicField* aT
 
     // Library field positions are relative to the symbol origin; instance field positions are
     // absolute on the schematic sheet.
-    aTarget->mutable_text()->mutable_position()->set_x(
-            aTarget->text().position().x() + aSymbolPosition.x() );
-    aTarget->mutable_text()->mutable_position()->set_y(
-            aTarget->text().position().y() + aSymbolPosition.y() );
+    aTarget->mutable_text()->mutable_position()->set_x_nm(
+            aTarget->text().position().x_nm() + aSymbolPosition.x_nm() );
+    aTarget->mutable_text()->mutable_position()->set_y_nm(
+            aTarget->text().position().y_nm() + aSymbolPosition.y_nm() );
 }
 
 
@@ -121,7 +121,7 @@ static bool ResolveLibraryOnlySymbol( kiapi::schematic::types::SchematicSymbolIn
     if( !librarySymbol )
     {
         aError = fmt::format( "symbol '{}' not found in the configured symbol libraries",
-                              libId.Format().ToStdString() );
+                              libId.Format().c_str() );
         return false;
     }
 
