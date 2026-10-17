@@ -974,11 +974,30 @@ bool SCH_SYMBOL::Deserialize( const kiapi::schematic::types::SchematicSymbolInst
     if( aSymbol.has_body_style() )
         SetBodyStyle( aSymbol.body_style().style() );
 
-    GetField( FIELD_T::REFERENCE )->Deserialize( aSymbol.reference_field(), schIUScale );
-    GetField( FIELD_T::VALUE )->Deserialize( aSymbol.value_field(), schIUScale );
-    GetField( FIELD_T::FOOTPRINT )->Deserialize( aSymbol.footprint_field(), schIUScale );
-    GetField( FIELD_T::DATASHEET )->Deserialize( aSymbol.datasheet_field(), schIUScale );
-    GetField( FIELD_T::DESCRIPTION )->Deserialize( aSymbol.description_field(), schIUScale );
+    if( aSymbol.has_reference_field() )
+        GetField( FIELD_T::REFERENCE )->Deserialize( aSymbol.reference_field(), schIUScale );
+
+    if( aSymbol.has_value_field() )
+        GetField( FIELD_T::VALUE )->Deserialize( aSymbol.value_field(), schIUScale );
+
+    if( aSymbol.has_footprint_field() )
+        GetField( FIELD_T::FOOTPRINT )->Deserialize( aSymbol.footprint_field(), schIUScale );
+
+    if( aSymbol.has_datasheet_field() )
+        GetField( FIELD_T::DATASHEET )->Deserialize( aSymbol.datasheet_field(), schIUScale );
+
+    if( aSymbol.has_description_field() )
+        GetField( FIELD_T::DESCRIPTION )->Deserialize( aSymbol.description_field(), schIUScale );
+
+    if( aSymbol.has_reference_field() )
+    {
+        m_prefix = UTIL::GetRefDesPrefix( GetField( FIELD_T::REFERENCE )->GetText() );
+
+        if( m_prefix.IsEmpty() )
+            m_prefix = wxT( "U" );
+
+        m_doNetlist = !GetField( FIELD_T::REFERENCE )->GetText().StartsWith( wxT( "#" ) );
+    }
 
     std::set<wxString> incoming;
 
