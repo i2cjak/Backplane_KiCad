@@ -178,9 +178,9 @@ def main(cli, stock_cli=None):
         assert "not found" in response.created_items[0].status.error_message
         api.request(editor.EndCommit(header=header, id=transaction.id, action=editor.CMA_COMMIT,
                                      message="Reject missing library symbol"), editor.EndCommitResponse)
-        missing_items = api.request(editor.GetItemsById(header=header, items=[missing.id]),
-                                    editor.GetItemsResponse)
-        assert not missing_items.items, "missing library symbol was added"
+        missing_items = api.request_raw(editor.GetItemsById(header=header, items=[missing.id]))
+        assert missing_items.status.status == api.envelope.AS_BAD_REQUEST, missing_items.status
+        assert "none of the requested IDs" in missing_items.status.error_message
 
         api.request(project.SaveDocument(document=document), Empty)
         api.request(project.CloseDocument(document=document), Empty)
