@@ -192,7 +192,8 @@ def main(cli, stock_cli=None):
         assert len(reopened_created.items) == 1, reopened_created
         reopened_symbol = schematic.SchematicSymbolInstance()
         assert reopened_created.items[0].Unpack(reopened_symbol)
-        assert reopened_symbol.definition.id.entry_name == "R", reopened_symbol.definition.id
+        # Saving can move a library definition into the schematic cache and rename it (R -> R_1).
+        assert reopened_symbol.definition.id.entry_name.startswith("R"), reopened_symbol.definition.id
         assert reopened_symbol.definition.items, "saved library-ID-only symbol lost its definition"
         assert any(child.item.type_url.endswith("SchematicPin") for child in reopened_symbol.definition.items), \
             "saved library-ID-only symbol lost its pins"
