@@ -16,6 +16,7 @@ cmake -S . -B "$build" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$stage" \
   -DCMAKE_PREFIX_PATH="$prefix;$prefix/opt/protobuf@29;$prefix/opt/curl;$prefix/opt/opencascade" \
   -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+  -DNGSPICE_LIB_NAME=ngspice -DNGSPICE_ROOT_DIR="$(brew --prefix libngspice)" \
   -DKICAD_BUILD_QA_TESTS=OFF -DKICAD_BUILD_I18N=OFF \
   -DKICAD_USE_SENTRY=OFF -DKICAD_USE_PCH=OFF \
   -DKICAD_VERSION_EXTRA=bp.4 -DBACKPLANE_FORK_VERSION=10.99.0-bp.4 \
