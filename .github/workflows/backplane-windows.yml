@@ -4,16 +4,8 @@ on:
   workflow_dispatch:
   pull_request:
     branches: ['backplane/master']
-    paths:
-      - '.github/workflows/backplane-windows.yml'
-      - 'scripts/backplane-windows.ps1'
-      - 'scripts/backplane-ipc-smoke.py'
   push:
     branches: ['backplane/master']
-    paths:
-      - '.github/workflows/backplane-windows.yml'
-      - 'scripts/backplane-windows.ps1'
-      - 'scripts/backplane-ipc-smoke.py'
 
 permissions:
   contents: read

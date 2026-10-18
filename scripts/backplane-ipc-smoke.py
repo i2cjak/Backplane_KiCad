@@ -60,7 +60,8 @@ def main():
 
         with (root / "server.log").open("w+") as log:
             server = subprocess.Popen(
-                [str(cli), "api-server", "--socket", str(socket_path)],
+                [str(cli), "api-server", "--socket", str(socket_path),
+                 "--parent-pid", str(os.getpid())],
                 env=env, stdout=log, stderr=subprocess.STDOUT,
             )
             try:
@@ -92,6 +93,9 @@ def main():
                         return result
 
                     request(base.Ping(), Empty)
+                    if os.name == "nt":
+                        assert "KiCad API server listening at " in (root / "server.log").read_text(), \
+                            "Windows readiness output was not flushed while the server was running"
                     version = request(base.GetVersion(), base.GetVersionResponse)
                     print(f"Runtime: {version.version}", flush=True)
 
@@ -247,6 +251,21 @@ def main():
                     except subprocess.TimeoutExpired:
                         server.kill()
                         server.wait()
+
+        if os.name == "nt":
+            # Keep the process object/handle alive after exit so Windows cannot
+            # reuse this PID while the server's native parent check runs.
+            with subprocess.Popen([sys.executable, "-c", "pass"]) as parent:
+                parent.wait(timeout=10)
+                stopped = subprocess.run(
+                    [str(cli), "api-server", "--socket", str(root / "orphan.sock"),
+                     "--parent-pid", str(parent.pid)],
+                    env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, timeout=20,
+                )
+                assert stopped.returncode == 0, stopped.stdout
+                assert "Shutting down" in stopped.stdout, stopped.stdout
+            print("Native Windows parent exit supervision passed", flush=True)
 
         # Use the same relocated CLI entry point as Backplane's BOM and 3D
         # viewers. The legacy demo contains VRML models unsupported by the

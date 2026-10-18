@@ -24,6 +24,9 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
+#ifdef _WIN32
+#include <cstdio>
+#endif
 #include <functional>
 #include <nlohmann/json.hpp>
 #include <vector>
@@ -46,6 +49,9 @@
 #include <wx/app.h>
 #include <wx/crt.h>
 #include <wx/filename.h>
+#ifdef _WIN32
+#include <wx/process.h>
+#endif
 
 #if defined( __unix__ ) || defined( __APPLE__ )
 #include <unistd.h>
@@ -887,6 +893,10 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
 
     wxString listenPath = wxString::FromUTF8( server->SocketPath() );
     wxFprintf( stdout, "KiCad API server listening at %s\n", listenPath );
+#ifdef _WIN32
+    // Windows named pipes have no filesystem socket for clients to observe.
+    std::fflush( stdout );
+#endif
 
     auto oldSigInt = std::signal( SIGINT, apiServerSignalHandler );
 #ifdef SIGTERM
@@ -937,8 +947,9 @@ int CLI::API_SERVER_COMMAND::doPerform( KIWAY& aKiway )
 #if defined( __unix__ ) || defined( __APPLE__ )
             if( ::kill( static_cast<pid_t>( parentPid ), 0 ) == -1 && errno == ESRCH )
                 g_apiServerExitRequested.store( true );
-#else
-            // TODO: use OpenProcess/WaitForSingleObject for Windows parent supervision.
+#elif defined( _WIN32 )
+            if( !wxProcess::Exists( static_cast<int>( parentPid ) ) )
+                g_apiServerExitRequested.store( true );
 #endif
         }
 

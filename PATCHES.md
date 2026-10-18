@@ -37,7 +37,7 @@ Classes: **DROP-UPSTREAM** = master has it; **DROP-OBSOLETE** = only meaningful 
 |---|---|---|
 | N1 | `kicad-cli version --format json` | Cheap version + capability handshake without starting a server. |
 | N2 | `kiapi.backplane.GetCapabilities` IPC command (own proto package) | Lists fork version, upstream commit, registered API commands, file-format versions. |
-| N3 | `api-server --parent-pid PID` | Server exits when the Backplane hub dies; no orphan servers. |
+| N3 | `api-server --parent-pid PID` | Server exits when the Backplane hub dies; no orphan servers. Windows checks the native PID with wxProcess::Exists; the readiness line is flushed for named-pipe clients. |
 | N4 | downgrade carries `.backplane.json` companions | `project downgrade --target 10.0` copies fork sidecars beside the output and reports them as preserved-but-ignored by stock KiCad. |
 | N5 | partial PCB footprint updates preserve omitted data | `UpdateItems` requests without `FootprintInstance.definition` retain the existing footprint body and other presence-tracked fields; the PCB IPC regression covers memory and save/reopen. |
 
