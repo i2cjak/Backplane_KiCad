@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Native MSVC build; upstream's pinned vcpkg/public binary feed, no WSL.
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$PSNativeCommandUseErrorActionPreference = $true
+$source = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+Set-Location $source
+$build = 'C:\bp\build'
+$stage = 'C:\bp\stage'
+$vcpkgCommit = '66c0373dc7fca549e5803087b9487edfe3aca0a1'
+# KiCad packaging/kicad-win-builder build.ps1 uses this vcpkg tool commit.
+New-Item -ItemType Directory -Force 'C:\bp', $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+Get-PSDrive C,D | Select-Object Name,Used,Free
+if (!(Test-Path (Join-Path $env:VCPKG_ROOT '.git'))) {
+    git init $env:VCPKG_ROOT
+    git -C $env:VCPKG_ROOT remote add origin https://github.com/microsoft/vcpkg.git
+}
+git -C $env:VCPKG_ROOT fetch --depth 1 origin $vcpkgCommit
+git -C $env:VCPKG_ROOT checkout --detach FETCH_HEAD
+if ((git -C $env:VCPKG_ROOT rev-parse HEAD) -ne $vcpkgCommit) { throw 'vcpkg pin mismatch' }
+& (Join-Path $env:VCPKG_ROOT 'bootstrap-vcpkg.bat') -disableMetrics
+$version = '10.99.0-bp.4-windows-ci'
+$upstream = (Get-Content BACKPLANE_UPSTREAM -Raw).Trim()
+cmake -S . -B $build -G Ninja `
+    "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+    "-DVCPKG_OVERLAY_TRIPLETS=$source/tools/custom_vcpkg_triplets" `
+    '-DVCPKG_INSTALL_OPTIONS=--x-abi-tools-use-exact-versions' `
+    -DCMAKE_BUILD_TYPE=Release "-DCMAKE_INSTALL_PREFIX=$stage" `
+    -DKICAD_BUILD_QA_TESTS=OFF -DKICAD_BUILD_I18N=OFF -DKICAD_INSTALL_DEMOS=OFF `
+    -DKICAD_SCRIPTING_WXPYTHON=OFF -DKICAD_USE_OCC=ON -DKICAD_USE_API=ON `
+    -DKICAD_USE_SENTRY=OFF -DKICAD_USE_PCH=OFF -DKICAD_WIN32_INSTALL_PDBS=OFF `
+    -DKICAD_VERSION_EXTRA=bp.4-windows-ci "-DBACKPLANE_FORK_VERSION=$version" `
+    "-DBACKPLANE_UPSTREAM_COMMIT=$upstream"
+cmake --build $build --parallel 4
+cmake --install $build
+$installed = Join-Path $build 'vcpkg_installed\x64-windows'
+$bin = Join-Path $stage 'bin'
+# vcpkg's app-local copies are in the build tree; the relocated runtime needs
+# its release DLLs and their notices too. Never include debug DLLs or PDBs.
+Copy-Item (Join-Path $installed 'bin\*.dll') $bin
+$licenses = Join-Path $stage 'licenses'
+New-Item -ItemType Directory -Force $licenses | Out-Null
+Get-ChildItem (Join-Path $installed 'share') -Directory | ForEach-Object {
+    $notice = Join-Path $_.FullName 'copyright'
+    if (Test-Path $notice) {
+        $destination = Join-Path $licenses ('vcpkg\' + $_.Name)
+        New-Item -ItemType Directory -Force $destination | Out-Null
+        Copy-Item $notice $destination
+    }
+}
+Copy-Item LICENSE.README,LICENSE.GPLv3,BACKPLANE_UPSTREAM,vcpkg.json,vcpkg-configuration.json $licenses
+Get-ChildItem thirdparty -Recurse -File | Where-Object {
+    $_.Name -match '^(LICENSE|COPYING|NOTICE|COPYRIGHT)'
+} | ForEach-Object {
+    $relative = $_.FullName.Substring((Join-Path $source 'thirdparty').Length + 1)
+    $destination = Join-Path $licenses ('vendor\' + $relative)
+    New-Item -ItemType Directory -Force (Split-Path $destination) | Out-Null
+    Copy-Item $_.FullName $destination
+}
+Copy-Item (Join-Path $build 'vcpkg_installed\vcpkg\status') (Join-Path $licenses 'VCPKG_PACKAGES.txt')
+Set-Content (Join-Path $licenses 'VCPKG_TOOL_COMMIT') $vcpkgCommit
+# Remove the build and dependency directories from runtime lookup. The package
+# must run using its own bin, not a separately installed KiCad/dependency DLL.
+$cleanPath = ($env:PATH -split ';' | Where-Object {
+    $_ -and !$_.StartsWith('C:\bp\', [StringComparison]::OrdinalIgnoreCase)
+}) -join ';'
+$env:PATH = "$bin;$cleanPath"
+$cli = Join-Path $bin 'kicad-cli.exe'
+& $cli --version
+$description = (& $cli api-server --describe) -join "`n"
+$manifest = $description | ConvertFrom-Json
+if ($manifest.platform -ne 'windows-x86_64' -or $manifest.apiVersion -ne 2) {
+    throw 'Native runtime identity mismatch'
+}
+if (!(Test-Path (Join-Path $stage $manifest.apiDescriptor))) { throw 'API descriptor missing' }
+Set-Content (Join-Path $stage 'manifest.json') $description -Encoding utf8NoBOM
+git rev-parse HEAD | Set-Content (Join-Path $stage 'SOURCE_COMMIT')
+$env:PATH = (Join-Path $installed 'tools\protobuf') + ';' + $env:PATH
+# Keep the final runtime distinct from its temporary install prefix.
+$release = Join-Path $source 'release\windows'
+New-Item -ItemType Directory -Force $release | Out-Null
+$archive = "backplane-kicad-windows-x86_64-$version"
+$runtime = Join-Path $release $archive
+Move-Item $stage $runtime
+$env:PATH = (Join-Path $installed 'tools\protobuf') + ';' + (Join-Path $runtime 'bin') + ';' + $cleanPath
+$cli = Join-Path $runtime 'bin\kicad-cli.exe'
+& $cli api-server --describe
+python scripts/backplane-ipc-smoke.py $cli
+Compress-Archive -Path $runtime -DestinationPath (Join-Path $release "$archive.zip")
+git archive --format=tar.gz "--prefix=$archive-source/" "--output=$release/$archive-source.tar.gz" HEAD
+Get-ChildItem $release -File | Where-Object { $_.Name -ne 'SHA256SUMS' } | ForEach-Object {
+    $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    "$hash  $($_.Name)"
+} | Set-Content (Join-Path $release 'SHA256SUMS') -Encoding utf8NoBOM
+Write-Output 'WINDOWS_KICAD_NATIVE_BUILD_RELOCATED_IPC_AND_EXPORT_PASS'

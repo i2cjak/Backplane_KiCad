@@ -1,0 +1,78 @@
+name: Backplane KiCad Windows
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ['backplane/master']
+    paths:
+      - '.github/workflows/backplane-windows.yml'
+      - 'scripts/backplane-windows.ps1'
+      - 'scripts/backplane-ipc-smoke.py'
+  push:
+    branches: ['backplane/master']
+    paths:
+      - '.github/workflows/backplane-windows.yml'
+      - 'scripts/backplane-windows.ps1'
+      - 'scripts/backplane-ipc-smoke.py'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-kicad-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Native Windows x64 runtime and IPC
+    runs-on: windows-2022
+    timeout-minutes: 300
+    env:
+      VCPKG_ROOT: C:\bp\vcpkg
+      VCPKG_BINARY_SOURCES: 'clear;nuget,https://gitlab.com/api/v4/projects/27426693/packages/nuget/index.json,read;files,C:\bp\vcpkg-cache,readwrite'
+      VCPKG_DEFAULT_BINARY_CACHE: C:\bp\vcpkg-cache
+      VCPKG_MAX_CONCURRENCY: '4'
+    steps:
+      - name: Preserve LF and enable Git long paths
+        shell: pwsh
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Native IPC test client
+        run: python -m pip install protobuf==5.29.6 pynng==0.9.0
+      - uses: actions/cache@v4
+        with:
+          path: C:\bp\vcpkg-cache
+          key: kicad-windows-vcpkg-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'tools/custom_vcpkg_triplets/**') }}
+          restore-keys: kicad-windows-vcpkg-
+      - name: Build, relocate, test and package
+        shell: pwsh
+        run: ./scripts/backplane-windows.ps1
+      - name: Keep build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-kicad-diagnostics
+          retention-days: 7
+          path: |
+            C:/bp/build/CMakeCache.txt
+            C:/bp/build/CMakeFiles/CMakeConfigureLog.yaml
+            C:/bp/build/vcpkg-manifest-install.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backplane-kicad-windows-x86_64
+          retention-days: 7
+          compression-level: 0
+          path: |
+            release/windows/*.zip
+            release/windows/*.tar.gz
+            release/windows/SHA256SUMS
+          if-no-files-found: error

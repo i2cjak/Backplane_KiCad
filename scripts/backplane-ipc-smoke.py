@@ -65,13 +65,14 @@ def main():
             )
             try:
                 deadline = time.monotonic() + 20
-                while not socket_path.is_socket():
+                # Windows IPC uses named pipes, with no filesystem socket node.
+                while os.name != "nt" and not socket_path.is_socket():
                     if server.poll() is not None or time.monotonic() >= deadline:
                         raise RuntimeError(f"Headless API server did not start (exit={server.poll()})")
                     time.sleep(0.05)
 
-                with pynng.Req0(dial=f"ipc://{socket_path}", block_on_dial=True,
-                                send_timeout=15000, recv_timeout=15000) as connection:
+                with pynng.Req0(dial=f"ipc://{socket_path}", block_on_dial=(os.name != "nt"),
+                                send_timeout=(30000 if os.name == "nt" else 15000), recv_timeout=15000) as connection:
                     token = ""
 
                     def request(command, response_type):
