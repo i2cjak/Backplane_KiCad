@@ -7,6 +7,9 @@ $source = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $source
 $build = 'C:\bp\build'
 $stage = 'C:\bp\stage'
+# MSVC's developer environment sets VCPKG_ROOT to its bundled copy.
+# Use only this job's dedicated pinned checkout.
+$env:VCPKG_ROOT = 'C:\bp\vcpkg'
 $vcpkgCommit = '66c0373dc7fca549e5803087b9487edfe3aca0a1'
 # KiCad packaging/kicad-win-builder build.ps1 uses this vcpkg tool commit.
 New-Item -ItemType Directory -Force 'C:\bp', $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
