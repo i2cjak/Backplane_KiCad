@@ -25,13 +25,20 @@ jobs:
         run: |
           brew install cmake ninja pkg-config ccache boost cairo curl eigen fontconfig freetype glew glm harfbuzz libgit2 ngspice nng opencascade pixman protobuf@29 rapidjson unixodbc wxwidgets yaml-cpp zint zstd glslang spirv-tools spirv-cross
           python -m pip install protobuf==5.29.6 pynng==0.9.0
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: compiler-cache
         with:
           path: ~/.cache/ccache
-          key: kicad-macos-${{ runner.arch }}-${{ github.sha }}
+          key: kicad-macos-${{ runner.arch }}-${{ github.sha }}-${{ github.run_id }}
           restore-keys: kicad-macos-${{ runner.arch }}-
       - name: Build, relocate, test and package
         run: bash scripts/backplane-macos.sh
+      - name: Preserve compiler work after build attempts
+        if: always() && steps.compiler-cache.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
       - name: Preserve native diagnostics
         if: always()
         uses: actions/upload-artifact@v4
