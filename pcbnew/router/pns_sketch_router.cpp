@@ -3231,20 +3231,22 @@ bool SKETCH_ROUTER::routeConnection( NODE* aNode, const SKETCH_CONNECTION& aConn
     {
         const SHAPE* shape = aConn.m_end->Shape( endLayers.front() );
         BOX2I        bbox = shape ? shape->BBox() : BOX2I( t, VECTOR2I( 0, 0 ) );
-        VECTOR2I     far( std::max( std::abs( bbox.GetLeft() - t.x ), std::abs( bbox.GetRight() - t.x ) ),
-                          std::max( std::abs( bbox.GetTop() - t.y ), std::abs( bbox.GetBottom() - t.y ) ) );
+        VECTOR2I     farthestCorner(
+                std::max( std::abs( bbox.GetLeft() - t.x ), std::abs( bbox.GetRight() - t.x ) ),
+                std::max( std::abs( bbox.GetTop() - t.y ), std::abs( bbox.GetBottom() - t.y ) ) );
 
-        endRadius = int( far.EuclideanNorm() ) + 2 * ( width + clearance );
+        endRadius = int( farthestCorner.EuclideanNorm() ) + 2 * ( width + clearance );
     }
 
     int startRadius = 0;
     {
         const SHAPE* shape = aConn.m_start->Shape( startLayers.front() );
         BOX2I        bbox = shape ? shape->BBox() : BOX2I( s, VECTOR2I( 0, 0 ) );
-        VECTOR2I     far( std::max( std::abs( bbox.GetLeft() - s.x ), std::abs( bbox.GetRight() - s.x ) ),
-                          std::max( std::abs( bbox.GetTop() - s.y ), std::abs( bbox.GetBottom() - s.y ) ) );
+        VECTOR2I     farthestCorner(
+                std::max( std::abs( bbox.GetLeft() - s.x ), std::abs( bbox.GetRight() - s.x ) ),
+                std::max( std::abs( bbox.GetTop() - s.y ), std::abs( bbox.GetBottom() - s.y ) ) );
 
-        startRadius = int( far.EuclideanNorm() ) + 2 * ( width + clearance );
+        startRadius = int( farthestCorner.EuclideanNorm() ) + 2 * ( width + clearance );
     }
 
     // The guide corridor holds the whole bundle, so it gets wider with more connections.  Each

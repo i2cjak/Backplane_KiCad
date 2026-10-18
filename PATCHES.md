@@ -40,6 +40,7 @@ Classes: **DROP-UPSTREAM** = master has it; **DROP-OBSOLETE** = only meaningful 
 | N3 | `api-server --parent-pid PID` | Server exits when the Backplane hub dies; no orphan servers. Windows checks the native PID with wxProcess::Exists; the readiness line is flushed for named-pipe clients. |
 | N4 | downgrade carries `.backplane.json` companions | `project downgrade --target 10.0` copies fork sidecars beside the output and reports them as preserved-but-ignored by stock KiCad. |
 | N5 | partial PCB footprint updates preserve omitted data | `UpdateItems` requests without `FootprintInstance.definition` retain the existing footprint body and other presence-tracked fields; the PCB IPC regression covers memory and save/reopen. |
+| W1 | sketch-router Windows SDK compatibility | On pinned upstream master `fe761fb867` plus fork router port `688a0c8229`, rename local `far` vectors to avoid the Windows SDK legacy `far` macro; the radius calculation is unchanged. |
 
 ## Patch set on backplane/master (base fe761fb867; see `git log $(cat BACKPLANE_UPSTREAM)..backplane/master`)
 | Commit | Patch | Source |
