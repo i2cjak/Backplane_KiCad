@@ -1,0 +1,55 @@
+name: Backplane KiCad macOS
+on:
+  push:
+    branches: ['impl/macos-native-build']
+    paths: ['.github/workflows/backplane-macos.yml', 'scripts/backplane-macos*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-kicad-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  macos:
+    name: Native Apple silicon runtime, relocation and IPC
+    runs-on: macos-15
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Native build and test dependencies
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
+        run: |
+          brew install cmake ninja pkg-config ccache boost cairo curl eigen fontconfig freetype glew glm harfbuzz libgit2 ngspice nng opencascade pixman protobuf@29 rapidjson unixodbc wxwidgets yaml-cpp zint zstd glslang spirv-tools
+          python -m pip install protobuf==5.29.6 pynng==0.9.0
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: kicad-macos-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: kicad-macos-${{ runner.arch }}-
+      - name: Build, relocate, test and package
+        run: bash scripts/backplane-macos.sh
+      - name: Preserve native diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-kicad-diagnostics
+          retention-days: 7
+          path: |
+            build/backplane-macos/CMakeCache.txt
+            build/backplane-macos/CMakeFiles/CMakeConfigureLog.yaml
+            release/macos/*.json
+            release/macos/*.log
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backplane-kicad-macos-native
+          retention-days: 7
+          compression-level: 0
+          path: |
+            release/macos/*.tar.gz
+            release/macos/SHA256SUMS
+          if-no-files-found: error
