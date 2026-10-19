@@ -7,6 +7,13 @@ export HOMEBREW_NO_AUTO_UPDATE=1
 prefix=$(brew --prefix)
 export PATH="$prefix/opt/protobuf@29/bin:$prefix/bin:$PATH"
 export PKG_CONFIG_PATH="$prefix/lib/pkgconfig:$prefix/opt/curl/lib/pkgconfig"
+version=$(tr -d '\r\n' < BACKPLANE_VERSION)
+[[ "$version" =~ ^10\.99\.0-(bp\.[0-9]+)$ ]] || { echo 'Invalid Backplane release version' >&2; exit 2; }
+version_extra=${BASH_REMATCH[1]}
+if [ "${GITHUB_REF_TYPE:-}" = tag ] && [ "$GITHUB_REF_NAME" != "backplane-kicad-v$version" ]; then
+  echo 'Release tag does not match BACKPLANE_VERSION' >&2
+  exit 2
+fi
 build="$PWD/build/backplane-macos"
 stage="$PWD/stage-macos"
 release="$PWD/release/macos"
@@ -21,8 +28,14 @@ cmake -S . -B "$build" -G Ninja \
   -DNGSPICE_LIB_NAME=ngspice -DNGSPICE_ROOT_DIR="$(brew --prefix libngspice)" \
   -DKICAD_BUILD_QA_TESTS=OFF -DKICAD_BUILD_I18N=OFF \
   -DKICAD_USE_SENTRY=OFF -DKICAD_USE_PCH=OFF \
-  -DKICAD_VERSION_EXTRA=bp.4 -DBACKPLANE_FORK_VERSION=10.99.0-bp.4 \
+  -DKICAD_VERSION_EXTRA="$version_extra" -DBACKPLANE_FORK_VERSION="$version" \
   -DBACKPLANE_UPSTREAM_COMMIT="$(cat BACKPLANE_UPSTREAM)"
+grep -Fqx "KICAD_VERSION_EXTRA:STRING=$version_extra" "$build/CMakeCache.txt" || {
+  echo 'CMake lost the exact Backplane version suffix; refusing to build' >&2
+  exit 2
+}
+# Verify generated/native protocol bindings before the expensive compile.
+python scripts/backplane-ipc-smoke.py --check-bindings
 cmake --build "$build" --parallel 3
 cmake --install "$build"
 bundle="$stage/KiCad.app"
@@ -31,7 +44,7 @@ cli=$(find "$build" -type f -name kicad-cli -perm -111 | head -n 1)
 [ -n "$cli" ]
 cp "$cli" "$bundle/Contents/MacOS/kicad-cli"
 python scripts/backplane-macos-relocate.py "$bundle" | tee "$release/relocation.log"
-root="$release/backplane-kicad-darwin-$(uname -m)-10.99.0-bp.4"
+root="$release/backplane-kicad-darwin-$(uname -m)-$version"
 mkdir -p "$root/bin" "$root/share/backplane" "$root/licenses"
 cp -R "$bundle" "$root/KiCad.app"
 # Backplane's packaged IPC helper loads the runtime's nng from root/lib.
@@ -67,7 +80,7 @@ manifest = json.loads((root / 'share/backplane/runtime.json').read_text())
 manifest['platform'] = 'darwin-' + sys.argv[2]
 (root / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
 MANIFEST
-python scripts/backplane-ipc-smoke.py "$root/bin/kicad-cli" | tee "$release/ipc.log"
+python scripts/backplane-ipc-smoke.py "$root/bin/kicad-cli" --expected-version "$version" | tee "$release/ipc.log"
 python scripts/backplane-document-ipc-regression.py "$root/bin/kicad-cli" | tee "$release/documents.log"
 python scripts/backplane-glb-concurrency-test.py "$root/bin/kicad-cli" | tee "$release/glb-concurrency.log"
 # Preserve library licenses alongside every dependency from Homebrew.

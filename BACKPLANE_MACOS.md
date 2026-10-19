@@ -10,7 +10,10 @@ required for this development artifact.
 
 The `Backplane KiCad macOS` workflow uses a standard public `macos-15` runner.
 It checks the relocated package with isolated PCB/schematic IPC smoke and
-save/reopen regressions. Diagnostic output is uploaded even on failure.
+save/reopen regressions, plus simultaneous GLB exports into a shared Unicode
+output directory. The latter compares every geometry accessor, component materials
+and node transforms against sequential full/bare controls and checks source
+preservation and temporary-file cleanup. Diagnostic output is uploaded even on failure.
 An explicit compiler-cache directory is shared by ccache and Actions. If a
 later packaging gate fails, the compiled bundle is also retained for inspection.
 The native relocation regression accepts an already-rewritten, signed copy of
@@ -25,5 +28,7 @@ native helper shutdown.
 
 Protobuf 29.6 and Python protobuf 5.29.6 are paired. Other native dependencies
 are recorded from Homebrew in the artifact's license/package inventory.
-The source branch starts at bp.4 source 5dbc22d292. This is a platform
-build of that source, not a new published bp release.
+The candidate composes the published bp.5 source with the native Mac packaging
+and GLB temporary-file collision fix. Its version comes from BACKPLANE_VERSION;
+the CMake suffix and live IPC version are checked against that exact value.
+Only the fork release owner publishes a new tag after the native gates pass.
