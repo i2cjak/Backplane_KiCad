@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Exercise headless PCB/schematic IPC on disposable copies of KiCad fixtures.
 
-Requires protoc, protobuf==5.29.6, and pynng==0.9.0. Protocol bindings are
-generated from this checkout so a newer client's schema cannot mask omissions.
+Requires protoc, a compatible Python protobuf runtime, and pynng==0.9.0.
+Protocol bindings are generated from this checkout so a newer client's schema
+cannot mask omissions. --check-bindings checks the client before a full build.
 """
 
 import argparse
@@ -21,9 +22,14 @@ from google.protobuf.empty_pb2 import Empty
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("kicad_cli", type=Path)
+    parser.add_argument("kicad_cli", type=Path, nargs="?")
+    parser.add_argument("--check-bindings", action="store_true",
+                        help="generate and import the IPC client bindings, then exit")
+    parser.add_argument("--expected-version",
+                        help="require GetVersion to end with this manifest's fork suffix")
     args = parser.parse_args()
-    cli = args.kicad_cli.resolve(strict=True)
+    if not args.check_bindings and args.kicad_cli is None:
+        parser.error("kicad_cli is required unless --check-bindings is used")
     source = Path(__file__).resolve().parents[1]
 
     with tempfile.TemporaryDirectory(prefix="backplane-ipc-") as temporary:
@@ -47,6 +53,13 @@ def main():
         from schematic import schematic_types_pb2 as schematic
         from schematic import schematic_commands_pb2 as sch_commands
 
+        if args.check_bindings:
+            import google.protobuf
+            print(f"IPC client bindings import passed (protobuf {google.protobuf.__version__})",
+                  flush=True)
+            return
+
+        cli = args.kicad_cli.resolve(strict=True)
         design = root / "project"
         shutil.copytree(source / "qa/data/libraries/test_project", design)
         socket_path = root / "api.sock"
@@ -98,6 +111,11 @@ def main():
                             "Windows readiness output was not flushed while the server was running"
                     version = request(base.GetVersion(), base.GetVersionResponse)
                     print(f"Runtime: {version.version}", flush=True)
+                    if args.expected_version:
+                        suffix = args.expected_version.partition("-")[2]
+                        assert suffix.startswith("bp."), args.expected_version
+                        assert version.version.full_version.endswith("-" + suffix), \
+                            f"Runtime {version.version.full_version} does not match {args.expected_version}"
 
                     for kind, extension, item_type, make_item in (
                         (types.DOCTYPE_PCB, "kicad_pcb", enums.KOT_PCB_TRACE,

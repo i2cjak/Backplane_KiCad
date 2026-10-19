@@ -15,10 +15,14 @@ registries, and KiCad's public prebuilt package feed. The recipe is
 `scripts/backplane-windows.ps1`; run it in an x64 MSVC developer shell with
 CMake, Ninja and Python on PATH, and the VCPKG variables from the workflow.
 It uses a dedicated `C:\bp` build prefix on a disposable builder.
+The pinned dependency graph supplies protoc 33.4; the Windows test client uses
+Python protobuf 6.33.4. The recipe generates and imports its bindings before
+compiling C++, and checks that CMake retained the exact `bp.4` version suffix.
 
 The packaged runtime must pass native identity/descriptor checks and the
 existing real PCB/schematic IPC smoke: create, rollback, commit, save/reopen,
-plus BOM, SVG and GLB exports. Windows NNG IPC uses named pipes, so the client
+plus BOM, SVG and GLB exports. Its live GetVersion must match the manifest's
+`-bp.4` suffix, as Backplane's hub requires. Windows NNG IPC uses named pipes, so the client
 verifies a real request instead of waiting for a Unix socket file to appear.
 No Windows acceptance is inferred from a Linux run. The VM integration and
 parent supervision still need their own Windows verification before the full
