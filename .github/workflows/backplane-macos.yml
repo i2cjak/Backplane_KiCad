@@ -14,6 +14,8 @@ jobs:
     name: Native Apple silicon runtime, relocation and IPC
     runs-on: macos-15
     timeout-minutes: 300
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.backplane-ccache
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,16 +30,32 @@ jobs:
       - uses: actions/cache/restore@v4
         id: compiler-cache
         with:
-          path: ~/.cache/ccache
+          path: ${{ env.CCACHE_DIR }}
           key: kicad-macos-${{ runner.arch }}-${{ github.sha }}-${{ github.run_id }}
           restore-keys: kicad-macos-${{ runner.arch }}-
       - name: Build, relocate, test and package
-        run: bash scripts/backplane-macos.sh
+        run: |
+          python scripts/backplane-macos-relocate-test.py
+          bash scripts/backplane-macos.sh
+      - name: Retain compiled bundle when a later packaging gate fails
+        if: failure()
+        run: |
+          if [ -x stage-macos/KiCad.app/Contents/MacOS/kicad-cli ]; then
+            tar -C stage-macos -czf "$RUNNER_TEMP/backplane-macos-stage.tar.gz" KiCad.app
+          fi
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: macos-kicad-compiled-stage-${{ github.sha }}
+          retention-days: 7
+          compression-level: 0
+          path: ${{ runner.temp }}/backplane-macos-stage.tar.gz
+          if-no-files-found: ignore
       - name: Preserve compiler work after build attempts
         if: always() && steps.compiler-cache.outcome == 'success'
         uses: actions/cache/save@v4
         with:
-          path: ~/.cache/ccache
+          path: ${{ env.CCACHE_DIR }}
           key: ${{ steps.compiler-cache.outputs.cache-primary-key }}
       - name: Preserve native diagnostics
         if: always()
