@@ -34,6 +34,9 @@ python scripts/backplane-macos-relocate.py "$bundle" | tee "$release/relocation.
 root="$release/backplane-kicad-darwin-$(uname -m)-10.99.0-bp.4"
 mkdir -p "$root/bin" "$root/share/backplane" "$root/licenses"
 cp -R "$bundle" "$root/KiCad.app"
+# Backplane's packaged IPC helper loads the runtime's nng from root/lib.
+# Alias the whole directory so dependent @loader_path names keep working.
+ln -s KiCad.app/Contents/Frameworks "$root/lib"
 cp "$build/api/api.desc" "$root/share/backplane/api.desc"
 cat > "$root/bin/kicad-cli" <<'LAUNCHER'
 #!/bin/sh
@@ -55,6 +58,15 @@ export XDG_CONFIG_HOME="$HOME/config" XDG_CACHE_HOME="$HOME/cache" KICAD_CONFIG_
 mkdir -p "$HOME"
 "$root/bin/kicad-cli" --version | tee "$release/version.log"
 "$root/bin/kicad-cli" api-server --describe | tee "$root/share/backplane/runtime.json" "$release/runtime.json"
+python - "$root" "$(uname -m)" <<'MANIFEST'
+import json
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+manifest = json.loads((root / 'share/backplane/runtime.json').read_text())
+manifest['platform'] = 'darwin-' + sys.argv[2]
+(root / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+MANIFEST
 python scripts/backplane-ipc-smoke.py "$root/bin/kicad-cli" | tee "$release/ipc.log"
 python scripts/backplane-document-ipc-regression.py "$root/bin/kicad-cli" | tee "$release/documents.log"
 # Preserve library licenses alongside every dependency from Homebrew.
