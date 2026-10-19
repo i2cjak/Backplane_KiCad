@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include <nlohmann/json.hpp>
+#include <json_common.h>
 #include <wx/string.h>
 
 class EDA_ITEM;

@@ -6,6 +6,8 @@
  */
 #pragma once
 
+#include <json_common.h>
+
 #include <cstdint>
 #include <map>
 #include <string>
@@ -13,7 +15,6 @@
 
 #include <math/vector2d.h>
 #include <math/vector3.h>
-#include <nlohmann/json.hpp>
 
 class SHAPE_POLY_SET;
 
