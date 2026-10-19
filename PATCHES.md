@@ -42,6 +42,7 @@ Classes: **DROP-UPSTREAM** = master has it; **DROP-OBSOLETE** = only meaningful 
 | N5 | partial PCB footprint updates preserve omitted data | `UpdateItems` requests without `FootprintInstance.definition` retain the existing footprint body and other presence-tracked fields; the PCB IPC regression covers memory and save/reopen. |
 | W1 | sketch-router Windows SDK compatibility | On pinned upstream master `fe761fb867` plus fork router port `688a0c8229`, rename local `far` vectors to avoid the Windows SDK legacy `far` macro; the radius calculation is unchanged. |
 | W2 | companion/structure JSON DLL declarations | On pinned upstream master `fe761fb867` plus fork companion/structure headers, include upstream `json_common.h` before JSON members instantiate. It supplies KiCad's MSVC JSON import/export stub and libc++ character traits. Native Windows run `39172359908` reproduced duplicate JSON definitions at the eeschema link; no linker suppression or serialization changes. |
+| W3 | assembly JSON DLL declarations | The same upstream `json_common.h` declaration is required by the fork assembly model and board-operations headers. Native Windows run `39181380227` passed the eeschema link, then reproduced duplicate JSON definitions from `assembly_model.cpp.obj` and `assembly_exporter.cpp.obj` at the PCB DLL link. No assembly algorithms, data formats or linker options change. |
 
 ## Patch set on backplane/master (base fe761fb867; see `git log $(cat BACKPLANE_UPSTREAM)..backplane/master`)
 | Commit | Patch | Source |

@@ -2,7 +2,7 @@
 #ifndef PCBNEW_ASSEMBLY_MODEL_H
 #define PCBNEW_ASSEMBLY_MODEL_H
 
-#include <nlohmann/json.hpp>
+#include <json_common.h>
 
 #include <array>
 #include <filesystem>

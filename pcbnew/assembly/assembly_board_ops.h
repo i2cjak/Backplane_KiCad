@@ -1,7 +1,7 @@
 #ifndef PCBNEW_ASSEMBLY_BOARD_OPS_H
 #define PCBNEW_ASSEMBLY_BOARD_OPS_H
 
-#include <nlohmann/json.hpp>
+#include <json_common.h>
 
 #include <string>
 
