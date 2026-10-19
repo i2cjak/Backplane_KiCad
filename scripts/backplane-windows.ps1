@@ -14,6 +14,7 @@ $vcpkgCommit = '66c0373dc7fca549e5803087b9487edfe3aca0a1'
 # KiCad packaging/kicad-win-builder build.ps1 uses this vcpkg tool commit.
 New-Item -ItemType Directory -Force 'C:\bp', $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
 Get-PSDrive C,D | Select-Object Name,Used,Free
+python scripts/backplane-banned-functions-test.py --build-root C:\bp --require-cross-drive
 if (!(Test-Path (Join-Path $env:VCPKG_ROOT '.git'))) {
     git init $env:VCPKG_ROOT
     git -C $env:VCPKG_ROOT remote add origin https://github.com/microsoft/vcpkg.git

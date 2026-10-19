@@ -22,7 +22,6 @@ macro(check_banned_functions)
     foreach(dir IN LISTS BANNED_DIRS)
         message(STATUS "Checking for banned functions in: ${dir}")
         file(GLOB_RECURSE found_files
-            RELATIVE ${CMAKE_SOURCE_DIR}
             ${dir}/*.c
             ${dir}/*.cpp
             ${dir}/*.h
@@ -33,7 +32,9 @@ macro(check_banned_functions)
 
     foreach(file ${BANNED_SCAN_FILES})
         # Read file into lines using file(STRINGS)
-        file(STRINGS ${CMAKE_SOURCE_DIR}/${file} file_lines)
+        # A relative path cannot cross Windows drive letters. Keep the
+        # absolute glob result rather than prefixing an already absolute path.
+        file(STRINGS "${file}" file_lines)
 
         foreach(line IN LISTS file_lines)
             foreach(func ${BANNED_FUNCTIONS})
