@@ -4811,8 +4811,26 @@ bool STEP_PCB_MODEL::WriteGLTF( const wxString& aFileName )
 
     wxFileName fn( aFileName );
 
-    const char* tmpGltfname = "$tempfile$.glb";
-    RWGltf_CafWriter cafWriter( tmpGltfname, true );
+    // OCCT requires an ASCII filename. Reserve a different name for every export:
+    // multiple processes may export into this directory at the same time, and the
+    // writer also derives its .bin.tmp sidecar from this name.
+    wxString currCWD = wxGetCwd();
+    wxString workCWD = fn.GetPath();
+
+    if( !workCWD.IsEmpty() )
+        wxSetWorkingDirectory( workCWD );
+
+    wxString temporary = wxFileName::CreateTempFileName( wxGetCwd() + "/$tempfile$-" );
+
+    if( temporary.IsEmpty() )
+    {
+        wxSetWorkingDirectory( currCWD );
+        m_reporter->Report( _( "Cannot create a temporary GLB export file." ), RPT_SEVERITY_ERROR );
+        return false;
+    }
+
+    wxString tmpGltfname = wxFileName( temporary ).GetFullName();
+    RWGltf_CafWriter cafWriter( tmpGltfname.ToUTF8().data(), true );
 
     cafWriter.SetTransformationFormat( RWGltf_WriterTrsfFormat_Compact );
     cafWriter.ChangeCoordinateSystemConverter().SetInputLengthUnit( 0.001 );
@@ -4833,13 +4851,6 @@ bool STEP_PCB_MODEL::WriteGLTF( const wxString& aFileName )
                   TCollection_AsciiString( GetISO8601CurrentDateTime().ToAscii() ) );
 
     bool success = true;
-
-    // Creates a temporary file with a ascii7 name, because writer does not know unicode filenames.
-    wxString currCWD = wxGetCwd();
-    wxString workCWD = fn.GetPath();
-
-    if( !workCWD.IsEmpty() )
-        wxSetWorkingDirectory( workCWD );
 
     success = cafWriter.Perform( m_doc, metadata, Message_ProgressRange() );
 
@@ -4867,6 +4878,17 @@ bool STEP_PCB_MODEL::WriteGLTF( const wxString& aFileName )
             success = false;
         }
     }
+
+    // The main temporary file remains only on failure. OCCT may also leave its
+    // binary sidecar after an unsuccessful write; both names belong to this export.
+    if( wxFileExists( tmpGltfname ) )
+        wxRemoveFile( tmpGltfname );
+
+    wxFileName sidecar( tmpGltfname );
+    sidecar.SetExt( "bin.tmp" );
+
+    if( sidecar.FileExists() )
+        wxRemoveFile( sidecar.GetFullPath() );
 
     wxSetWorkingDirectory( currCWD );
 

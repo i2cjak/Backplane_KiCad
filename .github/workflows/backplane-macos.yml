@@ -2,7 +2,7 @@ name: Backplane KiCad macOS
 on:
   push:
     branches: ['impl/macos-native-build']
-    paths: ['.github/workflows/backplane-macos.yml', 'scripts/backplane-macos*']
+    paths: ['.github/workflows/backplane-macos.yml', 'scripts/backplane-macos*', 'scripts/backplane-glb-concurrency-test.py', 'pcbnew/exporters/step/step_pcb_model.cpp']
   workflow_dispatch:
 permissions:
   contents: read

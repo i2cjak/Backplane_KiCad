@@ -69,6 +69,7 @@ manifest['platform'] = 'darwin-' + sys.argv[2]
 MANIFEST
 python scripts/backplane-ipc-smoke.py "$root/bin/kicad-cli" | tee "$release/ipc.log"
 python scripts/backplane-document-ipc-regression.py "$root/bin/kicad-cli" | tee "$release/documents.log"
+python scripts/backplane-glb-concurrency-test.py "$root/bin/kicad-cli" | tee "$release/glb-concurrency.log"
 # Preserve library licenses alongside every dependency from Homebrew.
 brew info --json=v2 --installed > "$root/licenses/homebrew-packages.json"
 for formula in "$prefix/Cellar"/*; do
