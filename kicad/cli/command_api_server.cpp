@@ -28,7 +28,7 @@
 #include <cstdio>
 #endif
 #include <functional>
-#include <nlohmann/json.hpp>
+#include <json_common.h>
 #include <vector>
 
 #include <api/api_handler.h>

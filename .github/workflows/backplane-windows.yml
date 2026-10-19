@@ -58,6 +58,35 @@ jobs:
             C:/bp/build/CMakeFiles/CMakeConfigureLog.yaml
             C:/bp/build/vcpkg-manifest-install.log
           if-no-files-found: ignore
+      - name: Preserve unvalidated installed runtime after a test failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $candidate = Join-Path $env:GITHUB_WORKSPACE 'release\windows\backplane-kicad-windows-x86_64-10.99.0-bp.4-windows-ci'
+          if (!(Test-Path $candidate)) { $candidate = 'C:\bp\stage' }
+          # Only preserve an install whose dependency-license assembly finished.
+          # This is debugging material, never the validated release artifact.
+          if (Test-Path (Join-Path $candidate 'licenses\VCPKG_PACKAGES.txt')) {
+            $out = Join-Path $env:GITHUB_WORKSPACE 'windows-unvalidated-diagnostics'
+            New-Item -ItemType Directory -Force $out | Out-Null
+            git rev-parse HEAD | Set-Content (Join-Path $out 'SOURCE_COMMIT')
+            Set-Content (Join-Path $out 'UNVALIDATED.txt') 'Native install only. Runtime tests failed; do not treat this as an accepted runtime or release.'
+            Compress-Archive -Path $candidate -DestinationPath (Join-Path $out 'unvalidated-runtime.zip')
+            git archive --format=tar.gz --prefix=source/ "--output=$out/source.tar.gz" HEAD
+            Get-ChildItem $out -File | Where-Object Name -ne SHA256SUMS | ForEach-Object {
+              "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
+            } | Set-Content (Join-Path $out 'SHA256SUMS')
+          }
+      - name: Upload unvalidated runtime diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-kicad-unvalidated-diagnostics
+          retention-days: 1
+          compression-level: 0
+          path: windows-unvalidated-diagnostics/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: backplane-kicad-windows-x86_64

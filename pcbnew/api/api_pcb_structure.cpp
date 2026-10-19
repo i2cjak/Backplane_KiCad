@@ -19,7 +19,7 @@
 #include <pcb_draw_panel_gal.h>
 #include <widgets/appearance_controls.h>
 
-#include <nlohmann/json.hpp>
+#include <json_common.h>
 
 using namespace kiapi::backplane;
 
