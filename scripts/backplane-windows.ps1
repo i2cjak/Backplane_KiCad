@@ -23,7 +23,12 @@ git -C $env:VCPKG_ROOT fetch --depth 1 origin $vcpkgCommit
 git -C $env:VCPKG_ROOT checkout --detach FETCH_HEAD
 if ((git -C $env:VCPKG_ROOT rev-parse HEAD) -ne $vcpkgCommit) { throw 'vcpkg pin mismatch' }
 & (Join-Path $env:VCPKG_ROOT 'bootstrap-vcpkg.bat') -disableMetrics
-$version = '10.99.0-bp.4'
+$version = (Get-Content (Join-Path $source 'BACKPLANE_VERSION') -Raw).Trim()
+if ($version -notmatch '^10\.99\.0-(bp\.[0-9]+)$') { throw 'Invalid Backplane release version' }
+$versionExtra = $Matches[1]
+if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "backplane-kicad-v$version") {
+    throw 'Release tag does not match BACKPLANE_VERSION'
+}
 $upstream = (Get-Content BACKPLANE_UPSTREAM -Raw).Trim()
 cmake -S . -B $build -G Ninja `
     "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
@@ -33,10 +38,10 @@ cmake -S . -B $build -G Ninja `
     -DKICAD_BUILD_QA_TESTS=OFF -DKICAD_BUILD_I18N=OFF -DKICAD_INSTALL_DEMOS=OFF `
     -DKICAD_SCRIPTING_WXPYTHON=OFF -DKICAD_USE_OCC=ON -DKICAD_USE_API=ON `
     -DKICAD_USE_SENTRY=OFF -DKICAD_USE_PCH=OFF -DKICAD_WIN32_INSTALL_PDBS=OFF `
-    '-DKICAD_VERSION_EXTRA=bp.4' "-DBACKPLANE_FORK_VERSION=$version" `
+    "-DKICAD_VERSION_EXTRA=$versionExtra" "-DBACKPLANE_FORK_VERSION=$version" `
     "-DBACKPLANE_UPSTREAM_COMMIT=$upstream"
 $extra = Select-String -LiteralPath (Join-Path $build 'CMakeCache.txt') -Pattern '^KICAD_VERSION_EXTRA:STRING=(.*)$'
-if (!$extra -or $extra.Matches[0].Groups[1].Value -ne 'bp.4') {
+if (!$extra -or $extra.Matches[0].Groups[1].Value -ne $versionExtra) {
     throw 'CMake lost the exact Backplane version suffix; refusing to build'
 }
 # Fail before the C++ build if protoc's generated Python client cannot import.

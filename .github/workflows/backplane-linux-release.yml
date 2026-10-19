@@ -170,8 +170,9 @@ jobs:
       - name: Configure
         run: |
           ccache --max-size=4G
-          fork_version="10.99.0-bp.0"
+          fork_version="$(cat BACKPLANE_VERSION)"
           case "${GITHUB_REF_NAME}" in backplane-kicad-v*) fork_version="${GITHUB_REF_NAME#backplane-kicad-v}" ;; esac
+          test "$fork_version" = "$(cat BACKPLANE_VERSION)"
           echo "BACKPLANE_FORK_VERSION=${fork_version}" >> "$GITHUB_ENV"
           upstream_commit="$(cat BACKPLANE_UPSTREAM)"
           cmake -S . -B build/backplane-linux -G Ninja \

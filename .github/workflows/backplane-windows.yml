@@ -64,7 +64,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $candidate = Join-Path $env:GITHUB_WORKSPACE 'release\windows\backplane-kicad-windows-x86_64-10.99.0-bp.4'
+          $version = (Get-Content BACKPLANE_VERSION -Raw).Trim()
+          $candidate = Join-Path $env:GITHUB_WORKSPACE "release\windows\backplane-kicad-windows-x86_64-$version"
           if (!(Test-Path $candidate)) { $candidate = 'C:\bp\stage' }
           # Only preserve an install whose dependency-license assembly finished.
           # This is debugging material, never the validated release artifact.
